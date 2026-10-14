@@ -21,13 +21,24 @@ import {
 } from '../core/document.ts';
 import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import type { InlineMarkKind } from '../core/types.ts';
+import {
+  EXPORT_FORMAT_LABELS,
+  exportFilename,
+  exportManuscriptBlob,
+  type ExportFormat,
+} from '../core/exportManuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
+import { loadEditorView, saveEditorView, type EditorViewMode } from '../storage.ts';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 
-function download(filename: string, value: unknown) {
+function downloadJson(filename: string, value: unknown) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
+  downloadBlob(filename, blob);
+}
+
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -59,8 +70,14 @@ export function Editor({
   const [renderToken, setRenderToken] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    saveEditorView(viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     docRef.current = doc;
@@ -156,9 +173,25 @@ export function Editor({
 
   const exportBoth = () => {
     const at = new Date().toISOString();
-    download(`${name}.manuscript.json`, manuscriptExport(doc, at));
-    download(`${name}.certification.json`, certificationExport(doc, at));
+    downloadJson(`${name}.manuscript.json`, manuscriptExport(doc, at));
+    downloadJson(`${name}.certification.json`, certificationExport(doc, at));
   };
+
+  const runExport = async (format: ExportFormat) => {
+    setExporting(format);
+    try {
+      const at = new Date().toISOString();
+      const blob = await exportManuscriptBlob(doc, format, at);
+      downloadBlob(exportFilename(displayTitle(doc), format), blob);
+    } catch (error) {
+      console.error(error);
+      window.alert('Export failed. Try again or pick another format.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const showHighlights = viewMode === 'highlights';
 
   return (
     <div className="editor-grid">
@@ -183,13 +216,17 @@ export function Editor({
             <dd>{stats.chapters}</dd>
           </div>
         </dl>
-        <h3>How a passage got here</h3>
-        <ul className="legend">
-          <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
-          <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
-          <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
-          <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
-        </ul>
+        {showHighlights && (
+          <>
+            <h3>How a passage got here</h3>
+            <ul className="legend">
+              <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
+              <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
+              <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
+              <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
+            </ul>
+          </>
+        )}
         <p className="trust">{doc.points.length === 0 ? 'Type to seal the first passage.' : `${doc.points.length} certification point${doc.points.length === 1 ? '' : 's'} on this manuscript.`}</p>
       </aside>
 
@@ -207,8 +244,37 @@ export function Editor({
           <button type="button" onClick={() => { const previous = undo[undo.length - 1]; if (!previous) return; setUndo(undo.slice(0, -1)); setRedo([doc, ...redo]); replace(previous); }} disabled={!undo.length}>Undo</button>
           <button type="button" onClick={() => { const next = redo[0]; if (!next) return; setRedo(redo.slice(1)); setUndo([...undo, doc]); replace(next); }} disabled={!redo.length}>Redo</button>
           <span className="toolbar-gap" />
-          <button type="button" onClick={() => download(`${name}.manuscript.json`, manuscriptExport(doc, new Date().toISOString()))}>Save manuscript</button>
-          <button type="button" className="primary" onClick={exportBoth}>Save certification</button>
+          <div className="view-toggle" role="group" aria-label="Editor view">
+            <button
+              type="button"
+              className={viewMode === 'manuscript' ? 'is-active' : ''}
+              aria-pressed={viewMode === 'manuscript'}
+              onClick={() => setViewMode('manuscript')}
+            >
+              Manuscript
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'highlights' ? 'is-active' : ''}
+              aria-pressed={viewMode === 'highlights'}
+              onClick={() => setViewMode('highlights')}
+            >
+              Certification
+            </button>
+          </div>
+          <span className="toolbar-gap" />
+          <details className="export-menu">
+            <summary>{exporting ? `Exporting…` : 'Export'}</summary>
+            <div className="export-menu__panel">
+              {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((format) => (
+                <button key={format} type="button" disabled={exporting != null} onClick={() => runExport(format)}>
+                  {EXPORT_FORMAT_LABELS[format]}
+                </button>
+              ))}
+            </div>
+          </details>
+          <button type="button" onClick={() => downloadJson(`${name}.manuscript.json`, manuscriptExport(doc, new Date().toISOString()))}>Save JSON</button>
+          <button type="button" className="primary" onClick={exportBoth}>Save certification JSON</button>
         </div>
 
         <form className="find" role="search" onSubmit={(e) => { e.preventDefault(); setHit((n) => n + 1); }}>
@@ -299,6 +365,7 @@ export function Editor({
                         textDrag.current = { blockId: block.id, start, end };
                       }}
                       renderToken={renderToken}
+                      showProvenance={showHighlights}
                       onInternalDrop={(toOffset) => {
                         const source = textDrag.current;
                         textDrag.current = null;
@@ -319,7 +386,9 @@ export function Editor({
                       }}
                     />
                     <div className="ms-meta">
-                      <span className={`pip pip-${state}`}>{state === 'empty' ? 'Empty' : state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}</span>
+                      {showHighlights && (
+                        <span className={`pip pip-${state}`}>{state === 'empty' ? 'Empty' : state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}</span>
+                      )}
                       <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>{block.type === 'paragraph' ? 'Remove' : 'Remove heading'}</button>
                     </div>
                   </article>
@@ -381,7 +450,7 @@ export function Editor({
             </ul>
           </div>
         )}
-        <button type="button" className="primary" onClick={() => download(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
+        <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
       </aside>
     </div>
   );

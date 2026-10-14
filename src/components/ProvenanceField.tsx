@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { offsetsFromDomRange, setDomCaretFromOffset } from '../core/domCaret.ts';
 import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/certification.ts';
-import { classifyInputType } from '../core/certification.ts';
+import { classifyInsertion } from '../core/certification.ts';
 import type { InlineMark, InlineMarkKind } from '../core/types.ts';
 
 export interface FieldCommit {
@@ -59,14 +59,18 @@ function pieces(
   return out;
 }
 
-function paint(root: HTMLElement, rendered: Piece[]) {
+function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean) {
   root.replaceChildren();
   const order: InlineMarkKind[] = ['bold', 'italic', 'underline', 'strike'];
   for (const piece of rendered) {
     const span = document.createElement('span');
-    span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
-    span.dataset.origin = piece.origin;
-    if (piece.certificationId) span.dataset.cert = piece.certificationId;
+    if (showProvenance) {
+      span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
+      span.dataset.origin = piece.origin;
+      if (piece.certificationId) span.dataset.cert = piece.certificationId;
+    } else {
+      span.className = piece.hit ? 'find-hit' : 'prov-plain';
+    }
     let parent: Node = span;
     for (const kind of order) {
       if (!piece.marks.includes(kind)) continue;
@@ -110,6 +114,7 @@ export function ProvenanceField({
   onInternalDrag,
   onInternalDrop,
   renderToken = 0,
+  showProvenance = true,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -127,6 +132,8 @@ export function ProvenanceField({
   onInternalDrop?: (offset: number) => void;
   /** Bumped for undo, redo, and other edits that did not originate in this field. */
   renderToken?: number;
+  /** When false, show prose only (no origin underlines). */
+  showProvenance?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
@@ -135,6 +142,7 @@ export function ProvenanceField({
   const textRef = useRef(text);
   const pending = useRef<{ origin: InsertionOrigin | null; inputType: string; trusted: boolean } | null>(null);
   const lastKey = useRef<string | null>(null);
+  const lastKeyAt = useRef<number | null>(null);
   const seenToken = useRef(renderToken);
 
   const signature = JSON.stringify({ text, spans, marks, highlight });
@@ -156,7 +164,7 @@ export function ProvenanceField({
         nextCaret = offsetsFromDomRange(el, sel.getRangeAt(0)).end;
       }
     }
-    paint(el, pieces(text, spans, marks, highlight));
+    paint(el, pieces(text, spans, marks, highlight), showProvenance);
     if (nextCaret != null && document.activeElement === el) {
       try {
         setDomCaretFromOffset(el, nextCaret);
@@ -165,7 +173,7 @@ export function ProvenanceField({
       }
     }
     caret.current = null;
-  }, [signature, text, spans, marks, highlight, renderToken]);
+  }, [signature, text, spans, marks, highlight, renderToken, showProvenance]);
 
   const selection = () => {
     const el = ref.current;
@@ -218,7 +226,14 @@ export function ProvenanceField({
         // Chrome still delivers some typing as a legacy TextEvent: `data` is set and `inputType` is not.
         const inputType = input.inputType || (typeof input.data === 'string' ? 'insertText' : '');
         if (composing.current || inputType === 'insertCompositionText') return;
-        const classified = classifyInputType(inputType, input.isTrusted);
+        const now = Date.now();
+        const sinceLastMs = lastKeyAt.current != null ? now - lastKeyAt.current : null;
+        const classified = classifyInsertion({
+          inputType,
+          trusted: input.isTrusted,
+          data: input.data ?? null,
+          sinceLastMs,
+        });
         if (classified.kind === 'ignore') return;
         if (classified.kind === 'split') {
           e.preventDefault();
@@ -246,6 +261,7 @@ export function ProvenanceField({
           inputType: inputType || (classified.kind === 'delete' ? 'deleteContentBackward' : 'insertText'),
           trusted: input.isTrusted,
         };
+        if (classified.kind === 'insert' && classified.origin === 'keyboard') lastKeyAt.current = now;
       }}
       onInput={() => {
         if (composing.current) return;
@@ -260,13 +276,25 @@ export function ProvenanceField({
         pending.current = null;
         const typedKey = lastKey.current;
         lastKey.current = null;
+        const sinceLastMs = lastKeyAt.current != null ? Date.now() - lastKeyAt.current : null;
+        const classified = change.insert
+          ? classifyInsertion({
+              inputType: meta?.inputType ?? 'insertText',
+              trusted: meta?.trusted ?? true,
+              data: change.insert,
+              sinceLastMs,
+            })
+          : null;
         const origin = meta
           ? meta.origin
-          : typedKey && change.insert === typedKey
-            ? 'keyboard'
-            : change.insert
-              ? 'other'
-              : null;
+          : classified?.kind === 'insert'
+            ? classified.origin
+            : typedKey && change.insert === typedKey
+              ? 'keyboard'
+              : change.insert
+                ? 'other'
+                : null;
+        if (origin === 'keyboard') lastKeyAt.current = Date.now();
         const caretPos = selection().end;
         caret.current = caretPos;
         onCommit({

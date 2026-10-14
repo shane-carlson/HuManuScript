@@ -4,6 +4,26 @@ import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 
 export const STORAGE_KEY = 'humanuscript.manuscript.v1';
 export const THEME_KEY = 'humanuscript.theme';
+export const EDITOR_VIEW_KEY = 'humanuscript.editorView';
+
+export type EditorViewMode = 'manuscript' | 'highlights';
+
+export function loadEditorView(): EditorViewMode {
+  try {
+    const value = sessionStorage.getItem(EDITOR_VIEW_KEY);
+    return value === 'highlights' ? 'highlights' : 'manuscript';
+  } catch {
+    return 'manuscript';
+  }
+}
+
+export function saveEditorView(mode: EditorViewMode): void {
+  try {
+    sessionStorage.setItem(EDITOR_VIEW_KEY, mode);
+  } catch {
+    /* session storage may be unavailable */
+  }
+}
 
 const BLOCKS = new Set<BlockType>(['chapter', 'scene', 'section', 'paragraph']);
 const ORIGINS = new Set(['keyboard', 'paste', 'drop', 'other']);

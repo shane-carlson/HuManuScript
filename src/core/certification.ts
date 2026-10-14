@@ -67,6 +67,11 @@ export const MAX_EVIDENCE_EVENTS = 40;
 export const MAX_PRIOR_HASHES = 12;
 const MAX_EVENT_DATA = 240;
 
+/** Single trusted insertText events only; bulk insertText is treated as synthetic. */
+export const MAX_KEYBOARD_INSERT_CHARS = 1;
+/** Inter-key interval below this is not treated as human typing for sealing. */
+export const MIN_HUMAN_KEY_INTERVAL_MS = 6;
+
 export function classifyInputType(
   inputType: string | undefined,
   trusted: boolean,
@@ -75,7 +80,20 @@ export function classifyInputType(
   | { kind: 'delete' }
   | { kind: 'split' }
   | { kind: 'ignore' } {
-  const kindName = inputType ?? '';
+  return classifyInsertion({ inputType, trusted, data: null, sinceLastMs: null });
+}
+
+export function classifyInsertion(args: {
+  inputType: string | undefined;
+  trusted: boolean;
+  data: string | null;
+  sinceLastMs: number | null;
+}):
+  | { kind: 'insert'; origin: InsertionOrigin }
+  | { kind: 'delete' }
+  | { kind: 'split' }
+  | { kind: 'ignore' } {
+  const kindName = args.inputType ?? '';
   if (kindName === 'insertCompositionText' || kindName === 'deleteCompositionText') {
     return { kind: 'ignore' };
   }
@@ -86,8 +104,14 @@ export function classifyInputType(
   if (kindName.startsWith('history') || kindName.startsWith('format')) return { kind: 'ignore' };
   if (!kindName.startsWith('insert')) return { kind: 'ignore' };
 
-  if (kindName === 'insertText') {
-    return { kind: 'insert', origin: trusted ? 'keyboard' : 'other' };
+  if (kindName === 'insertText' || (!kindName && typeof args.data === 'string')) {
+    if (!args.trusted) return { kind: 'insert', origin: 'other' };
+    const len = args.data?.length ?? 0;
+    if (len > MAX_KEYBOARD_INSERT_CHARS) return { kind: 'insert', origin: 'other' };
+    if (args.sinceLastMs != null && args.sinceLastMs < MIN_HUMAN_KEY_INTERVAL_MS) {
+      return { kind: 'insert', origin: 'other' };
+    }
+    return { kind: 'insert', origin: 'keyboard' };
   }
   if (
     kindName === 'insertFromPaste' ||
@@ -493,6 +517,39 @@ export async function syncBlockPoints(args: {
 
   const others = args.points.filter((p) => p.blockId !== args.blockId);
   return { spans, points: [...others, ...kept] };
+}
+
+/**
+ * After JSON/localStorage load, drop keyboard seals that do not match stored hashes or text.
+ * Does not upgrade unknown text to keyboard.
+ */
+export async function stripInvalidKeyboardSeals(args: {
+  text: string;
+  spans: ProvenanceSpan[];
+  points: CertificationPoint[];
+  newId: () => string;
+}): Promise<ProvenanceSpan[]> {
+  const byId = new Map(args.points.map((p) => [p.id, p]));
+  const spans = normalizeSpans(args.text, args.spans, args.newId).map((span) => ({ ...span }));
+  for (const span of spans) {
+    if (span.origin !== 'keyboard' || !span.certificationId) {
+      if (span.origin !== 'keyboard') delete span.certificationId;
+      continue;
+    }
+    const slice = args.text.slice(span.start, span.end);
+    const point = byId.get(span.certificationId);
+    if (!point || point.text !== slice) {
+      span.origin = 'other';
+      delete span.certificationId;
+      continue;
+    }
+    const hash = await contentHash(slice);
+    if (point.contentHash !== hash) {
+      span.origin = 'other';
+      delete span.certificationId;
+    }
+  }
+  return spans;
 }
 
 export function countOriginWords(text: string, spans: ProvenanceSpan[]): { certified: number; uncertified: number } {

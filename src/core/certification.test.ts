@@ -3,10 +3,15 @@ import { test } from 'node:test';
 import {
   applyTextChange,
   classifyInputType,
+  classifyInsertion,
   contentHash,
+  MAX_KEYBOARD_INSERT_CHARS,
+  MIN_HUMAN_KEY_INTERVAL_MS,
   relocateRange,
+  stripInvalidKeyboardSeals,
   syncBlockPoints,
 } from './certification.ts';
+import { buildCertificationPageModel, certificationPagePlain } from './certificationPage.ts';
 import {
   editField,
   emptyDocument,
@@ -23,6 +28,31 @@ const now = '2026-10-14T18:00:00.000Z';
 function event(inputType: string, data: string | null, trusted = true) {
   return { at: now, inputType, data, trusted };
 }
+
+test('classifyInsertion rejects bulk trusted insertText and sub-human intervals', () => {
+  assert.deepEqual(
+    classifyInsertion({ inputType: 'insertText', trusted: true, data: 'a', sinceLastMs: null }),
+    { kind: 'insert', origin: 'keyboard' },
+  );
+  assert.deepEqual(
+    classifyInsertion({
+      inputType: 'insertText',
+      trusted: true,
+      data: 'x'.repeat(MAX_KEYBOARD_INSERT_CHARS + 1),
+      sinceLastMs: null,
+    }),
+    { kind: 'insert', origin: 'other' },
+  );
+  assert.deepEqual(
+    classifyInsertion({
+      inputType: 'insertText',
+      trusted: true,
+      data: 'a',
+      sinceLastMs: MIN_HUMAN_KEY_INTERVAL_MS - 1,
+    }),
+    { kind: 'insert', origin: 'other' },
+  );
+});
 
 test('classifies keyboard, paste, drop, and other insertions', () => {
   assert.deepEqual(classifyInputType('insertText', true), { kind: 'insert', origin: 'keyboard' });
@@ -265,6 +295,70 @@ test('moving text inside a paragraph keeps the certification id', async () => {
   assert.equal(moved!.text, 'cdab');
   assert.equal(moved!.spans[0]!.origin, 'keyboard');
   assert.equal(moved!.spans[0]!.certificationId, sealed.points[0]!.id);
+});
+
+test('stripInvalidKeyboardSeals downgrades tampered spans', async () => {
+  const ids = sequenceIds('id');
+  const hash = await contentHash('real');
+  const points = [
+    {
+      id: 'p1',
+      blockId: 'b',
+      spanId: 's1',
+      text: 'real',
+      contentHash: hash,
+      sealedAt: now,
+      updatedAt: now,
+      origin: 'keyboard' as const,
+      evidence: { inputTypes: ['insertText'], eventCount: 1, events: [] },
+      priorHashes: [],
+    },
+  ];
+  const spans = await stripInvalidKeyboardSeals({
+    text: 'fake',
+    spans: [{ id: 's1', start: 0, end: 4, origin: 'keyboard', certificationId: 'p1' }],
+    points,
+    newId: ids,
+  });
+  assert.equal(spans[0]!.origin, 'other');
+  assert.equal(spans[0]!.certificationId, undefined);
+});
+
+test('certification export page lists sealed and uncertified excerpts', async () => {
+  const ids = sequenceIds('id');
+  let doc = insertStructure(emptyDocument(ids()), 'paragraph', 0, ids());
+  const blockId = doc.blocks[0]!.id;
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: 0,
+    end: 0,
+    insert: 'Hi',
+    origin: 'keyboard',
+    event: event('insertText', 'Hi'),
+    now,
+    newId: ids,
+  });
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: 2,
+    end: 2,
+    insert: ' paste',
+    origin: 'paste',
+    event: event('insertFromPaste', ' paste'),
+    now,
+    newId: ids,
+  });
+  const model = buildCertificationPageModel(doc, now);
+  const plain = certificationPagePlain(model);
+  assert.equal(model.totals.keyboardSealed, 1);
+  assert.equal(model.totals.paste, 1);
+  assert.match(plain, /Keyboard-sealed words: 1/);
+  assert.match(plain, /Pasted words \(not sealed\): 1/);
+  assert.match(plain, /\[paste\]/);
 });
 
 test('chapter drag moves the following paragraph with the chapter', () => {

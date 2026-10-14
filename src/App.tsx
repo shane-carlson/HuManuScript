@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Editor } from './components/Editor.tsx';
-import { displayTitle, TRUST_STATEMENT, type ManuscriptDocument } from './core/document.ts';
+import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT, type ManuscriptDocument } from './core/document.ts';
 import { createIdFactory } from './core/uid.ts';
 import { clearManuscript, freshDocument, loadManuscript, saveManuscript, THEME_KEY } from './storage.ts';
 
@@ -17,15 +17,27 @@ export default function App() {
   });
 
   useEffect(() => {
-    const loaded = loadManuscript();
-    if (!loaded.ok) {
-      setError(loaded.error);
-      setRaw(loaded.raw);
-      setPhase('error');
-      return;
-    }
-    setDoc(loaded.doc ?? freshDocument(createIdFactory('ms')()));
-    setPhase('ready');
+    let cancelled = false;
+    (async () => {
+      const loaded = loadManuscript();
+      if (!loaded.ok) {
+        setError(loaded.error);
+        setRaw(loaded.raw);
+        setPhase('error');
+        return;
+      }
+      const ids = createIdFactory('ms');
+      const base = loaded.doc ?? freshDocument(ids());
+      const reconciled = loaded.doc
+        ? await reconcileLoadedDocument(base, new Date().toISOString(), ids)
+        : base;
+      if (cancelled) return;
+      setDoc(reconciled);
+      setPhase('ready');
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

@@ -8,6 +8,7 @@ import {
   countOriginWords,
   relocateRange,
   splitSpans,
+  stripInvalidKeyboardSeals,
   syncBlockPoints,
   TRUST_STATEMENT,
   type CertificationPoint,
@@ -59,6 +60,41 @@ export function emptyDocument(manuscriptId: string): ManuscriptDocument {
     points: [],
     moves: [],
   };
+}
+
+/** Reconcile seals after localStorage or hand-edited JSON load. */
+export async function reconcileLoadedDocument(
+  doc: ManuscriptDocument,
+  now: string,
+  newId: () => string,
+): Promise<ManuscriptDocument> {
+  let provenance = doc.provenance;
+  let points = doc.points;
+  for (const block of doc.blocks) {
+    for (const field of ['title', 'text'] as const) {
+      if (field === 'text' && block.type !== 'paragraph') continue;
+      if (field === 'title' && block.type === 'paragraph') continue;
+      const text = field === 'title' ? block.title : block.text;
+      const spans = await stripInvalidKeyboardSeals({
+        text,
+        spans: fieldSpans({ ...doc, provenance }, block, field),
+        points,
+        newId,
+      });
+      const sealed = await syncBlockPoints({
+        blockId: block.id,
+        text,
+        spans,
+        points,
+        evidence: null,
+        now,
+        newId,
+      });
+      provenance = putSpans({ ...doc, provenance, points: sealed.points }, block.id, field, sealed.spans);
+      points = sealed.points;
+    }
+  }
+  return { ...doc, provenance, points };
 }
 
 function fieldSpans(doc: ManuscriptDocument, block: ManuscriptBlock, field: 'title' | 'text'): ProvenanceSpan[] {
