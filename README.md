@@ -20,11 +20,26 @@ npm test
 npm run build
 ```
 
-The manuscript and its certification record are saved in this browser (`localStorage`). Use **Save manuscript** and **Save certification** to download JSON files. The certification file includes the trust statement, the sealed points, move events, and the origin of every passage.
+The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). Use the left **Export** workspace to pick a destination, read the guided steps, and download; every writer format leads with a certification summary page. The certification panel still offers a certification JSON download per book.
+
+### Desktop (macOS)
+
+Electron wraps the same Vite build as the web app (Speak Fiction’s desktop pattern, without dictation). **Build the `.dmg` on a Mac only** — electron-builder’s DMG target needs macOS.
+
+```bash
+npm install
+npm run pack:mac
+```
+
+Artifacts land in `release/`. This first build is **unsigned and not notarized**; after opening the DMG, drag HuManuScript to Applications, then use **Open** from the context menu the first time if Gatekeeper blocks it.
+
+```bash
+npm run dev:electron   # Vite + Electron against localhost:47321
+```
 
 ## What came from Speak Fiction
 
-The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. Dictation, licensing, and the desktop shell are not part of this slice.
+The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. Dictation and licensing are out of scope; the Electron shell and `pack:mac` script are included for local Mac installs.
 
 ## Certification, briefly
 

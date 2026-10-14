@@ -7,7 +7,6 @@ import {
   dragPreviewLabel,
   editField,
   insertStructure,
-  manuscriptExport,
   manuscriptStats,
   movePassage,
   nudgeBlock,
@@ -21,12 +20,6 @@ import {
 } from '../core/document.ts';
 import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import type { InlineMarkKind } from '../core/types.ts';
-import {
-  EXPORT_FORMAT_LABELS,
-  exportFilename,
-  exportManuscriptBlob,
-  type ExportFormat,
-} from '../core/exportManuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { loadEditorView, saveEditorView, type EditorViewMode } from '../storage.ts';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
@@ -71,7 +64,6 @@ export function Editor({
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
-  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLElement>(null);
 
@@ -171,26 +163,6 @@ export function Editor({
     commit((current) => toggleFormat(current, selection.blockId, selection, kind));
   };
 
-  const exportBoth = () => {
-    const at = new Date().toISOString();
-    downloadJson(`${name}.manuscript.json`, manuscriptExport(doc, at));
-    downloadJson(`${name}.certification.json`, certificationExport(doc, at));
-  };
-
-  const runExport = async (format: ExportFormat) => {
-    setExporting(format);
-    try {
-      const at = new Date().toISOString();
-      const blob = await exportManuscriptBlob(doc, format, at);
-      downloadBlob(exportFilename(displayTitle(doc), format), blob);
-    } catch (error) {
-      console.error(error);
-      window.alert('Export failed. Try again or pick another format.');
-    } finally {
-      setExporting(null);
-    }
-  };
-
   const showHighlights = viewMode === 'highlights';
 
   return (
@@ -262,19 +234,6 @@ export function Editor({
               Certification
             </button>
           </div>
-          <span className="toolbar-gap" />
-          <details className="export-menu">
-            <summary>{exporting ? `Exporting…` : 'Export'}</summary>
-            <div className="export-menu__panel">
-              {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((format) => (
-                <button key={format} type="button" disabled={exporting != null} onClick={() => runExport(format)}>
-                  {EXPORT_FORMAT_LABELS[format]}
-                </button>
-              ))}
-            </div>
-          </details>
-          <button type="button" onClick={() => downloadJson(`${name}.manuscript.json`, manuscriptExport(doc, new Date().toISOString()))}>Save JSON</button>
-          <button type="button" className="primary" onClick={exportBoth}>Save certification JSON</button>
         </div>
 
         <form className="find" role="search" onSubmit={(e) => { e.preventDefault(); setHit((n) => n + 1); }}>

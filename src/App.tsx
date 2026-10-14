@@ -1,39 +1,71 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from './components/Editor.tsx';
-import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT, type ManuscriptDocument } from './core/document.ts';
+import { ExportPane } from './components/ExportPane.tsx';
+import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
+import { updateActiveBookDocument, type Library } from './core/library.ts';
+import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT } from './core/document.ts';
 import { createIdFactory } from './core/uid.ts';
-import { clearManuscript, freshDocument, loadManuscript, saveManuscript, THEME_KEY } from './storage.ts';
+import {
+  clearLibrary,
+  freshDocument,
+  loadLibrary,
+  loadWorkspaceTab,
+  saveLibrary,
+  saveWorkspaceTab,
+  THEME_KEY,
+  type WorkspaceTab,
+} from './storage.ts';
 
 type Phase = 'loading' | 'ready' | 'error';
 
+async function initialLibrary(ids: () => string): Promise<Library> {
+  const loaded = loadLibrary();
+  if (!loaded.ok) throw new Error(loaded.error);
+  if (loaded.library) {
+    const lib = loaded.library;
+    const active = lib.books.find((b) => b.id === lib.activeBookId) ?? lib.books[0]!;
+    const reconciled = await reconcileLoadedDocument(active.document, new Date().toISOString(), ids);
+    return {
+      ...lib,
+      books: lib.books.map((b) => (b.id === active.id ? { ...b, document: reconciled } : b)),
+    };
+  }
+  const bookId = ids();
+  const document = freshDocument(bookId);
+  return {
+    version: 2,
+    activeBookId: bookId,
+    series: [],
+    books: [{ id: bookId, title: 'Untitled book', document }],
+  };
+}
+
 export default function App() {
   const [phase, setPhase] = useState<Phase>('loading');
-  const [doc, setDoc] = useState<ManuscriptDocument | null>(null);
+  const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
-  const [raw, setRaw] = useState('');
+  const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const stored = localStorage.getItem(THEME_KEY);
     return stored === 'dark' ? 'dark' : 'light';
   });
+  const ids = useRef(createIdFactory('hm'));
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const loaded = loadManuscript();
-      if (!loaded.ok) {
-        setError(loaded.error);
-        setRaw(loaded.raw);
+      try {
+        const lib = await initialLibrary(ids.current);
+        if (cancelled) return;
+        setLibrary(lib);
+        setPhase('ready');
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Could not open library.');
         setPhase('error');
-        return;
       }
-      const ids = createIdFactory('ms');
-      const base = loaded.doc ?? freshDocument(ids());
-      const reconciled = loaded.doc
-        ? await reconcileLoadedDocument(base, new Date().toISOString(), ids)
-        : base;
-      if (cancelled) return;
-      setDoc(reconciled);
-      setPhase('ready');
     })();
     return () => {
       cancelled = true;
@@ -46,10 +78,37 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (phase !== 'ready' || !doc) return;
-    const timer = window.setTimeout(() => saveManuscript(doc), 200);
+    saveWorkspaceTab(tab);
+  }, [tab]);
+
+  useEffect(() => {
+    if (phase !== 'ready' || !library) return;
+    const timer = window.setTimeout(() => saveLibrary(library), 200);
     return () => window.clearTimeout(timer);
-  }, [doc, phase]);
+  }, [library, phase]);
+
+  const activeBook = library?.books.find((b) => b.id === library.activeBookId) ?? null;
+  const doc = activeBook?.document ?? null;
+
+  const setDoc = useCallback((next: typeof doc) => {
+    if (!next || !libraryRef.current) return;
+    setLibrary(updateActiveBookDocument(libraryRef.current, next));
+  }, []);
+
+  const handleLibraryChange = useCallback(async (next: Library) => {
+    const prev = libraryRef.current;
+    if (prev && next.activeBookId !== prev.activeBookId) {
+      const book = next.books.find((b) => b.id === next.activeBookId);
+      if (book) {
+        const reconciled = await reconcileLoadedDocument(book.document, new Date().toISOString(), ids.current);
+        next = {
+          ...next,
+          books: next.books.map((b) => (b.id === next.activeBookId ? { ...b, document: reconciled } : b)),
+        };
+      }
+    }
+    setLibrary(next);
+  }, []);
 
   return (
     <div className="app">
@@ -79,49 +138,53 @@ export default function App() {
       <p className="trust-banner">{TRUST_STATEMENT}</p>
       {phase === 'loading' && (
         <section className="status" aria-live="polite">
-          <h1>Opening the manuscript…</h1>
-          <p>Reading the copy saved in this browser.</p>
+          <h1>Opening the library…</h1>
+          <p>Reading books saved in this browser.</p>
         </section>
       )}
       {phase === 'error' && (
         <section className="status error" role="alert">
-          <h1>This saved manuscript could not be opened.</h1>
+          <h1>This saved library could not be opened.</h1>
           <p>{error}</p>
-          <p>The broken copy is still in this browser. You can keep it, or start a fresh page. Starting fresh removes the saved file from this browser only.</p>
           <div className="status-actions">
-            <button
-              type="button"
-              onClick={() => {
-                const blob = new Blob([raw], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = 'humanuscript-unreadable.json';
-                link.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Download the broken copy
-            </button>
             <button
               type="button"
               className="primary"
               onClick={() => {
-                clearManuscript();
-                setDoc(freshDocument(createIdFactory('ms')()));
-                setPhase('ready');
+                clearLibrary();
+                void initialLibrary(ids.current).then((lib) => {
+                  setLibrary(lib);
+                  setPhase('ready');
+                });
               }}
             >
-              Start a fresh manuscript
+              Start a fresh library
             </button>
           </div>
         </section>
       )}
-      {phase === 'ready' && doc && (
-        <>
-          <p className="sr-only">Editing {displayTitle(doc)}</p>
-          <Editor doc={doc} onChange={setDoc} />
-        </>
+      {phase === 'ready' && library && doc && (
+        <div className="workspace-layout">
+          <WorkspaceSidebar
+            library={library}
+            tab={tab}
+            onTabChange={setTab}
+            onLibraryChange={(next) => void handleLibraryChange(next)}
+            newId={ids.current}
+          />
+          <div className="workspace-main">
+            {tab === 'export' ? (
+              <div className="workspace-panel">
+                <ExportPane doc={doc} />
+              </div>
+            ) : (
+              <>
+                <p className="sr-only">Editing {displayTitle(doc)}</p>
+                <Editor key={library.activeBookId} doc={doc} onChange={setDoc} />
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

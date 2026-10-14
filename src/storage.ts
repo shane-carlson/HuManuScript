@@ -1,12 +1,15 @@
 import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from './core/document.ts';
+import type { Book, Library, Series } from './core/library.ts';
 import type { CertificationPoint, MoveRecord, ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 
+export const LIBRARY_KEY = 'humanuscript.library.v2';
 export const STORAGE_KEY = 'humanuscript.manuscript.v1';
 export const THEME_KEY = 'humanuscript.theme';
 export const EDITOR_VIEW_KEY = 'humanuscript.editorView';
 
 export type EditorViewMode = 'manuscript' | 'highlights';
+export type WorkspaceTab = 'manuscript' | 'export';
 
 export function loadEditorView(): EditorViewMode {
   try {
@@ -22,6 +25,23 @@ export function saveEditorView(mode: EditorViewMode): void {
     sessionStorage.setItem(EDITOR_VIEW_KEY, mode);
   } catch {
     /* session storage may be unavailable */
+  }
+}
+
+export function loadWorkspaceTab(): WorkspaceTab {
+  try {
+    const value = sessionStorage.getItem('humanuscript.workspaceTab');
+    return value === 'export' ? 'export' : 'manuscript';
+  } catch {
+    return 'manuscript';
+  }
+}
+
+export function saveWorkspaceTab(tab: WorkspaceTab): void {
+  try {
+    sessionStorage.setItem('humanuscript.workspaceTab', tab);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -45,57 +65,6 @@ function isBlock(value: unknown): value is ManuscriptBlock {
   return BLOCKS.has(block.type) && typeof block.id === 'string' && typeof block.title === 'string' && typeof block.text === 'string' && Array.isArray(block.marks);
 }
 
-export type LoadResult =
-  | { ok: true; doc: ManuscriptDocument | null }
-  | { ok: false; error: string; raw: string };
-
-export function loadManuscript(): LoadResult {
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(STORAGE_KEY);
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Storage could not be read.', raw: '' };
-  }
-  if (!raw) return { ok: true, doc: null };
-  try {
-    const parsed = JSON.parse(raw) as StoredManuscript;
-    if (parsed.version !== 1 || typeof parsed.manuscriptId !== 'string' || !Array.isArray(parsed.blocks)) {
-      return { ok: false, error: 'The saved manuscript is not a HuManuScript file.', raw };
-    }
-    if (!parsed.blocks.every(isBlock)) return { ok: false, error: 'A block in the saved manuscript is unreadable.', raw };
-    const provenance = parsed.provenance ?? {};
-    for (const block of parsed.blocks) {
-      const entry = provenance[block.id];
-      if (!entry) continue;
-      if (!Array.isArray(entry.title) || !Array.isArray(entry.text)) {
-        return { ok: false, error: 'Provenance for a block is unreadable.', raw };
-      }
-      if (!entry.title.every(isSpan) || !entry.text.every(isSpan)) {
-        return { ok: false, error: 'A provenance span is unreadable.', raw };
-      }
-    }
-    const doc: ManuscriptDocument = {
-      version: 1,
-      manuscriptId: parsed.manuscriptId,
-      title: typeof parsed.title === 'string' ? parsed.title : '',
-      blocks: parsed.blocks.map((block) => ({
-        ...block,
-        marks: (block.marks ?? []).filter(isMark),
-      })),
-      provenance,
-      points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
-      moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
-    };
-    return { ok: true, doc };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'The saved manuscript could not be parsed.',
-      raw,
-    };
-  }
-}
-
 function isMark(value: unknown): value is InlineMark {
   if (!value || typeof value !== 'object') return false;
   const mark = value as InlineMark;
@@ -114,15 +83,148 @@ function isMove(value: unknown): value is MoveRecord {
   return typeof move.id === 'string' && typeof move.label === 'string' && Array.isArray(move.blockIds);
 }
 
-export function saveManuscript(doc: ManuscriptDocument): void {
-  const stored: StoredManuscript = { ...doc, savedAt: new Date().toISOString() };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+function parseDocument(parsed: StoredManuscript): ManuscriptDocument | null {
+  if (parsed.version !== 1 || typeof parsed.manuscriptId !== 'string' || !Array.isArray(parsed.blocks)) {
+    return null;
+  }
+  if (!parsed.blocks.every(isBlock)) return null;
+  const provenance = parsed.provenance ?? {};
+  for (const block of parsed.blocks) {
+    const entry = provenance[block.id];
+    if (!entry) continue;
+    if (!Array.isArray(entry.title) || !Array.isArray(entry.text)) return null;
+    if (!entry.title.every(isSpan) || !entry.text.every(isSpan)) return null;
+  }
+  return {
+    version: 1,
+    manuscriptId: parsed.manuscriptId,
+    title: typeof parsed.title === 'string' ? parsed.title : '',
+    blocks: parsed.blocks.map((block) => ({
+      ...block,
+      marks: (block.marks ?? []).filter(isMark),
+    })),
+    provenance,
+    points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
+    moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
+  };
 }
 
-export function clearManuscript(): void {
+export type LoadResult =
+  | { ok: true; library: Library | null }
+  | { ok: false; error: string; raw: string };
+
+function isSeries(value: unknown): value is Series {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Series;
+  return typeof s.id === 'string' && typeof s.name === 'string';
+}
+
+function isBook(value: unknown): value is Book {
+  if (!value || typeof value !== 'object') return false;
+  const b = value as Book;
+  if (typeof b.id !== 'string' || typeof b.title !== 'string' || !b.document) return false;
+  const doc = parseDocument(b.document as StoredManuscript);
+  if (!doc) return false;
+  return true;
+}
+
+function hydrateBook(raw: Book): Book {
+  const doc = parseDocument(raw.document as StoredManuscript)!;
+  return { ...raw, document: doc };
+}
+
+export function loadLibrary(): LoadResult {
+  try {
+    const rawV2 = localStorage.getItem(LIBRARY_KEY);
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2) as Library;
+      if (parsed.version !== 2 || !Array.isArray(parsed.books) || !Array.isArray(parsed.series)) {
+        return { ok: false, error: 'The saved library is not a HuManuScript library.', raw: rawV2 };
+      }
+      if (!parsed.books.every(isBook)) {
+        return { ok: false, error: 'A book in the saved library is unreadable.', raw: rawV2 };
+      }
+      if (!parsed.series.every(isSeries)) {
+        return { ok: false, error: 'A series in the saved library is unreadable.', raw: rawV2 };
+      }
+      const books = parsed.books.map(hydrateBook);
+      const activeBookId = books.some((b) => b.id === parsed.activeBookId)
+        ? parsed.activeBookId
+        : books[0]!.id;
+      return { ok: true, library: { version: 2, activeBookId, series: parsed.series, books } };
+    }
+
+    const rawV1 = localStorage.getItem(STORAGE_KEY);
+    if (!rawV1) return { ok: true, library: null };
+    const parsed = JSON.parse(rawV1) as StoredManuscript;
+    const doc = parseDocument(parsed);
+    if (!doc) return { ok: false, error: 'The saved manuscript is not a HuManuScript file.', raw: rawV1 };
+    const bookId = doc.manuscriptId;
+    const library: Library = {
+      version: 2,
+      activeBookId: bookId,
+      series: [],
+      books: [
+        {
+          id: bookId,
+          title: doc.title.trim() || 'Untitled book',
+          document: doc,
+        },
+      ],
+    };
+    return { ok: true, library };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'The saved library could not be parsed.',
+      raw: '',
+    };
+  }
+}
+
+export function saveLibrary(library: Library): void {
+  const payload: Library = {
+    ...library,
+    books: library.books.map((b) => ({
+      ...b,
+      document: { ...b.document, savedAt: new Date().toISOString() } as StoredManuscript,
+    })),
+  };
+  localStorage.setItem(LIBRARY_KEY, JSON.stringify(payload));
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+export function clearLibrary(): void {
+  localStorage.removeItem(LIBRARY_KEY);
   localStorage.removeItem(STORAGE_KEY);
 }
 
 export function freshDocument(id: string): ManuscriptDocument {
   return emptyDocument(id);
+}
+
+/** @deprecated Use loadLibrary */
+export function loadManuscript(): { ok: true; doc: ManuscriptDocument | null } | { ok: false; error: string; raw: string } {
+  const loaded = loadLibrary();
+  if (!loaded.ok) return loaded;
+  if (!loaded.library) return { ok: true, doc: null };
+  const book = loaded.library.books.find((b) => b.id === loaded.library!.activeBookId);
+  return { ok: true, doc: book?.document ?? null };
+}
+
+export function saveManuscript(doc: ManuscriptDocument): void {
+  const loaded = loadLibrary();
+  if (loaded.ok && loaded.library) {
+    const books = loaded.library.books.map((b) =>
+      b.id === loaded.library!.activeBookId ? { ...b, document: doc, title: doc.title.trim() || b.title } : b,
+    );
+    saveLibrary({ ...loaded.library, books });
+    return;
+  }
+  const stored: StoredManuscript = { ...doc, savedAt: new Date().toISOString() };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+export function clearManuscript(): void {
+  clearLibrary();
 }
