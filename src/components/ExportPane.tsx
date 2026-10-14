@@ -127,7 +127,7 @@ export function ExportPane({ doc }: { doc: ManuscriptDocument }) {
       <div className="export-pane__head">
         <div>
           <h2>Export</h2>
-          <p>Guided hand-off to your writing tool. Spoken Fiction-style structure becomes chapters and scenes on import.</p>
+          <p>Guided hand-off to your writing tool. Speak Fiction-style structure becomes chapters and scenes on import.</p>
         </div>
         <div className="book-pill">
           <span aria-hidden="true">📖</span>
