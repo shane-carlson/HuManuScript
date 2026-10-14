@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from './components/Editor.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
+import { ManuscriptStatsBar } from './components/ManuscriptStatsBar.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import { updateActiveBookDocument, type Library } from './core/library.ts';
 import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT } from './core/document.ts';
@@ -9,8 +10,12 @@ import {
   clearLibrary,
   freshDocument,
   loadLibrary,
+  loadManuscriptFocus,
+  loadSidebarCollapsed,
   loadWorkspaceTab,
   saveLibrary,
+  saveManuscriptFocus,
+  saveSidebarCollapsed,
   saveWorkspaceTab,
   THEME_KEY,
   type WorkspaceTab,
@@ -45,6 +50,8 @@ export default function App() {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadSidebarCollapsed());
+  const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const stored = localStorage.getItem(THEME_KEY);
     return stored === 'dark' ? 'dark' : 'light';
@@ -82,6 +89,18 @@ export default function App() {
   }, [tab]);
 
   useEffect(() => {
+    saveSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    saveManuscriptFocus(manuscriptFocus);
+  }, [manuscriptFocus]);
+
+  useEffect(() => {
+    if (tab !== 'manuscript' && manuscriptFocus) setManuscriptFocus(false);
+  }, [tab, manuscriptFocus]);
+
+  useEffect(() => {
     if (phase !== 'ready' || !library) return;
     const timer = window.setTimeout(() => saveLibrary(library), 200);
     return () => window.clearTimeout(timer);
@@ -110,9 +129,11 @@ export default function App() {
     setLibrary(next);
   }, []);
 
+  const focusActive = manuscriptFocus && tab === 'manuscript';
+
   return (
-    <div className="app">
-      <header className="top">
+    <div className={`app${focusActive ? ' is-manuscript-focus' : ''}`}>
+      <header className="top app-chrome">
         <div className="brand">
           <span className="mark" aria-hidden="true">H</span>
           <div>
@@ -135,7 +156,7 @@ export default function App() {
           {theme === 'light' ? 'Dark paper' : 'Light paper'}
         </button>
       </header>
-      <p className="trust-banner">{TRUST_STATEMENT}</p>
+      <p className="trust-banner app-chrome">{TRUST_STATEMENT}</p>
       {phase === 'loading' && (
         <section className="status" aria-live="polite">
           <h1>Opening the library…</h1>
@@ -164,10 +185,12 @@ export default function App() {
         </section>
       )}
       {phase === 'ready' && library && doc && (
-        <div className="workspace-layout">
+        <div className={`workspace-layout${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
           <WorkspaceSidebar
             library={library}
             tab={tab}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
             onTabChange={setTab}
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
@@ -180,7 +203,14 @@ export default function App() {
             ) : (
               <>
                 <p className="sr-only">Editing {displayTitle(doc)}</p>
-                <Editor key={library.activeBookId} doc={doc} onChange={setDoc} />
+                <ManuscriptStatsBar doc={doc} compact={focusActive} />
+                <Editor
+                  key={library.activeBookId}
+                  doc={doc}
+                  onChange={setDoc}
+                  focusMode={focusActive}
+                  onFocusModeChange={setManuscriptFocus}
+                />
               </>
             )}
           </div>

@@ -7,6 +7,8 @@ export const LIBRARY_KEY = 'humanuscript.library.v2';
 export const STORAGE_KEY = 'humanuscript.manuscript.v1';
 export const THEME_KEY = 'humanuscript.theme';
 export const EDITOR_VIEW_KEY = 'humanuscript.editorView';
+export const SIDEBAR_COLLAPSED_KEY = 'humanuscript.sidebarCollapsed';
+export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
 export type EditorViewMode = 'manuscript' | 'highlights';
 export type WorkspaceTab = 'manuscript' | 'export';
@@ -40,6 +42,38 @@ export function loadWorkspaceTab(): WorkspaceTab {
 export function saveWorkspaceTab(tab: WorkspaceTab): void {
   try {
     sessionStorage.setItem('humanuscript.workspaceTab', tab);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadSidebarCollapsed(): boolean {
+  try {
+    return sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveSidebarCollapsed(collapsed: boolean): void {
+  try {
+    sessionStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadManuscriptFocus(): boolean {
+  try {
+    return sessionStorage.getItem(MANUSCRIPT_FOCUS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveManuscriptFocus(focus: boolean): void {
+  try {
+    sessionStorage.setItem(MANUSCRIPT_FOCUS_KEY, focus ? '1' : '0');
   } catch {
     /* ignore */
   }

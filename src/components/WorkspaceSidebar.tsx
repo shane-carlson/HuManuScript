@@ -15,12 +15,16 @@ import type { WorkspaceTab } from '../storage.ts';
 export function WorkspaceSidebar({
   library,
   tab,
+  collapsed,
+  onToggleCollapsed,
   onTabChange,
   onLibraryChange,
   newId,
 }: {
   library: Library;
   tab: WorkspaceTab;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onTabChange: (tab: WorkspaceTab) => void;
   onLibraryChange: (library: Library) => void;
   newId: () => string;
@@ -49,26 +53,39 @@ export function WorkspaceSidebar({
   };
 
   return (
-    <aside className="workspace-sidebar">
+    <aside className={`workspace-sidebar${collapsed ? ' is-collapsed' : ''}`}>
+      <button
+        type="button"
+        className="sidebar-collapse-toggle"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Expand library pane' : 'Collapse library pane'}
+        title={collapsed ? 'Expand' : 'Collapse'}
+      >
+        {collapsed ? '›' : '‹'}
+      </button>
       <nav className="workspace-nav" aria-label="Workspace">
         <button
           type="button"
           className={`workspace-nav__item${tab === 'manuscript' ? ' is-active' : ''}`}
           onClick={() => onTabChange('manuscript')}
+          title="Manuscript"
         >
           <span className="ico" aria-hidden="true">✍️</span>
-          <span>Manuscript</span>
+          <span className="workspace-nav__label">Manuscript</span>
         </button>
         <button
           type="button"
           className={`workspace-nav__item${tab === 'export' ? ' is-active' : ''}`}
           onClick={() => onTabChange('export')}
+          title="Export"
         >
           <span className="ico" aria-hidden="true">🔗</span>
-          <span>Export</span>
+          <span className="workspace-nav__label">Export</span>
         </button>
       </nav>
 
+      <div className="workspace-sidebar__body">
       <section className="workspace-books">
         <div className="workspace-books__head">
           <h3>Books</h3>
@@ -141,6 +158,7 @@ export function WorkspaceSidebar({
           </label>
         ) : null}
       </section>
+      </div>
     </aside>
   );
 }

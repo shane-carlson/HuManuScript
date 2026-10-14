@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   certificationExport,
-  certificationSummary,
   chapterOrder,
   displayTitle,
   dragPreviewLabel,
   editField,
   insertStructure,
-  manuscriptStats,
   movePassage,
   nudgeBlock,
   passageState,
@@ -48,9 +46,13 @@ function slug(title: string): string {
 export function Editor({
   doc,
   onChange,
+  focusMode = false,
+  onFocusModeChange,
 }: {
   doc: ManuscriptDocument;
   onChange: (doc: ManuscriptDocument) => void;
+  focusMode?: boolean;
+  onFocusModeChange?: (focus: boolean) => void;
 }) {
   const ids = useRef(createIdFactory('hm'));
   const docRef = useRef(doc);
@@ -113,6 +115,19 @@ export function Editor({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [replace]);
 
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      event.preventDefault();
+      onFocusModeChange?.(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [focusMode, onFocusModeChange]);
+
   const commit = (recipe: (current: ManuscriptDocument) => Promise<ManuscriptDocument> | ManuscriptDocument) => {
     const snapshot = docRef.current;
     chain.current = chain.current.then(async () => {
@@ -149,8 +164,6 @@ export function Editor({
   const matches = useMemo(() => findMatches(doc.blocks, query), [doc.blocks, query]);
   const activeHit = matches.length ? matches[hit % matches.length]! : null;
   const numbers = useMemo(() => new Map(chapterOrder(doc.blocks).map((c) => [c.id, c.number])), [doc.blocks]);
-  const stats = manuscriptStats(doc.blocks);
-  const seals = certificationSummary(doc);
   const name = slug(displayTitle(doc));
 
   useEffect(() => {
@@ -166,43 +179,17 @@ export function Editor({
   const showHighlights = viewMode === 'highlights';
 
   return (
-    <div className="editor-grid">
-      <aside className="rail">
-        <p className="eyebrow">Manuscript</p>
-        <h2>{displayTitle(doc)}</h2>
-        <dl className="stats">
-          <div>
-            <dt>Words</dt>
-            <dd>{stats.words}</dd>
-          </div>
-          <div>
-            <dt>Certified</dt>
-            <dd>{seals.certified}</dd>
-          </div>
-          <div>
-            <dt>Uncertified</dt>
-            <dd>{seals.uncertified}</dd>
-          </div>
-          <div>
-            <dt>Chapters</dt>
-            <dd>{stats.chapters}</dd>
-          </div>
-        </dl>
-        {showHighlights && (
-          <>
-            <h3>How a passage got here</h3>
-            <ul className="legend">
-              <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
-              <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
-              <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
-              <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
-            </ul>
-          </>
-        )}
-        <p className="trust">{doc.points.length === 0 ? 'Type to seal the first passage.' : `${doc.points.length} certification point${doc.points.length === 1 ? '' : 's'} on this manuscript.`}</p>
-      </aside>
-
-      <main className="canvas" ref={canvasRef}>
+    <div className={`editor-layout${focusMode ? ' is-focus' : ''}`}>
+      {focusMode && (
+        <div className="focus-exit-bar">
+          <p>Full screen — writing only</p>
+          <button type="button" className="primary" onClick={() => onFocusModeChange?.(false)}>
+            Exit full screen
+          </button>
+          <span className="focus-hint">Esc</span>
+        </div>
+      )}
+      <main className="canvas manuscript-surface" ref={canvasRef}>
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>Chapter</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>Scene</button>
@@ -234,7 +221,22 @@ export function Editor({
               Certification
             </button>
           </div>
+          <span className="toolbar-gap" />
+          {!focusMode ? (
+            <button type="button" className="focus-enter" onClick={() => onFocusModeChange?.(true)}>
+              Full screen
+            </button>
+          ) : null}
         </div>
+
+        {showHighlights && (
+          <ul className="legend legend--inline" aria-label="Passage origins">
+            <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
+            <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
+            <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
+            <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
+          </ul>
+        )}
 
         <form className="find" role="search" onSubmit={(e) => { e.preventDefault(); setHit((n) => n + 1); }}>
           <label htmlFor="find">Find</label>
@@ -373,9 +375,12 @@ export function Editor({
             />
           </div>
         )}
-        <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
+        {!focusMode && (
+          <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
+        )}
       </main>
 
+      {!focusMode && (
       <aside className="points">
         <div className="points-head">
           <p className="eyebrow">Certification</p>
@@ -411,6 +416,7 @@ export function Editor({
         )}
         <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
       </aside>
+      )}
     </div>
   );
 }
