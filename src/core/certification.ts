@@ -68,34 +68,35 @@ export const MAX_PRIOR_HASHES = 12;
 const MAX_EVENT_DATA = 240;
 
 export function classifyInputType(
-  inputType: string,
+  inputType: string | undefined,
   trusted: boolean,
 ):
   | { kind: 'insert'; origin: InsertionOrigin }
   | { kind: 'delete' }
   | { kind: 'split' }
   | { kind: 'ignore' } {
-  if (inputType === 'insertCompositionText' || inputType === 'deleteCompositionText') {
+  const kindName = inputType ?? '';
+  if (kindName === 'insertCompositionText' || kindName === 'deleteCompositionText') {
     return { kind: 'ignore' };
   }
-  if (inputType === 'insertParagraph' || inputType === 'insertLineBreak') return { kind: 'split' };
-  if (inputType.startsWith('delete') || inputType === 'deleteByCut' || inputType === 'deleteByDrag') {
+  if (kindName === 'insertParagraph' || kindName === 'insertLineBreak') return { kind: 'split' };
+  if (kindName.startsWith('delete') || kindName === 'deleteByCut' || kindName === 'deleteByDrag') {
     return { kind: 'delete' };
   }
-  if (inputType.startsWith('history') || inputType.startsWith('format')) return { kind: 'ignore' };
-  if (!inputType.startsWith('insert')) return { kind: 'ignore' };
+  if (kindName.startsWith('history') || kindName.startsWith('format')) return { kind: 'ignore' };
+  if (!kindName.startsWith('insert')) return { kind: 'ignore' };
 
-  if (inputType === 'insertText') {
+  if (kindName === 'insertText') {
     return { kind: 'insert', origin: trusted ? 'keyboard' : 'other' };
   }
   if (
-    inputType === 'insertFromPaste' ||
-    inputType === 'insertFromPasteAsQuotation' ||
-    inputType === 'insertFromYank'
+    kindName === 'insertFromPaste' ||
+    kindName === 'insertFromPasteAsQuotation' ||
+    kindName === 'insertFromYank'
   ) {
     return { kind: 'insert', origin: 'paste' };
   }
-  if (inputType === 'insertFromDrop') return { kind: 'insert', origin: 'drop' };
+  if (kindName === 'insertFromDrop') return { kind: 'insert', origin: 'drop' };
   return { kind: 'insert', origin: 'other' };
 }
 

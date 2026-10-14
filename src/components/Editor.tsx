@@ -56,6 +56,7 @@ export function Editor({
   const [query, setQuery] = useState('');
   const [hit, setHit] = useState(0);
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
+  const [renderToken, setRenderToken] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
@@ -74,6 +75,7 @@ export function Editor({
 
   const replace = useCallback((next: ManuscriptDocument) => {
     docRef.current = next;
+    setRenderToken((token) => token + 1);
     onChange(next);
   }, [onChange]);
 
@@ -105,12 +107,16 @@ export function Editor({
   const commit = (recipe: (current: ManuscriptDocument) => Promise<ManuscriptDocument> | ManuscriptDocument) => {
     const snapshot = docRef.current;
     chain.current = chain.current.then(async () => {
-      const next = await recipe(docRef.current);
-      if (next === docRef.current) return;
-      docRef.current = next;
-      setUndo((stack) => [...stack, snapshot].slice(-40));
-      setRedo([]);
-      onChange(next);
+      try {
+        const next = await recipe(docRef.current);
+        if (next === docRef.current) return;
+        docRef.current = next;
+        setUndo((stack) => [...stack, snapshot].slice(-40));
+        setRedo([]);
+        onChange(next);
+      } catch (error) {
+        console.error(error);
+      }
     });
   };
 
@@ -292,6 +298,7 @@ export function Editor({
                       onInternalDrag={(start, end) => {
                         textDrag.current = { blockId: block.id, start, end };
                       }}
+                      renderToken={renderToken}
                       onInternalDrop={(toOffset) => {
                         const source = textDrag.current;
                         textDrag.current = null;

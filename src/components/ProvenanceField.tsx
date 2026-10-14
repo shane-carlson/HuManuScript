@@ -109,6 +109,7 @@ export function ProvenanceField({
   onFormat,
   onInternalDrag,
   onInternalDrop,
+  renderToken = 0,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -124,29 +125,47 @@ export function ProvenanceField({
   onFormat?: (kind: InlineMarkKind) => void;
   onInternalDrag?: (start: number, end: number) => void;
   onInternalDrop?: (offset: number) => void;
+  /** Bumped for undo, redo, and other edits that did not originate in this field. */
+  renderToken?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const caret = useRef<number | null>(null);
   const skipPaste = useRef(false);
   const textRef = useRef(text);
+  const pending = useRef<{ origin: InsertionOrigin | null; inputType: string; trusted: boolean } | null>(null);
+  const lastKey = useRef<string | null>(null);
+  const seenToken = useRef(renderToken);
 
   const signature = JSON.stringify({ text, spans, marks, highlight });
 
   useLayoutEffect(() => {
-    textRef.current = text;
     const el = ref.current;
     if (!el || composing.current) return;
+    const dom = el.textContent ?? '';
+    const external = seenToken.current !== renderToken;
+    seenToken.current = renderToken;
+    const typingAhead =
+      !external && document.activeElement === el && textRef.current === dom && dom !== text && dom.startsWith(text);
+    if (typingAhead) return;
+    textRef.current = text;
+    let nextCaret = caret.current;
+    if (nextCaret == null && document.activeElement === el) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+        nextCaret = offsetsFromDomRange(el, sel.getRangeAt(0)).end;
+      }
+    }
     paint(el, pieces(text, spans, marks, highlight));
-    if (caret.current != null && document.activeElement === el) {
+    if (nextCaret != null && document.activeElement === el) {
       try {
-        setDomCaretFromOffset(el, caret.current);
+        setDomCaretFromOffset(el, nextCaret);
       } catch {
         /* The selection can sit on a detached node during a fast edit. */
       }
-      caret.current = null;
     }
-  }, [signature, text, spans, marks, highlight]);
+    caret.current = null;
+  }, [signature, text, spans, marks, highlight, renderToken]);
 
   const selection = () => {
     const el = ref.current;
@@ -196,8 +215,10 @@ export function ProvenanceField({
       }}
       onBeforeInput={(e) => {
         const input = e.nativeEvent;
-        if (composing.current || input.inputType === 'insertCompositionText') return;
-        const classified = classifyInputType(input.inputType, input.isTrusted);
+        // Chrome still delivers some typing as a legacy TextEvent: `data` is set and `inputType` is not.
+        const inputType = input.inputType || (typeof input.data === 'string' ? 'insertText' : '');
+        if (composing.current || inputType === 'insertCompositionText') return;
+        const classified = classifyInputType(inputType, input.isTrusted);
         if (classified.kind === 'ignore') return;
         if (classified.kind === 'split') {
           e.preventDefault();
@@ -213,61 +234,53 @@ export function ProvenanceField({
           e.preventDefault();
           return;
         }
-        e.preventDefault();
-        const range = selection();
-        let start = range.start;
-        let end = range.end;
-        const target = input.getTargetRanges?.()[0];
-        if (target && ref.current) {
-          const mapped = document.createRange();
-          mapped.setStart(target.startContainer, target.startOffset);
-          mapped.setEnd(target.endContainer, target.endOffset);
-          const offsets = offsetsFromDomRange(ref.current, mapped);
-          start = offsets.start;
-          end = offsets.end;
-        }
-        if (classified.kind === 'delete') {
-          if (start === end && input.inputType === 'deleteContentBackward') {
-            if (start === 0) {
-              onMergeBackward?.();
-              return;
-            }
-            start -= 1;
-          } else if (start === end && input.inputType === 'deleteContentForward') {
-            end = Math.min(textRef.current.length, end + 1);
-          }
-          if (start === end) return;
-          caret.current = start;
-          onCommit({
-            start,
-            end,
-            insert: '',
-            origin: null,
-            event: {
-              at: new Date().toISOString(),
-              inputType: input.inputType,
-              data: null,
-              trusted: input.isTrusted,
-            },
-            caret: start,
-          });
+        if (classified.kind === 'delete' && selection().start === 0 && selection().end === 0) {
+          e.preventDefault();
+          onMergeBackward?.();
           return;
         }
-        const insert = input.data ?? '';
-        if (!insert && start === end) return;
-        caret.current = start + insert.length;
+        // Let the browser insert or delete. onInput diffs the DOM so fast typing
+        // cannot land every character at a stale caret.
+        pending.current = {
+          origin: classified.kind === 'delete' ? null : classified.origin,
+          inputType: inputType || (classified.kind === 'delete' ? 'deleteContentBackward' : 'insertText'),
+          trusted: input.isTrusted,
+        };
+      }}
+      onInput={() => {
+        if (composing.current) return;
+        const el = ref.current;
+        if (!el) return;
+        const next = (el.textContent ?? '').replace(/\u00a0/g, ' ');
+        const before = textRef.current;
+        if (next === before) return;
+        const change = diff(before, next);
+        textRef.current = next;
+        const meta = pending.current;
+        pending.current = null;
+        const typedKey = lastKey.current;
+        lastKey.current = null;
+        const origin = meta
+          ? meta.origin
+          : typedKey && change.insert === typedKey
+            ? 'keyboard'
+            : change.insert
+              ? 'other'
+              : null;
+        const caretPos = selection().end;
+        caret.current = caretPos;
         onCommit({
-          start,
-          end,
-          insert,
-          origin: classified.origin,
+          start: change.start,
+          end: change.end,
+          insert: change.insert,
+          origin,
           event: {
             at: new Date().toISOString(),
-            inputType: input.inputType,
-            data: insert || null,
-            trusted: input.isTrusted,
+            inputType: meta?.inputType ?? (change.insert ? 'insertText' : 'deleteContentBackward'),
+            data: change.insert || null,
+            trusted: meta?.trusted ?? true,
           },
-          caret: start + insert.length,
+          caret: caretPos,
         });
       }}
       onPaste={(e) => {
@@ -328,6 +341,7 @@ export function ProvenanceField({
         });
       }}
       onKeyDown={(e) => {
+        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) lastKey.current = e.key;
         if (e.key === 'Backspace' && !textRef.current && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
           onMergeBackward?.();
