@@ -59,7 +59,8 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s\n' "$APPLE_API_KEY" > "$KEY_PATH"
+          printf '%s' "$APPLE_API_KEY" > "$KEY_PATH"
+          echo >> "$KEY_PATH"
           chmod 600 "$KEY_PATH"
           echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
 
