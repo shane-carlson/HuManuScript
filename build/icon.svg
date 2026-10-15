@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#4a3420"/>
+  <!-- Open book, side view -->
+  <path fill="#e8dcc8" d="M88 392V176c0-8 6-14 14-14 52 0 98 28 154 28s102-28 154-28c8 0 14 6 14 14v216H88z"/>
+  <path fill="#c4a574" d="M256 162c-58 0-110 22-154 52v178h308V214c-44-30-96-52-154-52z"/>
+  <path fill="#3d2914" d="M256 162v232"/>
+  <!-- Figure in front: head, torso, arms outstretched -->
+  <circle cx="256" cy="132" r="36" fill="#e8dcc8"/>
+  <path fill="#e8dcc8" d="M176 188c28-12 52-18 80-18s52 6 80 18l-12 28c-22-10-44-14-68-14s-46 4-68 14l-12-28z"/>
+  <path fill="#e8dcc8" d="M220 176v88c0 14 11 25 25 25h22c14 0 25-11 25-25v-88H220z"/>
+  <path fill="#e8dcc8" d="M108 200c-32 14-56 42-68 76l26 10c10-26 28-46 52-58l-10-28z"/>
+  <path fill="#e8dcc8" d="M404 200l-10 28c24 12 42 32 52 58l26-10c-12-34-36-62-68-76z"/>
+</svg>

@@ -25,7 +25,14 @@ import { clearFormatting, expandCollapsedRange } from '../core/richText.ts';
 import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
-import { loadEditorView, saveEditorView, type EditorViewMode } from '../storage.ts';
+import { formatTypingDeviceLabel } from '../core/deviceName.ts';
+import {
+  loadCertificationCollapsed,
+  loadEditorView,
+  saveCertificationCollapsed,
+  saveEditorView,
+  type EditorViewMode,
+} from '../storage.ts';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
@@ -75,12 +82,17 @@ export function Editor({
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
+  const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     saveEditorView(viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    saveCertificationCollapsed(certCollapsed);
+  }, [certCollapsed]);
 
   useEffect(() => {
     docRef.current = doc;
@@ -229,7 +241,9 @@ export function Editor({
   const showHighlights = viewMode === 'highlights';
 
   return (
-    <div className={`editor-layout${focusMode ? ' is-focus' : ''}`}>
+    <div
+      className={`editor-layout${focusMode ? ' is-focus' : ''}${certCollapsed ? ' is-cert-collapsed' : ''}`}
+    >
       {focusMode && (
         <div className="focus-exit-bar">
           <p>Full screen — writing only</p>
@@ -598,40 +612,53 @@ export function Editor({
       </main>
 
       {!focusMode && (
-      <aside className="points">
-        <div className="points-head">
-          <p className="eyebrow">Certification</p>
-          <h2>Sealed passages</h2>
-        </div>
-        {doc.points.length === 0 ? (
-          <p className="points-empty">Nothing is sealed yet. Keyboard text lands here with a content hash and the input events behind it. Pasted text never will.</p>
-        ) : (
-          <ol className="point-list">
-            {doc.points.map((point) => (
-              <li key={point.id}>
-                <header>
-                  <span>Certified</span>
-                  <time dateTime={point.updatedAt}>{new Date(point.updatedAt).toLocaleString()}</time>
-                </header>
-                <blockquote>{point.text}</blockquote>
-                <code title={point.contentHash}>{point.contentHash.slice(0, 16)}…</code>
-                <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
-                {point.lineage && <p className="lineage">{point.lineage}</p>}
-              </li>
-            ))}
-          </ol>
-        )}
-        {doc.moves.length > 0 && (
-          <div className="moves">
-            <h3>Moves</h3>
-            <ul>
-              {doc.moves.slice(-6).reverse().map((move) => (
-                <li key={move.id}>{move.label}</li>
-              ))}
-            </ul>
+      <aside className={`points${certCollapsed ? ' is-collapsed' : ''}`}>
+        <button
+          type="button"
+          className="cert-collapse-toggle"
+          onClick={() => setCertCollapsed((c) => !c)}
+          aria-expanded={!certCollapsed}
+          aria-label={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
+          title={certCollapsed ? 'Expand' : 'Collapse'}
+        >
+          {certCollapsed ? '‹' : '›'}
+        </button>
+        <div className="points-body">
+          <div className="points-head">
+            <p className="eyebrow">Certification</p>
+            <h2>Sealed passages</h2>
           </div>
-        )}
-        <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
+          {doc.points.length === 0 ? (
+            <p className="points-empty">Nothing is sealed yet. Keyboard text lands here with a content hash and the input events behind it. Pasted text never will.</p>
+          ) : (
+            <ol className="point-list">
+              {doc.points.map((point) => (
+                <li key={point.id}>
+                  <header>
+                    <span>Certified</span>
+                    <time dateTime={point.updatedAt}>{new Date(point.updatedAt).toLocaleString()}</time>
+                  </header>
+                  <blockquote>{point.text}</blockquote>
+                  <code title={point.contentHash}>{point.contentHash.slice(0, 16)}…</code>
+                  <p className="point-device">Device: {formatTypingDeviceLabel(point.typingDevice)}</p>
+                  <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
+                  {point.lineage && <p className="lineage">{point.lineage}</p>}
+                </li>
+              ))}
+            </ol>
+          )}
+          {doc.moves.length > 0 && (
+            <div className="moves">
+              <h3>Moves</h3>
+              <ul>
+                {doc.moves.slice(-6).reverse().map((move) => (
+                  <li key={move.id}>{move.label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
+        </div>
       </aside>
       )}
     </div>

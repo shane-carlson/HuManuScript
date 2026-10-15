@@ -9,6 +9,7 @@
  * proof against someone simulating events.
  */
 
+import { getTypingDeviceLabel } from './deviceName.ts';
 import type { InlineMark } from './types.ts';
 import { normalizeMarks } from './richText.ts';
 
@@ -51,6 +52,8 @@ export interface CertificationPoint {
   /** Earlier hashes when an edit changed more than the edge of the span. */
   priorHashes: string[];
   lineage?: string;
+  /** Computer name (Electron) or best-effort platform label (browser); omitted when unknown. */
+  typingDevice?: string;
 }
 
 export interface MoveRecord {
@@ -431,7 +434,9 @@ export async function syncBlockPoints(args: {
   evidence?: { spanIds: string[]; event: InputEvidence } | null;
   now: string;
   newId: () => string;
+  typingDevice?: string | null;
 }): Promise<{ spans: ProvenanceSpan[]; points: CertificationPoint[] }> {
+  const typingDevice = args.typingDevice ?? (await getTypingDeviceLabel());
   const spans = normalizeSpans(args.text, args.spans, args.newId).map((s) => ({ ...s }));
   const pool = new Map(args.points.map((p) => [p.id, p]));
   const usedCert = new Set<string>();
@@ -473,6 +478,7 @@ export async function syncBlockPoints(args: {
           eventCount: source.evidence.eventCount,
           events: source.evidence.events.map((e) => ({ ...e })),
         },
+        typingDevice: source.typingDevice,
       };
       span.certificationId = id;
     } else if (!point) {
@@ -488,6 +494,7 @@ export async function syncBlockPoints(args: {
         origin: 'keyboard',
         evidence: { inputTypes: [], eventCount: 0, events: [] },
         priorHashes: [],
+        typingDevice: typingDevice ?? undefined,
       };
       span.certificationId = id;
     } else {

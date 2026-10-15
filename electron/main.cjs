@@ -1,4 +1,5 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const os = require('node:os');
 const path = require('node:path');
 
 const isDev = process.env.ELECTRON === '1' || !app.isPackaged;
@@ -16,6 +17,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -31,6 +33,11 @@ function createWindow() {
     void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 }
+
+ipcMain.handle('humanuscript:device-name', () => {
+  const name = os.hostname();
+  return typeof name === 'string' ? name.trim() : '';
+});
 
 app.whenReady().then(() => {
   createWindow();
