@@ -14,6 +14,7 @@
     "build:electron": "cross-env ELECTRON=1 tsc -b && cross-env ELECTRON=1 vite build",
     "make:icns": "node scripts/make-icns.cjs",
     "pack:mac": "node scripts/pack-mac.cjs",
+    "dispatch:pack-mac": "node scripts/dispatch-pack-mac.cjs",
     "pack:mac:all": "node scripts/pack-mac.cjs --all",
     "pack:mac:intel": "node scripts/pack-mac.cjs --intel",
     "test": "node --experimental-strip-types --test src/core/*.test.ts",
