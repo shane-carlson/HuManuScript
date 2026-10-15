@@ -33,9 +33,31 @@ import {
   saveEditorView,
   type EditorViewMode,
 } from '../storage.ts';
+import { CertificationMark } from './CertificationMark.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
+import {
+  IconBlockQuote,
+  IconBold,
+  IconBulletList,
+  IconCertificationView,
+  IconChapter,
+  IconImage,
+  IconItalic,
+  IconManuscriptView,
+  IconNumberList,
+  IconPageBreak,
+  IconParagraph,
+  IconRedo,
+  IconScene,
+  IconSceneBreak,
+  IconSection,
+  IconTable,
+  IconUnderline,
+  IconUndo,
+  ToolbarIconButton,
+} from './ManuscriptToolbarIcons.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
@@ -256,67 +278,111 @@ export function Editor({
       <main className="canvas manuscript-surface">
         <div className="canvas-head">
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>Chapter</button>
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>Scene</button>
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>Section</button>
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>Paragraph</button>
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>Table</button>
-          <button type="button" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>Image</button>
-          <button type="button" onClick={() => insertNear('pageBreak')}>Page break</button>
-          <button type="button" onClick={() => insertNear('divider')}>Scene break</button>
-          <button type="button" onClick={() => insertNear('blockquote')}>Block quote</button>
+          <ToolbarIconButton label="Chapter" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>
+            <IconChapter />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Scene" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>
+            <IconScene />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Section" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>
+            <IconSection />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
+            <IconParagraph />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Table" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>
+            <IconTable />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
+            <IconImage />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Page break" onClick={() => insertNear('pageBreak')}>
+            <IconPageBreak />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Scene break" onClick={() => insertNear('divider')}>
+            <IconSceneBreak />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
+            <IconBlockQuote />
+          </ToolbarIconButton>
           <span className="toolbar-gap" />
-          <button type="button" aria-label="Bold" onClick={() => onFormat('bold')}><b>B</b></button>
-          <button type="button" aria-label="Italic" onClick={() => onFormat('italic')}><i>I</i></button>
-          <button type="button" aria-label="Underline" onClick={() => onFormat('underline')}><u>U</u></button>
+          <ToolbarIconButton label="Bold" onClick={() => onFormat('bold')}>
+            <IconBold />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Italic" onClick={() => onFormat('italic')}>
+            <IconItalic />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
+            <IconUnderline />
+          </ToolbarIconButton>
           <span className="toolbar-gap" />
-          <button
-            type="button"
-            aria-label="Bullet list"
+          <ToolbarIconButton
+            label="Bullet list"
             disabled={!selection}
             onClick={() => {
               if (!selection) return;
               commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
             }}
           >
-            • List
-          </button>
-          <button
-            type="button"
-            aria-label="Numbered list"
+            <IconBulletList />
+          </ToolbarIconButton>
+          <ToolbarIconButton
+            label="Numbered list"
             disabled={!selection}
             onClick={() => {
               if (!selection) return;
               commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
             }}
           >
-            1. List
-          </button>
+            <IconNumberList />
+          </ToolbarIconButton>
           <span className="toolbar-gap" />
-          <button type="button" onClick={() => { const previous = undo[undo.length - 1]; if (!previous) return; setUndo(undo.slice(0, -1)); setRedo([doc, ...redo]); replace(previous); }} disabled={!undo.length}>Undo</button>
-          <button type="button" onClick={() => { const next = redo[0]; if (!next) return; setRedo(redo.slice(1)); setUndo([...undo, doc]); replace(next); }} disabled={!redo.length}>Redo</button>
+          <ToolbarIconButton
+            label="Undo"
+            disabled={!undo.length}
+            onClick={() => {
+              const previous = undo[undo.length - 1];
+              if (!previous) return;
+              setUndo(undo.slice(0, -1));
+              setRedo([doc, ...redo]);
+              replace(previous);
+            }}
+          >
+            <IconUndo />
+          </ToolbarIconButton>
+          <ToolbarIconButton
+            label="Redo"
+            disabled={!redo.length}
+            onClick={() => {
+              const next = redo[0];
+              if (!next) return;
+              setRedo(redo.slice(1));
+              setUndo([...undo, doc]);
+              replace(next);
+            }}
+          >
+            <IconRedo />
+          </ToolbarIconButton>
           <span className="toolbar-gap" />
           <div className="view-toggle" role="group" aria-label="Editor view">
-            <button
-              type="button"
-              className={viewMode === 'manuscript' ? 'is-active' : ''}
-              aria-pressed={viewMode === 'manuscript'}
+            <ToolbarIconButton
+              label="Manuscript view"
+              active={viewMode === 'manuscript'}
               onClick={() => setViewMode('manuscript')}
             >
-              Manuscript
-            </button>
-            <button
-              type="button"
-              className={viewMode === 'highlights' ? 'is-active' : ''}
-              aria-pressed={viewMode === 'highlights'}
+              <IconManuscriptView />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              label="Certification highlights"
+              active={viewMode === 'highlights'}
               onClick={() => setViewMode('highlights')}
             >
-              Certification
-            </button>
+              <IconCertificationView />
+            </ToolbarIconButton>
           </div>
           <span className="toolbar-gap" />
           {!focusMode ? (
-            <button type="button" className="focus-enter" onClick={() => onFocusModeChange?.(true)}>
+            <button type="button" className="focus-enter" title="Full screen" onClick={() => onFocusModeChange?.(true)}>
               Full screen
             </button>
           ) : null}
@@ -615,18 +681,23 @@ export function Editor({
       <aside className={`points${certCollapsed ? ' is-collapsed' : ''}`}>
         <button
           type="button"
-          className="cert-collapse-toggle"
+          className={`cert-collapse-toggle${certCollapsed ? ' is-collapsed-mark' : ''}`}
           onClick={() => setCertCollapsed((c) => !c)}
           aria-expanded={!certCollapsed}
           aria-label={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
-          title={certCollapsed ? 'Expand' : 'Collapse'}
+          title={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
         >
-          {certCollapsed ? '‹' : '›'}
+          {certCollapsed ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>
         <div className="points-body">
           <div className="points-head">
-            <p className="eyebrow">Certification</p>
-            <h2>Sealed passages</h2>
+            <div className="points-head__brand">
+              <CertificationMark size={28} className="points-head__mark" />
+              <div>
+                <p className="eyebrow">Certification</p>
+                <h2>Sealed passages</h2>
+              </div>
+            </div>
           </div>
           {doc.points.length === 0 ? (
             <p className="points-empty">Nothing is sealed yet. Keyboard text lands here with a content hash and the input events behind it. Pasted text never will.</p>

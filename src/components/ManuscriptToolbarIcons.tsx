@@ -1,0 +1,195 @@
+import type { ReactNode } from 'react';
+
+export function ToolbarIconButton({
+  label,
+  onClick,
+  disabled,
+  active,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`toolbar-icon-btn${active ? ' is-active' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+    >
+      {children}
+    </button>
+  );
+}
+
+const iconProps = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+export function IconChapter() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M5 5h8v14H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+      <path d="M13 5h6v14h-6" />
+      <path d="M9 9h2M9 13h2" />
+    </svg>
+  );
+}
+
+export function IconScene() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M7 5l2-2h6l2 2" />
+      <path d="M3 10h18" />
+    </svg>
+  );
+}
+
+export function IconSection() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 6h16M4 12h12M4 18h8" />
+    </svg>
+  );
+}
+
+export function IconParagraph() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M14 4v16" />
+      <path d="M10 20H6a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2h2a2 2 0 0 0 0-4H6" />
+    </svg>
+  );
+}
+
+export function IconTable() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 11h18M9 5v14M15 5v14" />
+    </svg>
+  );
+}
+
+export function IconImage() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="10" r="2" />
+      <path d="M21 16l-5-5-4 4-2-2-5 5" />
+    </svg>
+  );
+}
+
+export function IconPageBreak() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M7 5h10v14H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+      <path d="M9 12h6" strokeDasharray="3 3" />
+      <path d="M17 8v8" />
+    </svg>
+  );
+}
+
+export function IconSceneBreak() {
+  return (
+    <svg {...iconProps} aria-hidden="true" fill="currentColor" stroke="none">
+      <circle cx="6" cy="12" r="1.25" />
+      <circle cx="12" cy="12" r="1.25" />
+      <circle cx="18" cy="12" r="1.25" />
+    </svg>
+  );
+}
+
+export function IconBlockQuote() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M7 7h4v6H8a2 2 0 0 1-2-2V7zM13 11h4v6h-3a2 2 0 0 1-2-2v-4z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconBold() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M8 5h5.5a3.5 3.5 0 0 1 0 7H8V5zm0 7h6a3.5 3.5 0 0 1 0 7H8v-7z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconItalic() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M14 5h-4M10 19h4M14 5l-4 14" />
+    </svg>
+  );
+}
+
+export function IconUnderline() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M6 5v5a6 6 0 0 0 12 0V5M4 19h16" />
+    </svg>
+  );
+}
+
+export function IconBulletList() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M9 6h12M9 12h12M9 18h12" />
+      <circle cx="5" cy="6" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="18" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconNumberList() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M10 6h11M10 12h11M10 18h11" />
+      <path d="M4 6h1v4H4M4 16h2" />
+    </svg>
+  );
+}
+
+export function IconUndo() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M9 7H5v4" />
+      <path d="M5 11a7 7 0 1 1 2 5" />
+    </svg>
+  );
+}
+
+export function IconRedo() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M15 7h4v4" />
+      <path d="M19 11a7 7 0 1 1-2 5" />
+    </svg>
+  );
+}
+
+export function IconManuscriptView() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M5 5h8v14H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+      <path d="M13 5h6v14h-6" />
+    </svg>
+  );
+}
+
+export function IconCertificationView() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 6h16v12H4z" />
+      <path d="M7 10h4M7 14h7" stroke="var(--good, #2d8a4e)" />
+      <path d="M14 9l2 2 3-4" stroke="var(--good, #2d8a4e)" />
+    </svg>
+  );
+}
