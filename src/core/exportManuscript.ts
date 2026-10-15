@@ -95,6 +95,26 @@ function bodyMarkdown(doc: ManuscriptDocument): string {
         lines.push(block.marks.length ? markedToMarkdown(block.text, block.marks) : raw, '');
         break;
       }
+      case 'table': {
+        const rows = block.tableRows ?? [];
+        if (!rows.length) break;
+        const cols = Math.max(...rows.map((r) => r.length), 1);
+        const header = rows[0] ?? [];
+        lines.push(
+          `| ${Array.from({ length: cols }, (_, i) => (header[i] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`,
+          `| ${Array.from({ length: cols }, () => '---').join(' | ')} |`,
+        );
+        for (const row of rows.slice(1)) {
+          lines.push(`| ${Array.from({ length: cols }, (_, i) => (row[i] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`);
+        }
+        lines.push('');
+        break;
+      }
+      case 'image':
+        if (block.imageSrc) {
+          lines.push(`![${block.imageAlt?.trim() || 'image'}](${block.imageSrc})`, '');
+        }
+        break;
     }
   }
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
@@ -117,6 +137,15 @@ function bodyPlain(doc: ManuscriptDocument): string {
         break;
       case 'paragraph':
         if (block.text.trim()) lines.push(block.text.trim(), '');
+        break;
+      case 'table': {
+        const rows = block.tableRows ?? [];
+        for (const row of rows) lines.push(row.join('\t'), '');
+        break;
+      }
+      case 'image':
+        if (block.imageAlt?.trim()) lines.push(`[Image: ${block.imageAlt.trim()}]`, '');
+        else if (block.imageSrc) lines.push('[Image]', '');
         break;
     }
   }
@@ -148,6 +177,17 @@ function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
         parts.push(`\\fi720 ${inner}\\par`);
         break;
       }
+      case 'table': {
+        const rows = block.tableRows ?? [];
+        for (const row of rows) {
+          parts.push(`\\pard ${row.map((c) => rtfEscape(c)).join('\\tab ')}\\par`);
+        }
+        parts.push('\\pard\\par');
+        break;
+      }
+      case 'image':
+        if (block.imageAlt?.trim()) parts.push(`\\pard\\i ${rtfEscape(`[Image: ${block.imageAlt.trim()}]`)}\\i0\\par\\pard\\par`);
+        break;
     }
   }
   return parts.join('\n');
@@ -251,6 +291,17 @@ function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
         if (para) children.push(para);
         break;
       }
+      case 'table': {
+        for (const row of block.tableRows ?? []) {
+          children.push(new Paragraph({ children: row.map((cell) => new TextRun({ text: cell })) }));
+        }
+        break;
+      }
+      case 'image':
+        if (block.imageAlt?.trim()) {
+          children.push(new Paragraph({ children: [new TextRun({ text: `[Image: ${block.imageAlt.trim()}]`, italics: true })] }));
+        }
+        break;
     }
   }
   return children;
@@ -309,6 +360,14 @@ function bodyOdt(doc: ManuscriptDocument): string {
         break;
       case 'paragraph':
         if (block.text.trim()) parts.push(`<text:p>${xmlEscape(block.text.trim())}</text:p>`);
+        break;
+      case 'table':
+        for (const row of block.tableRows ?? []) {
+          parts.push(`<text:p>${row.map((c) => xmlEscape(c)).join(' — ')}</text:p>`);
+        }
+        break;
+      case 'image':
+        if (block.imageAlt?.trim()) parts.push(`<text:p>${xmlEscape(`[Image: ${block.imageAlt.trim()}]`)}</text:p>`);
         break;
     }
   }

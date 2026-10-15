@@ -19,7 +19,6 @@ import {
 } from './certification.ts';
 import {
   chapterOrder,
-  deleteParagraph,
   dragPreviewLabel,
   emptyBlock,
   manuscriptStats,
@@ -124,6 +123,7 @@ export async function editField(args: {
   end: number;
   insert: string;
   origin: InsertionOrigin | null;
+  pasteHint?: string;
   event: InputEvidence | null;
   now: string;
   newId: () => string;
@@ -147,6 +147,7 @@ export async function editField(args: {
     end: args.end,
     insert,
     origin: args.origin,
+    pasteHint: args.pasteHint,
     newId: args.newId,
   });
   const sealed = await syncBlockPoints({
@@ -422,7 +423,10 @@ export function insertStructure(
 export function removeBlock(doc: ManuscriptDocument, blockId: string): ManuscriptDocument {
   const block = doc.blocks.find((b) => b.id === blockId);
   if (!block) return doc;
-  const blocks = block.type === 'paragraph' ? deleteParagraph(doc.blocks, blockId) : unwrapHeading(doc.blocks, blockId);
+  const blocks =
+    block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
+      ? unwrapHeading(doc.blocks, blockId)
+      : doc.blocks.filter((b) => b.id !== blockId);
   if (blocks === doc.blocks) return doc;
   const provenance = { ...doc.provenance };
   delete provenance[blockId];
@@ -629,6 +633,35 @@ export async function movePassage(args: {
   });
 }
 
+export function updateParagraphMeta(
+  doc: ManuscriptDocument,
+  blockId: string,
+  patch: Partial<Pick<ManuscriptBlock, 'listStyle' | 'indentLevel'>>,
+): ManuscriptDocument {
+  return {
+    ...doc,
+    blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'paragraph' ? { ...b, ...patch } : b)),
+  };
+}
+
+export function updateTableRows(doc: ManuscriptDocument, blockId: string, tableRows: string[][]): ManuscriptDocument {
+  return {
+    ...doc,
+    blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'table' ? { ...b, tableRows } : b)),
+  };
+}
+
+export function updateImageBlock(
+  doc: ManuscriptDocument,
+  blockId: string,
+  patch: { imageSrc?: string; imageAlt?: string },
+): ManuscriptDocument {
+  return {
+    ...doc,
+    blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'image' ? { ...b, ...patch } : b)),
+  };
+}
+
 export function toggleFormat(
   doc: ManuscriptDocument,
   blockId: string,
@@ -712,6 +745,11 @@ export function manuscriptExport(doc: ManuscriptDocument, exportedAt: string) {
       title: block.type === 'paragraph' ? undefined : block.title,
       text: block.type === 'paragraph' ? block.text : undefined,
       marks: block.type === 'paragraph' ? block.marks : undefined,
+      listStyle: block.type === 'paragraph' ? block.listStyle : undefined,
+      indentLevel: block.type === 'paragraph' ? block.indentLevel : undefined,
+      tableRows: block.type === 'table' ? block.tableRows : undefined,
+      imageSrc: block.type === 'image' ? block.imageSrc : undefined,
+      imageAlt: block.type === 'image' ? block.imageAlt : undefined,
     })),
   };
 }

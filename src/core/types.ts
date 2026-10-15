@@ -1,6 +1,8 @@
 /** Block model from Speak Fiction's manuscript editor. */
 
-export type BlockType = 'chapter' | 'scene' | 'section' | 'paragraph';
+export type BlockType = 'chapter' | 'scene' | 'section' | 'paragraph' | 'table' | 'image';
+
+export type ListStyle = 'bullet' | 'number' | null;
 
 export type InlineMarkKind = 'bold' | 'italic' | 'underline' | 'strike';
 
@@ -20,4 +22,12 @@ export interface ManuscriptBlock {
   /** Prose. Empty for headings. */
   text: string;
   marks: InlineMark[];
+  /** Paragraph list style and indent (manuscript formatting). */
+  listStyle?: ListStyle;
+  indentLevel?: number;
+  /** Table cells when type is `table`. */
+  tableRows?: string[][];
+  /** Data URL or object URL when type is `image`. */
+  imageSrc?: string;
+  imageAlt?: string;
 }

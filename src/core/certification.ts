@@ -20,6 +20,8 @@ export interface ProvenanceSpan {
   end: number;
   origin: InsertionOrigin;
   certificationId?: string;
+  /** Best-effort label when origin is paste (clipboard shape, not a verified app). */
+  pasteHint?: string;
 }
 
 export interface InputEvidence {
@@ -240,6 +242,7 @@ export function applyTextChange(args: {
   end: number;
   insert: string;
   origin: InsertionOrigin | null;
+  pasteHint?: string;
   newId: () => string;
 }): TextChange {
   const text = args.text ?? '';
@@ -285,7 +288,13 @@ export function applyTextChange(args: {
   }
 
   if (insertLen > 0 && args.origin) {
-    rewritten.push({ id: args.newId(), start, end: start + insertLen, origin: args.origin });
+    rewritten.push({
+      id: args.newId(),
+      start,
+      end: start + insertLen,
+      origin: args.origin,
+      ...(args.origin === 'paste' && args.pasteHint ? { pasteHint: args.pasteHint } : {}),
+    });
   }
 
   rewritten.sort((a, b) => a.start - b.start || a.end - b.end);

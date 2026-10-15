@@ -11,6 +11,8 @@ const STRUCTURE_RANK: Record<BlockType, number> = {
   scene: 1,
   section: 1,
   paragraph: 2,
+  table: 2,
+  image: 2,
 };
 
 const HEADING_TYPES = new Set<BlockType>(['chapter', 'scene', 'section']);
@@ -21,7 +23,19 @@ export interface BlockRange {
 }
 
 export function emptyBlock(kind: BlockType, id: string): ManuscriptBlock {
-  return { id, type: kind, title: '', text: '', marks: [] };
+  const base: ManuscriptBlock = { id, type: kind, title: '', text: '', marks: [], listStyle: null, indentLevel: 0 };
+  if (kind === 'table') {
+    return {
+      ...base,
+      tableRows: [
+        ['', '', ''],
+        ['', '', ''],
+        ['', '', ''],
+      ],
+    };
+  }
+  if (kind === 'image') return { ...base, imageSrc: '', imageAlt: '' };
+  return base;
 }
 
 export function movableRange(blocks: ManuscriptBlock[], index: number): BlockRange | null {
@@ -119,6 +133,8 @@ export function dragPreviewLabel(block: ManuscriptBlock, chapterNo?: number): st
   }
   if (block.type === 'scene') return block.title.trim() || 'Scene';
   if (block.type === 'section') return block.title.trim() || 'Section';
+  if (block.type === 'table') return 'Table';
+  if (block.type === 'image') return block.imageAlt?.trim() || 'Image';
   const text = block.text.replace(/\s+/g, ' ').trim();
   if (!text) return 'Paragraph';
   return text.length > 42 ? `${text.slice(0, 41)}…` : text;

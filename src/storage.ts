@@ -79,7 +79,7 @@ export function saveManuscriptFocus(focus: boolean): void {
   }
 }
 
-const BLOCKS = new Set<BlockType>(['chapter', 'scene', 'section', 'paragraph']);
+const BLOCKS = new Set<BlockType>(['chapter', 'scene', 'section', 'paragraph', 'table', 'image']);
 const ORIGINS = new Set(['keyboard', 'paste', 'drop', 'other']);
 
 function isSpan(value: unknown): value is ProvenanceSpan {

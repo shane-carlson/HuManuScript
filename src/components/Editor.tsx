@@ -14,12 +14,19 @@ import {
   splitParagraph,
   mergeParagraphBackward,
   toggleFormat,
+  updateImageBlock,
+  updateParagraphMeta,
+  updateTableRows,
   type ManuscriptDocument,
 } from '../core/document.ts';
+import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
+import { clearFormatting, expandCollapsedRange } from '../core/richText.ts';
 import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
-import type { InlineMarkKind } from '../core/types.ts';
+import type { BlockType, InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { loadEditorView, saveEditorView, type EditorViewMode } from '../storage.ts';
+import { ManuscriptImage } from './ManuscriptImage.tsx';
+import { ManuscriptTable } from './ManuscriptTable.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
@@ -154,6 +161,7 @@ export function Editor({
         end: change.end,
         insert: change.insert,
         origin: change.origin,
+        pasteHint: change.pasteHint,
         event: change.event,
         now: new Date().toISOString(),
         newId: ids.current,
@@ -176,6 +184,36 @@ export function Editor({
     commit((current) => toggleFormat(current, selection.blockId, selection, kind));
   };
 
+  const insertAfter = (afterBlockId: string, kind: BlockType) => {
+    commit((current) => {
+      const index = current.blocks.findIndex((b) => b.id === afterBlockId);
+      if (index < 0) return current;
+      return insertStructure(current, kind, index + 1, ids.current());
+    });
+  };
+
+  const onClearFormatForBlock = (blockId: string) => {
+    commit((current) => {
+      const block = current.blocks.find((b) => b.id === blockId);
+      if (!block || block.type !== 'paragraph') return current;
+      if (selection && selection.blockId === blockId) {
+        const range = expandCollapsedRange(block.text, selection.start, selection.end);
+        return {
+          ...current,
+          blocks: current.blocks.map((b) =>
+            b.id === blockId
+              ? { ...b, marks: clearFormatting(b.marks, range.start, range.end, b.text.length) }
+              : b,
+          ),
+        };
+      }
+      return {
+        ...current,
+        blocks: current.blocks.map((b) => (b.id === blockId ? { ...b, marks: [] } : b)),
+      };
+    });
+  };
+
   const showHighlights = viewMode === 'highlights';
 
   return (
@@ -195,10 +233,35 @@ export function Editor({
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>Scene</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>Section</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>Paragraph</button>
+          <button type="button" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>Table</button>
+          <button type="button" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>Image</button>
           <span className="toolbar-gap" />
           <button type="button" aria-label="Bold" onClick={() => onFormat('bold')}><b>B</b></button>
           <button type="button" aria-label="Italic" onClick={() => onFormat('italic')}><i>I</i></button>
           <button type="button" aria-label="Underline" onClick={() => onFormat('underline')}><u>U</u></button>
+          <span className="toolbar-gap" />
+          <button
+            type="button"
+            aria-label="Bullet list"
+            disabled={!selection}
+            onClick={() => {
+              if (!selection) return;
+              commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
+            }}
+          >
+            • List
+          </button>
+          <button
+            type="button"
+            aria-label="Numbered list"
+            disabled={!selection}
+            onClick={() => {
+              if (!selection) return;
+              commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
+            }}
+          >
+            1. List
+          </button>
           <span className="toolbar-gap" />
           <button type="button" onClick={() => { const previous = undo[undo.length - 1]; if (!previous) return; setUndo(undo.slice(0, -1)); setRedo([doc, ...redo]); replace(previous); }} disabled={!undo.length}>Undo</button>
           <button type="button" onClick={() => { const next = redo[0]; if (!next) return; setRedo(redo.slice(1)); setUndo([...undo, doc]); replace(next); }} disabled={!redo.length}>Redo</button>
@@ -253,10 +316,19 @@ export function Editor({
         ) : (
           <div className={`manuscript${dragging != null ? ' is-dragging' : ''}`}>
             {doc.blocks.map((block, index) => {
-              const state = passageState(
-                block.type === 'paragraph' ? doc.provenance[block.id]?.text ?? [] : doc.provenance[block.id]?.title ?? [],
-                block.type === 'paragraph' ? block.text : block.title,
-              );
+              const provSpans =
+                block.type === 'paragraph'
+                  ? doc.provenance[block.id]?.text ?? []
+                  : block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
+                    ? doc.provenance[block.id]?.title ?? []
+                    : [];
+              const provText =
+                block.type === 'paragraph' ? block.text : block.type === 'table' || block.type === 'image' ? '' : block.title;
+              const state = passageState(provSpans, provText);
+              const mixLabel =
+                block.type === 'paragraph' && state === 'mixed'
+                  ? formatMixLabel(provenanceMix(block.text, provSpans))
+                  : null;
               const highlight = activeHit && activeHit.blockId === block.id
                 ? { start: activeHit.start, end: activeHit.end }
                 : null;
@@ -307,50 +379,132 @@ export function Editor({
                     {block.type === 'chapter' && <span className="kicker">Chapter {numbers.get(block.id)}</span>}
                     {block.type === 'scene' && <span className="kicker">Scene</span>}
                     {block.type === 'section' && <span className="kicker">Section</span>}
-                    <ProvenanceField
-                      text={block.type === 'paragraph' ? block.text : block.title}
-                      spans={block.type === 'paragraph' ? doc.provenance[block.id]?.text ?? [] : doc.provenance[block.id]?.title ?? []}
-                      marks={block.type === 'paragraph' ? block.marks : []}
-                      highlight={block.type === 'paragraph' || activeHit?.field === 'title' ? highlight : null}
-                      placeholder={block.type === 'paragraph' ? 'Write the paragraph…' : block.type === 'chapter' ? 'Chapter title' : block.type === 'scene' ? 'Scene title' : 'Section title'}
-                      className={block.type === 'paragraph' ? 'ms-para-editor' : 'ms-title-editor'}
-                      ariaLabel={block.type === 'paragraph' ? 'Paragraph' : `${block.type} title`}
-                      onCommit={(change) => applyCommit(block.id, block.type === 'paragraph' ? 'text' : 'title', change)}
-                      onSplit={(offset) => commit((current) => splitParagraph({ doc: current, blockId: block.id, offset, now: new Date().toISOString(), newId: ids.current }))}
-                      onMergeBackward={() => commit((current) => block.type === 'paragraph'
-                        ? mergeParagraphBackward({ doc: current, blockId: block.id, now: new Date().toISOString(), newId: ids.current })
-                        : current)}
-                      onSelect={(start, end) => setSelection({ blockId: block.id, start, end })}
-                      onFormat={onFormat}
-                      onInternalDrag={(start, end) => {
-                        textDrag.current = { blockId: block.id, start, end };
-                      }}
-                      renderToken={renderToken}
-                      showProvenance={showHighlights}
-                      onInternalDrop={(toOffset) => {
-                        const source = textDrag.current;
-                        textDrag.current = null;
-                        if (!source) return;
-                        commit((current) =>
-                          movePassage({
-                            doc: current,
-                            fromId: source.blockId,
-                            fromStart: source.start,
-                            fromEnd: source.end,
-                            toId: block.id,
-                            toOffset,
-                            now: new Date().toISOString(),
-                            newId: ids.current,
-                            moveId: ids.current(),
-                          }),
-                        );
-                      }}
-                    />
+                    {block.type === 'table' && <span className="kicker">Table</span>}
+                    {block.type === 'image' && <span className="kicker">Image</span>}
+                    {block.type === 'table' ? (
+                      <ManuscriptTable
+                        rows={block.tableRows}
+                        onCellChange={(row, col, value) => {
+                          commit((current) => {
+                            const b = current.blocks.find((x) => x.id === block.id);
+                            if (!b || b.type !== 'table') return current;
+                            const rows = (b.tableRows ?? [['']]).map((r) => [...r]);
+                            while (rows.length <= row) rows.push([]);
+                            const line = rows[row]!;
+                            while (line.length <= col) line.push('');
+                            line[col] = value;
+                            return updateTableRows(current, block.id, rows);
+                          });
+                        }}
+                        onAddRow={() => {
+                          commit((current) => {
+                            const b = current.blocks.find((x) => x.id === block.id);
+                            if (!b || b.type !== 'table') return current;
+                            const rows = [...(b.tableRows ?? [['', '', '']])];
+                            const cols = Math.max(...rows.map((r) => r.length), 1);
+                            rows.push(Array.from({ length: cols }, () => ''));
+                            return updateTableRows(current, block.id, rows);
+                          });
+                        }}
+                        onAddColumn={() => {
+                          commit((current) => {
+                            const b = current.blocks.find((x) => x.id === block.id);
+                            if (!b || b.type !== 'table') return current;
+                            const rows = (b.tableRows ?? [['']]).map((r) => [...r, '']);
+                            return updateTableRows(current, block.id, rows);
+                          });
+                        }}
+                        onRemoveRow={() => {
+                          commit((current) => {
+                            const b = current.blocks.find((x) => x.id === block.id);
+                            if (!b || b.type !== 'table') return current;
+                            const rows = [...(b.tableRows ?? [])];
+                            if (rows.length <= 1) return current;
+                            rows.pop();
+                            return updateTableRows(current, block.id, rows);
+                          });
+                        }}
+                      />
+                    ) : block.type === 'image' ? (
+                      <ManuscriptImage
+                        src={block.imageSrc}
+                        alt={block.imageAlt}
+                        onPickFile={(file) => {
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+                            if (!dataUrl) return;
+                            commit((current) => updateImageBlock(current, block.id, { imageSrc: dataUrl }));
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                        onAltChange={(alt) => commit((current) => updateImageBlock(current, block.id, { imageAlt: alt }))}
+                        onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '' }))}
+                      />
+                    ) : (
+                      <ProvenanceField
+                        text={block.type === 'paragraph' ? block.text : block.title}
+                        spans={block.type === 'paragraph' ? doc.provenance[block.id]?.text ?? [] : doc.provenance[block.id]?.title ?? []}
+                        marks={block.type === 'paragraph' ? block.marks : []}
+                        highlight={block.type === 'paragraph' || activeHit?.field === 'title' ? highlight : null}
+                        placeholder={block.type === 'paragraph' ? 'Write the paragraph…' : block.type === 'chapter' ? 'Chapter title' : block.type === 'scene' ? 'Scene title' : 'Section title'}
+                        className={block.type === 'paragraph' ? 'ms-para-editor' : 'ms-title-editor'}
+                        ariaLabel={block.type === 'paragraph' ? 'Paragraph' : `${block.type} title`}
+                        listStyle={block.type === 'paragraph' ? block.listStyle ?? null : null}
+                        indentLevel={block.type === 'paragraph' ? block.indentLevel ?? 0 : 0}
+                        onParagraphMeta={(patch) => commit((current) => updateParagraphMeta(current, block.id, patch))}
+                        onInsertTable={() => insertAfter(block.id, 'table')}
+                        onInsertImage={() => insertAfter(block.id, 'image')}
+                        onCommit={(change) => applyCommit(block.id, block.type === 'paragraph' ? 'text' : 'title', change)}
+                        onSplit={(offset) => commit((current) => splitParagraph({ doc: current, blockId: block.id, offset, now: new Date().toISOString(), newId: ids.current }))}
+                        onMergeBackward={() => commit((current) => block.type === 'paragraph'
+                          ? mergeParagraphBackward({ doc: current, blockId: block.id, now: new Date().toISOString(), newId: ids.current })
+                          : current)}
+                        onSelect={(start, end) => setSelection({ blockId: block.id, start, end })}
+                        onFormat={onFormat}
+                        onClearFormat={() => onClearFormatForBlock(block.id)}
+                        onInternalDrag={(start, end) => {
+                          textDrag.current = { blockId: block.id, start, end };
+                        }}
+                        renderToken={renderToken}
+                        showProvenance={showHighlights}
+                        onInternalDrop={(toOffset) => {
+                          const source = textDrag.current;
+                          textDrag.current = null;
+                          if (!source) return;
+                          commit((current) =>
+                            movePassage({
+                              doc: current,
+                              fromId: source.blockId,
+                              fromStart: source.start,
+                              fromEnd: source.end,
+                              toId: block.id,
+                              toOffset,
+                              now: new Date().toISOString(),
+                              newId: ids.current,
+                              moveId: ids.current(),
+                            }),
+                          );
+                        }}
+                      />
+                    )}
                     <div className="ms-meta">
-                      {showHighlights && (
-                        <span className={`pip pip-${state}`}>{state === 'empty' ? 'Empty' : state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}</span>
+                      {showHighlights && block.type === 'paragraph' && (
+                        <>
+                          <span className={`pip pip-${state}`}>
+                            {state === 'empty' ? 'Empty' : state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
+                          </span>
+                          {mixLabel && <span className="mix-label" title="Character mix in this paragraph">{mixLabel}</span>}
+                        </>
                       )}
-                      <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>{block.type === 'paragraph' ? 'Remove' : 'Remove heading'}</button>
+                      {showHighlights && block.type !== 'paragraph' && block.type !== 'table' && block.type !== 'image' && provText.trim() && (
+                        <span className={`pip pip-${state}`}>
+                          {state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
+                        </span>
+                      )}
+                      <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
+                        {block.type === 'paragraph' || block.type === 'table' || block.type === 'image' ? 'Remove' : 'Remove heading'}
+                      </button>
                     </div>
                   </article>
                 </div>

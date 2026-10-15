@@ -564,6 +564,149 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   border: 0;
 }
 
+.field-context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 200px;
+  max-width: min(280px, 92vw);
+  max-height: min(70vh, 480px);
+  overflow: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--text) 18%, transparent);
+  display: grid;
+  gap: 2px;
+}
+.field-context-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 0.88rem;
+}
+.field-context-menu button:hover { background: var(--bg-elev-2); }
+.field-context-menu__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.field-context-menu__hint {
+  margin: 4px 10px 2px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.ms-field.ms-list-bullet,
+.ms-field.ms-list-number {
+  position: relative;
+  padding-left: 2rem;
+}
+.ms-field.ms-list-bullet::before {
+  content: '•';
+  position: absolute;
+  left: 0.55rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+.ms-field.ms-list-number {
+  counter-increment: ms-list;
+}
+.manuscript {
+  counter-reset: ms-list;
+}
+.ms-field.ms-list-number::before {
+  content: counter(ms-list) '.';
+  position: absolute;
+  left: 0.35rem;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 0.85em;
+}
+
+.mix-label {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-left: 8px;
+}
+
+.ms-table-wrap { margin: 6px 0; }
+.ms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--sans);
+  font-size: 0.92rem;
+}
+.ms-table td {
+  border: 1px solid var(--border-strong);
+  padding: 0;
+}
+.ms-table-cell {
+  width: 100%;
+  border: none;
+  padding: 8px 10px;
+  background: var(--bg);
+  font: inherit;
+}
+.ms-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ms-table-tools button { font-size: 0.8rem; padding: 4px 10px; }
+.ms-table-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  font-family: var(--sans);
+}
+
+.ms-image-wrap { margin: 8px 0; }
+.ms-image-figure { margin: 0; }
+.ms-image {
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.ms-image-figure figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}
+.ms-image-alt-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+}
+.ms-image-alt-label input {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.ms-image-drop {
+  display: block;
+  padding: 28px 16px;
+  border: 2px dashed var(--border-strong);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+.ms-image-file { display: none; }
+
 @media (max-width: 980px) {
   .workspace-layout { grid-template-columns: 1fr; }
   .workspace-layout.is-sidebar-collapsed { grid-template-columns: 1fr; }

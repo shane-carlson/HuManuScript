@@ -1,14 +1,17 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { offsetsFromDomRange, setDomCaretFromOffset } from '../core/domCaret.ts';
 import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/certification.ts';
 import { classifyInsertion } from '../core/certification.ts';
-import type { InlineMark, InlineMarkKind } from '../core/types.ts';
+import { describePasteSource } from '../core/pasteHint.ts';
+import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
+import { FieldContextMenu, type ContextMenuState } from './FieldContextMenu.tsx';
 
 export interface FieldCommit {
   start: number;
   end: number;
   insert: string;
   origin: InsertionOrigin | null;
+  pasteHint?: string;
   event: InputEvidence | null;
   caret: number;
 }
@@ -17,6 +20,7 @@ interface Piece {
   text: string;
   origin: ProvenanceSpan['origin'];
   certificationId?: string;
+  pasteHint?: string;
   marks: InlineMarkKind[];
   hit: boolean;
 }
@@ -52,6 +56,7 @@ function pieces(
       text: text.slice(start, end),
       origin: span?.origin ?? 'other',
       certificationId: span?.certificationId,
+      pasteHint: span?.pasteHint,
       marks: marks.filter((mark) => mark.start <= start && mark.end >= end).map((mark) => mark.kind),
       hit: Boolean(highlight && highlight.start <= start && highlight.end >= end),
     });
@@ -68,6 +73,7 @@ function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean) {
       span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
       span.dataset.origin = piece.origin;
       if (piece.certificationId) span.dataset.cert = piece.certificationId;
+      if (piece.pasteHint) span.title = piece.pasteHint;
     } else {
       span.className = piece.hit ? 'find-hit' : 'prov-plain';
     }
@@ -111,10 +117,16 @@ export function ProvenanceField({
   onMergeBackward,
   onSelect,
   onFormat,
+  onClearFormat,
   onInternalDrag,
   onInternalDrop,
   renderToken = 0,
   showProvenance = true,
+  listStyle = null,
+  indentLevel = 0,
+  onParagraphMeta,
+  onInsertTable,
+  onInsertImage,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -128,13 +140,20 @@ export function ProvenanceField({
   onMergeBackward?: () => void;
   onSelect?: (start: number, end: number) => void;
   onFormat?: (kind: InlineMarkKind) => void;
+  onClearFormat?: () => void;
   onInternalDrag?: (start: number, end: number) => void;
   onInternalDrop?: (offset: number) => void;
   /** Bumped for undo, redo, and other edits that did not originate in this field. */
   renderToken?: number;
   /** When false, show prose only (no origin underlines). */
   showProvenance?: boolean;
+  listStyle?: ListStyle;
+  indentLevel?: number;
+  onParagraphMeta?: (patch: { listStyle?: ListStyle; indentLevel?: number }) => void;
+  onInsertTable?: () => void;
+  onInsertImage?: () => void;
 }) {
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const caret = useRef<number | null>(null);
@@ -188,9 +207,10 @@ export function ProvenanceField({
   const report = () => onSelect?.(selection().start, selection().end);
 
   return (
+    <>
     <div
       ref={ref}
-      className={`ms-field ${className ?? ''}`}
+      className={`ms-field ${className ?? ''}${listStyle ? ` ms-list-${listStyle}` : ''}`}
       contentEditable
       role="textbox"
       aria-multiline="true"
@@ -315,6 +335,7 @@ export function ProvenanceField({
         e.preventDefault();
         const insert = e.clipboardData.getData('text/plain');
         if (!insert) return;
+        const pasteHint = describePasteSource(e.clipboardData);
         const range = selection();
         skipPaste.current = true;
         caret.current = range.start + insert.split(/\r?\n/)[0]!.length;
@@ -323,6 +344,7 @@ export function ProvenanceField({
           end: range.end,
           insert,
           origin: 'paste',
+          pasteHint,
           event: {
             at: new Date().toISOString(),
             inputType: 'insertFromPaste',
@@ -386,6 +408,89 @@ export function ProvenanceField({
       onKeyUp={report}
       onMouseUp={report}
       onFocus={report}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const sel = selection();
+        const word = wordAtCaret(textRef.current, sel.start);
+        setMenu({
+          x: e.clientX,
+          y: e.clientY,
+          hasSelection: sel.end > sel.start,
+          misspelledWord: word.length > 2 ? word : null,
+        });
+      }}
+      style={{
+        paddingLeft: indentLevel ? `${indentLevel * 1.25}rem` : undefined,
+      }}
     />
+    <FieldContextMenu
+      state={menu}
+      onClose={() => setMenu(null)}
+      onCut={() => document.execCommand('cut')}
+      onCopy={() => document.execCommand('copy')}
+      onPaste={async () => {
+        const text = await navigator.clipboard.readText().catch(() => '');
+        if (!text) return;
+        const range = selection();
+        onCommit({
+          start: range.start,
+          end: range.end,
+          insert: text,
+          origin: 'paste',
+          pasteHint: 'Paste · clipboard API',
+          event: {
+            at: new Date().toISOString(),
+            inputType: 'insertFromPaste',
+            data: text,
+            trusted: true,
+          },
+          caret: range.start + text.length,
+        });
+      }}
+      onSelectAll={() => {
+        const el = ref.current;
+        if (!el) return;
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }}
+      onFormat={(kind) => onFormat?.(kind)}
+      onClearFormat={() => onClearFormat?.()}
+      onBullet={() => onParagraphMeta?.({ listStyle: 'bullet' })}
+      onNumber={() => onParagraphMeta?.({ listStyle: 'number' })}
+      onIndent={() => onParagraphMeta?.({ indentLevel: Math.min(8, indentLevel + 1) })}
+      onOutdent={() => onParagraphMeta?.({ indentLevel: Math.max(0, indentLevel - 1) })}
+      onInsertTable={() => onInsertTable?.()}
+      onInsertImage={() => onInsertImage?.()}
+      onReplaceWord={(replacement) => {
+        const sel = selection();
+        const word = wordAtCaret(textRef.current, sel.start);
+        if (!word) return;
+        const start = textRef.current.slice(0, sel.start).search(new RegExp(`${word}\\s*$`));
+        const at = start >= 0 ? start : sel.start;
+        onCommit({
+          start: at,
+          end: at + word.length,
+          insert: replacement,
+          origin: 'keyboard',
+          event: {
+            at: new Date().toISOString(),
+            inputType: 'insertReplacementText',
+            data: replacement,
+            trusted: true,
+          },
+          caret: at + replacement.length,
+        });
+      }}
+    />
+    </>
   );
+}
+
+function wordAtCaret(text: string, at: number): string {
+  const left = text.slice(0, at);
+  const m = left.match(/[\p{L}\p{N}'’-]+$/u);
+  return m?.[0] ?? '';
 }
