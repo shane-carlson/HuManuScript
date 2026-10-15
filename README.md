@@ -28,10 +28,12 @@ Electron wraps the same Vite build as the web app (Speak Fiction’s desktop pat
 
 ```bash
 npm install
-npm run pack:mac
+npm run make:icns   # optional; macOS only — sharper Dock icon
+npm run pack:mac    # arm64 DMG (default)
+npm run pack:mac:all  # arm64 + Intel DMGs
 ```
 
-Artifacts land in `release/`. This first build is **unsigned and not notarized**; after opening the DMG, drag HuManuScript to Applications, then use **Open** from the context menu the first time if Gatekeeper blocks it.
+Artifacts land in `release/`. Signing matches Speak Fiction / StoryBind: set `CSC_LINK` + `CSC_KEY_PASSWORD` or `CSC_NAME` (Developer ID in your keychain) before `pack:mac`. For notarization, also set `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` (or Apple API key vars). Without those, the script builds an **unsigned** DMG for local testing — use **Open** from the context menu the first time if Gatekeeper blocks it.
 
 ```bash
 npm run dev:electron   # Vite + Electron against localhost:47321

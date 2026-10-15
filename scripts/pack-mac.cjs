@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+/**
+ * Mac pack script (Speak Fiction / StoryBind pattern).
+ * Signs when CSC_NAME, CSC_LINK, or CSC_IDENTITY is set; notarizes when Apple API creds are set.
+ */
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const root = path.join(__dirname, '..');
+const extra = process.argv.slice(2);
+const intelOnly = extra.includes('--intel') || extra.includes('--x64');
+const allArches = extra.includes('--all');
+const env = { ...process.env };
+
+const canSign = Boolean(env.CSC_NAME || env.CSC_LINK || env.CSC_IDENTITY);
+const canNotarize = Boolean(
+  (env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) ||
+    (env.APPLE_ID && (env.APPLE_APP_SPECIFIC_PASSWORD || env.APPLE_PASSWORD) && env.APPLE_TEAM_ID),
+);
+
+if (!canSign) {
+  env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
+  console.log('No CSC_* signing identity in env — building an unsigned DMG (local test).');
+} else {
+  console.log('Signing with Developer ID from CSC_* / keychain.');
+}
+
+function run(command, args, extraEnv = {}) {
+  const result = spawnSync(command, args, {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...env, ...extraEnv },
+  });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+run('npm', ['run', 'build:electron']);
+
+const arches = allArches ? ['arm64', 'x64'] : intelOnly ? ['x64'] : ['arm64'];
+const builder = path.join(root, 'node_modules', '.bin', 'electron-builder');
+
+for (const arch of arches) {
+  const archEnv = { HM_MAC_ARCH: arch };
+  const builderArgs = [
+    '--mac',
+    `--${arch}`,
+    '--config',
+    path.join(root, 'electron-builder.config.cjs'),
+    '--publish',
+    'never',
+    ...extra.filter((a) => a !== '--intel' && a !== '--x64' && a !== '--all'),
+  ];
+  builderArgs.push(canNotarize ? '--config.mac.notarize=true' : '--config.mac.notarize=false');
+  run(builder, builderArgs, archEnv);
+}
+
+console.log('Done. Installers are in release/');
