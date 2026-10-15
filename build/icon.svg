@@ -1,28 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="hm-bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+    <linearGradient id="hm-bg" x1="72" y1="48" x2="440" y2="464" gradientUnits="userSpaceOnUse">
       <stop stop-color="#7c5cff"/>
       <stop offset="1" stop-color="#5ee6f2"/>
     </linearGradient>
+    <mask id="person-cut">
+      <rect width="512" height="512" fill="white"/>
+      <!-- Quill shaft cutout through the torso -->
+      <path
+        fill="none"
+        stroke="black"
+        stroke-width="26"
+        stroke-linecap="round"
+        d="M 346 102 L 224 302"
+      />
+    </mask>
   </defs>
+
   <rect width="512" height="512" rx="112" fill="url(#hm-bg)"/>
 
-  <g fill="#12081c" stroke="#12081c" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Head -->
-    <circle cx="214" cy="132" r="30" fill="#12081c" stroke="none"/>
-    <!-- Torso -->
-    <path fill="#12081c" stroke="none" d="M172 168h84l16 108q-42 20-84 20t-84-20l16-108z"/>
-    <!-- Near arm (at side) -->
-    <path fill="none" d="M172 188c-28 8-44 32-48 58"/>
-    <!-- Far arm + hand on quill shaft -->
-    <path fill="none" d="M256 176c36-8 58-34 68-62"/>
-    <!-- Quill: feather, shaft, nib -->
+  <!-- Person: head, neck, shoulders, torso (no arms) -->
+  <g fill="#12081c" mask="url(#person-cut)">
+    <circle cx="222" cy="188" r="34"/>
+    <path d="M208 220h28v12c-7 2-14 2-21 0v-12z"/>
+    <path d="M178 234h88v8H178z"/>
+    <path d="M186 242l74 2 10 108-44 8-44-8 4-110z"/>
+  </g>
+
+  <!-- Quill in front: vane + nib (shaft is the cutout) -->
+  <g fill="#12081c">
     <path
-      fill="#12081c"
-      stroke="none"
-      d="M318 78l28-18 6 22 38 118-12 8-52-112-8-18z"
+      d="M 346 102
+        c46 14 54 88 6 124
+        l-22-10
+        c36-28 42-76 14-100
+        l-6-14z"
     />
-    <path fill="none" d="M324 96l42 132"/>
-    <path fill="none" stroke-width="20" d="M368 232l8 28"/>
+    <path d="M 224 302l-18 28 24-10-6-18z"/>
   </g>
 </svg>
