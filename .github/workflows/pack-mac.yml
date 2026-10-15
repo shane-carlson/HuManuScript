@@ -1,3 +1,4 @@
+# Signed + notarized macOS DMG via electron-builder (see README → GitHub Actions secrets).
 name: Pack Mac DMG
 
 on:
@@ -5,23 +6,75 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: pack-mac-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dmg:
     runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      # Developer ID Application (.p12), base64-encoded — electron-builder accepts this form.
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # Notarization (prefer App Store Connect API key; password flow also supported).
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require signing certificate secrets
+        run: |
+          if [ -z "$CSC_LINK" ] || [ -z "$CSC_KEY_PASSWORD" ]; then
+            echo "::error::Add repository secrets CSC_LINK (base64 .p12) and CSC_KEY_PASSWORD."
+            exit 1
+          fi
+
+      - name: Require notarization secrets
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          if [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            if [ -z "$APPLE_API_KEY" ]; then
+              echo "::error::APPLE_API_KEY_ID is set; add APPLE_API_KEY (contents of the .p8 file)."
+              exit 1
+            fi
+            echo "Using App Store Connect API key for notarization."
+            exit 0
+          fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "Using Apple ID app-specific password for notarization."
+            exit 0
+          fi
+          echo "::error::Set either (APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER) or (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID)."
+          exit 1
+
+      - name: Install Apple notarization API key
+        if: ${{ secrets.APPLE_API_KEY_ID != '' }}
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+
       - run: npm ci
       - run: npm test
       - run: npm run make:icns
       - run: npm run pack:mac
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
       - uses: actions/upload-artifact@v4
         with:
-          name: HuManuScript-dmg-arm64
+          name: HuManuScript-dmg-arm64-signed
           path: release/*.dmg
           if-no-files-found: error

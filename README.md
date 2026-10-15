@@ -35,6 +35,22 @@ npm run pack:mac:all  # arm64 + Intel DMGs
 
 Artifacts land in `release/`. Signing matches Speak Fiction / StoryBind: set `CSC_LINK` + `CSC_KEY_PASSWORD` or `CSC_NAME` (Developer ID in your keychain) before `pack:mac`. For notarization, also set `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` (or Apple API key vars). Without those, the script builds an **unsigned** DMG for local testing — use **Open** from the context menu the first time if Gatekeeper blocks it.
 
+#### GitHub Actions (signed DMG)
+
+The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` pushes and manual dispatch. It **requires** repository secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `CSC_LINK` | Base64 of your **Developer ID Application** `.p12` (`base64 -i cert.p12 \| pbcopy`) |
+| `CSC_KEY_PASSWORD` | Password for that `.p12` |
+| `APPLE_API_KEY` | Contents of the App Store Connect API `.p8` key (recommended) |
+| `APPLE_API_KEY_ID` | Key ID (e.g. `ABCD1234`) |
+| `APPLE_API_ISSUER` | Issuer UUID from App Store Connect |
+
+**Or** instead of the API key trio: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`.
+
+The workflow uploads `HuManuScript-*-arm64-signed` from the Actions **Artifacts** tab. Local `pack:mac` still works unsigned when those env vars are unset.
+
 ```bash
 npm run dev:electron   # Vite + Electron against localhost:47321
 ```
