@@ -1,37 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="hm-bg" x1="72" y1="48" x2="440" y2="464" gradientUnits="userSpaceOnUse">
+    <linearGradient id="hm-bg" x1="80" y1="56" x2="432" y2="456" gradientUnits="userSpaceOnUse">
       <stop stop-color="#7c5cff"/>
       <stop offset="1" stop-color="#5ee6f2"/>
     </linearGradient>
-    <mask id="person-cut">
+    <mask id="bust-cut">
       <rect width="512" height="512" fill="white"/>
       <path
         fill="none"
         stroke="black"
-        stroke-width="20"
+        stroke-width="18"
         stroke-linecap="round"
-        d="M 352 98 L 224 304"
+        d="M 342 108 L 228 310"
       />
     </mask>
   </defs>
 
   <rect width="512" height="512" rx="112" fill="url(#hm-bg)"/>
 
-  <g fill="#12081c" mask="url(#person-cut)">
-    <circle cx="224" cy="180" r="32"/>
-    <path d="M210 210h28v10c-7 2-14 2-21 0v-10z"/>
-    <path d="M182 224h84v8H182z"/>
-    <path d="M190 232h68v112h-68V232z"/>
+  <!-- Person symbol: head + sloped shoulders + torso (one bust, no neck peg) -->
+  <g fill="#12081c" mask="url(#bust-cut)">
+    <circle cx="232" cy="166" r="36"/>
+    <path
+      d="M 172 208
+        Q 232 186 292 208
+        Q 302 222 296 342
+        Q 232 358 168 342
+        Q 162 222 172 208
+        Z"
+    />
   </g>
 
-  <g fill="#12081c">
-    <path
-      d="M 352 98
-        C 404 118 412 196 368 228
-        L 346 214
-        C 378 182 384 132 352 98 Z"
-    />
-    <path d="M 224 304l-14 28 20-8-6-20z"/>
-  </g>
+  <!-- Quill: vane + nib on the same shaft (shaft = cutout gap between them) -->
+  <path
+    fill="#12081c"
+    d="M 342 108
+      C 392 124 402 198 356 232
+      L 332 216
+      C 368 178 360 132 342 108
+      Z
+      M 228 310
+      L 208 346
+      L 236 322
+      L 244 302
+      Z"
+  />
 </svg>
