@@ -7,6 +7,14 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.join(__dirname, '..');
+
+if (process.platform !== 'darwin') {
+  console.error('pack:mac must run on macOS. electron-builder cannot produce a DMG on Linux or Windows.');
+  console.error('On a Mac: git pull && npm ci && npm run make:icns && npm run pack:mac');
+  console.error('Or trigger the "Pack Mac DMG" GitHub Action on main (artifact in Actions).');
+  process.exit(1);
+}
+
 const extra = process.argv.slice(2);
 const intelOnly = extra.includes('--intel') || extra.includes('--x64');
 const allArches = extra.includes('--all');
