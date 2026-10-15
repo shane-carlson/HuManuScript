@@ -1,48 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="hm-bg" x1="64" y1="40" x2="448" y2="472" gradientUnits="userSpaceOnUse">
+    <linearGradient id="hm-bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
       <stop stop-color="#7c5cff"/>
       <stop offset="1" stop-color="#5ee6f2"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#hm-bg)"/>
-  <!-- Book seen from the bottom edge (page silhouettes) -->
-  <path
-    fill="#12081c"
-    d="M256 458c-88 0-162 26-214 42v-20c54-18 126-44 214-44s160 26 214 44v20c-52-16-126-42-214-42z"
-  />
-  <path
-    fill="none"
-    stroke="#12081c"
-    stroke-width="9"
-    stroke-linecap="round"
-    d="M118 422c44-64 98-96 138-104v156M394 422c-44-64-98-96-138-104v156"
-  />
-  <path
-    fill="none"
-    stroke="#12081c"
-    stroke-width="7"
-    stroke-linecap="round"
-    d="M256 458V332"
-  />
-  <!-- Figure rising from the pages (Speak Fiction arc placement, human silhouette) -->
-  <circle cx="256" cy="142" r="34" fill="#12081c"/>
-  <path
-    fill="#12081c"
-    d="M256 176c-38 0-68 24-76 58l-36 14c-12 5-20 17-18 30l4 22c2 12 12 20 24 20h208c12 0 22-8 24-20l4-22c2-13-6-25-18-30l-36-14c-8-34-38-58-76-58z"
-  />
-  <path
-    fill="none"
-    stroke="#12081c"
-    stroke-width="8"
-    stroke-linecap="round"
-    d="M188 248c-22 6-38 22-46 42M324 248c22 6 38 22 46 42"
-  />
-  <path
-    fill="none"
-    stroke="#12081c"
-    stroke-width="7"
-    stroke-linecap="round"
-    d="M214 118c12-18 28-28 42-28s30 10 42 28"
-  />
+
+  <circle cx="256" cy="110" r="27" fill="#12081c"/>
+  <path fill="#12081c" d="M210 150h92l14 118q-30 16-60 16t-60-16l14-118z"/>
+
+  <g fill="none" stroke="#12081c" stroke-width="18" stroke-linecap="round">
+    <path d="M108 402h140M264 402h140"/>
+    <path d="M96 422h148M268 422h148"/>
+    <path d="M88 442h152M272 442h152"/>
+    <path d="M82 462h156M274 462h156"/>
+    <path d="M78 482h158M276 482h158"/>
+    <path d="M76 502h160M278 502h160"/>
+  </g>
+  <path fill="none" stroke="#12081c" stroke-width="14" stroke-linecap="round" d="M256 284v226"/>
 </svg>
