@@ -54,7 +54,10 @@ jobs:
           exit 1
 
       - name: Install Apple notarization API key
-        if: ${{ secrets.APPLE_API_KEY_ID != '' }}
+        # secrets is not a valid context in step if:; an invalid if fails the
+        # whole workflow at startup (0s, no jobs). APPLE_API_KEY_ID is already
+        # a job env var mapped from the secret.
+        if: ${{ env.APPLE_API_KEY_ID != '' }}
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |

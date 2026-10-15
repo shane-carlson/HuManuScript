@@ -37,7 +37,7 @@ Artifacts land in `release/`. Signing matches Speak Fiction / StoryBind: set `CS
 
 #### GitHub Actions (signed DMG)
 
-The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` pushes and manual dispatch. It **requires** repository secrets:
+The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` pushes and manual dispatch. From a pushed branch, `npm run dispatch:pack-mac` starts that workflow for the current branch (`npm run dispatch:pack-mac -- some-branch` picks another ref). It **requires** repository secrets:
 
 | Secret | Purpose |
 | --- | --- |
