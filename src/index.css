@@ -451,7 +451,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .find label { font-size: 0.8rem; color: var(--text-dim); }
 .find input { max-width: 280px; }
 .toolbar-gap { width: 8px; }
-.manuscript { font-family: var(--serif); }
+.manuscript { font-family: var(--serif); counter-reset: ms-list; }
 .ms-insert-gap { height: 10px; border-radius: 6px; }
 .manuscript.is-dragging .ms-insert-gap { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ms-insert-gap.is-hot { background: color-mix(in srgb, var(--accent) 45%, transparent); height: 16px; }
