@@ -8,6 +8,7 @@ import {
   Document,
   HeadingLevel,
   Packer,
+  PageBreak,
   Paragraph,
   TextRun,
 } from 'docx';
@@ -21,7 +22,8 @@ import {
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
 import { markedToMarkdown, markedToRtf, styledSpans } from './richText.ts';
-import type { ManuscriptBlock } from './types.ts';
+import { dividerDisplayText } from './manuscript.ts';
+import { isProseBlock, type ManuscriptBlock } from './types.ts';
 
 export const SCRIVENER_SPLIT_SEPARATOR = '#';
 const SCENE_BREAK = '* * *';
@@ -89,12 +91,19 @@ function bodyMarkdown(doc: ManuscriptDocument): string {
       case 'scene':
         lines.push('', block.title.trim() ? `**${block.title.trim()}**` : SCENE_BREAK, '');
         break;
-      case 'paragraph': {
-        const raw = block.text.trim();
-        if (!raw) break;
-        lines.push(block.marks.length ? markedToMarkdown(block.text, block.marks) : raw, '');
+      case 'paragraph':
+      case 'blockquote': {
+        const md = proseToMarkdown(block);
+        if (!md) break;
+        lines.push(md, '');
         break;
       }
+      case 'pageBreak':
+        lines.push('', '<!-- pagebreak -->', '');
+        break;
+      case 'divider':
+        lines.push('', dividerDisplayText(block.dividerStyle, block.title), '');
+        break;
       case 'table': {
         const rows = block.tableRows ?? [];
         if (!rows.length) break;
@@ -136,7 +145,17 @@ function bodyPlain(doc: ManuscriptDocument): string {
         lines.push('', SCENE_BREAK, '');
         break;
       case 'paragraph':
-        if (block.text.trim()) lines.push(block.text.trim(), '');
+      case 'blockquote':
+        if (block.text.trim()) {
+          const quoted = block.type === 'blockquote' ? `"${block.text.trim()}"` : block.text.trim();
+          lines.push(quoted, '');
+        }
+        break;
+      case 'pageBreak':
+        lines.push('', '[PAGE BREAK]', '');
+        break;
+      case 'divider':
+        lines.push('', dividerDisplayText(block.dividerStyle, block.title), '');
         break;
       case 'table': {
         const rows = block.tableRows ?? [];
@@ -170,11 +189,21 @@ function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
         parts.push(`\\pard\\qc ${rtfEscape(label)}\\par\\pard\\ql\\par`);
         break;
       }
-      case 'paragraph': {
+      case 'paragraph':
+      case 'blockquote': {
         const raw = block.text ?? '';
         if (!raw.trim()) break;
         const inner = block.marks.length ? markedToRtf(raw, block.marks) : rtfEscape(raw.trim());
-        parts.push(`\\fi720 ${inner}\\par`);
+        const indent = block.type === 'blockquote' ? '\\li1440' : '\\fi720';
+        parts.push(`\\pard${indent} ${inner}\\par`);
+        break;
+      }
+      case 'pageBreak':
+        parts.push('\\page\\par');
+        break;
+      case 'divider': {
+        const label = dividerDisplayText(block.dividerStyle, block.title);
+        parts.push(`\\pard\\qc ${rtfEscape(label)}\\par\\pard\\ql\\par`);
         break;
       }
       case 'table': {
@@ -242,7 +271,19 @@ function certificationDocxParagraphs(model: CertificationPageModel): Paragraph[]
   return out;
 }
 
-function paragraphToDocx(block: ManuscriptBlock): Paragraph | null {
+function proseToMarkdown(block: ManuscriptBlock): string | null {
+  if (!isProseBlock(block.type)) return null;
+  const raw = block.text.trim();
+  if (!raw) return null;
+  const md = block.marks.length ? markedToMarkdown(block.text, block.marks) : raw;
+  if (block.type === 'blockquote') {
+    return md.split('\n').map((line) => `> ${line}`).join('\n');
+  }
+  return md;
+}
+
+function proseToDocx(block: ManuscriptBlock): Paragraph | null {
+  if (!isProseBlock(block.type)) return null;
   const raw = block.text ?? '';
   if (!raw.trim()) return null;
   const runs = styledSpans(raw, block.marks).map(
@@ -250,12 +291,15 @@ function paragraphToDocx(block: ManuscriptBlock): Paragraph | null {
       new TextRun({
         text: span.text,
         bold: span.bold || undefined,
-        italics: span.italic || undefined,
+        italics: block.type === 'blockquote' ? true : span.italic || undefined,
         strike: span.strike || undefined,
         underline: span.underline ? {} : undefined,
       }),
   );
-  return new Paragraph({ children: runs });
+  return new Paragraph({
+    indent: block.type === 'blockquote' ? { left: 720 } : undefined,
+    children: runs,
+  });
 }
 
 function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
@@ -286,11 +330,23 @@ function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
           }),
         );
         break;
-      case 'paragraph': {
-        const para = paragraphToDocx(block);
+      case 'paragraph':
+      case 'blockquote': {
+        const para = proseToDocx(block);
         if (para) children.push(para);
         break;
       }
+      case 'pageBreak':
+        children.push(new Paragraph({ children: [new PageBreak()] }));
+        break;
+      case 'divider':
+        children.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun(dividerDisplayText(block.dividerStyle, block.title))],
+          }),
+        );
+        break;
       case 'table': {
         for (const row of block.tableRows ?? []) {
           children.push(new Paragraph({ children: row.map((cell) => new TextRun({ text: cell })) }));
@@ -360,6 +416,15 @@ function bodyOdt(doc: ManuscriptDocument): string {
         break;
       case 'paragraph':
         if (block.text.trim()) parts.push(`<text:p>${xmlEscape(block.text.trim())}</text:p>`);
+        break;
+      case 'blockquote':
+        if (block.text.trim()) parts.push(`<text:p text:style-name="Quotations">${xmlEscape(block.text.trim())}</text:p>`);
+        break;
+      case 'pageBreak':
+        parts.push('<text:p text:style-name="PageBreak"/>');
+        break;
+      case 'divider':
+        parts.push(`<text:p text:style-name="Center">${xmlEscape(dividerDisplayText(block.dividerStyle, block.title))}</text:p>`);
         break;
       case 'table':
         for (const row of block.tableRows ?? []) {
@@ -441,8 +506,17 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
       y = pdfAddWrapped(doc, block.title.trim() || 'Section', margin, y, width, 6);
     } else if (block.type === 'scene') {
       y = pdfAddWrapped(doc, block.title.trim() || SCENE_BREAK, margin, y, width, 6);
-    } else if (block.type === 'paragraph' && block.text.trim()) {
-      y = pdfAddWrapped(doc, block.text.trim(), margin, y, width, 5);
+    } else if (block.type === 'pageBreak') {
+      doc.addPage();
+      y = 20;
+    } else if (block.type === 'divider') {
+      y = pdfAddWrapped(doc, dividerDisplayText(block.dividerStyle, block.title), margin, y, width, 6);
+      y += 4;
+    } else if ((block.type === 'paragraph' || block.type === 'blockquote') && block.text.trim()) {
+      const text = block.type === 'blockquote' ? `"${block.text.trim()}"` : block.text.trim();
+      const inset = block.type === 'blockquote' ? margin + 8 : margin;
+      const w = block.type === 'blockquote' ? width - 8 : width;
+      y = pdfAddWrapped(doc, text, inset, y, w, 5);
       y += 2;
     }
   }

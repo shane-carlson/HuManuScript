@@ -68,7 +68,7 @@ export function buildCertificationPageModel(doc: ManuscriptDocument, exportedAt:
   for (const block of doc.blocks) {
     if (block.type === 'chapter') chapterNo += 1;
     const label = blockLabel(block, block.type === 'chapter' ? chapterNo : undefined);
-    const field = block.type === 'paragraph' ? 'text' : 'title';
+    const field = block.type === 'paragraph' || block.type === 'blockquote' ? 'text' : 'title';
     const text = field === 'text' ? block.text : block.title;
     const spans = doc.provenance[block.id]?.[field === 'text' ? 'text' : 'title'] ?? [];
     if (!text.trim()) continue;

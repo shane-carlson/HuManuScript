@@ -23,6 +23,9 @@ export function FieldContextMenu({
   onOutdent,
   onInsertTable,
   onInsertImage,
+  onInsertPageBreak,
+  onInsertDivider,
+  onInsertBlockquote,
   onReplaceWord,
 }: {
   state: ContextMenuState | null;
@@ -39,6 +42,9 @@ export function FieldContextMenu({
   onOutdent: () => void;
   onInsertTable: () => void;
   onInsertImage: () => void;
+  onInsertPageBreak: () => void;
+  onInsertDivider: () => void;
+  onInsertBlockquote: () => void;
   onReplaceWord?: (word: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -93,6 +99,9 @@ export function FieldContextMenu({
       <button type="button" role="menuitem" onClick={() => { onIndent(); onClose(); }}>Increase indent</button>
       <button type="button" role="menuitem" onClick={() => { onOutdent(); onClose(); }}>Decrease indent</button>
       <div className="field-context-menu__sep" />
+      <button type="button" role="menuitem" onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
+      <button type="button" role="menuitem" onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
+      <button type="button" role="menuitem" onClick={() => { onInsertBlockquote(); onClose(); }}>Insert block quote</button>
       <button type="button" role="menuitem" onClick={() => { onInsertTable(); onClose(); }}>Insert table…</button>
       <button type="button" role="menuitem" onClick={() => { onInsertImage(); onClose(); }}>Insert image…</button>
       {state.misspelledWord && (

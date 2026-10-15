@@ -29,7 +29,7 @@ import {
   type BlockRange,
 } from './manuscript.ts';
 import { expandCollapsedRange, toggleMark } from './richText.ts';
-import type { BlockType, InlineMarkKind, ManuscriptBlock } from './types.ts';
+import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
 
 export interface ManuscriptDocument {
   version: 1;
@@ -71,8 +71,8 @@ export async function reconcileLoadedDocument(
   let points = doc.points;
   for (const block of doc.blocks) {
     for (const field of ['title', 'text'] as const) {
-      if (field === 'text' && block.type !== 'paragraph') continue;
-      if (field === 'title' && block.type === 'paragraph') continue;
+      if (field === 'text' && !isProseBlock(block.type)) continue;
+      if (field === 'title' && isProseBlock(block.type)) continue;
       const text = field === 'title' ? block.title : block.text;
       const spans = await stripInvalidKeyboardSeals({
         text,
@@ -130,8 +130,8 @@ export async function editField(args: {
 }): Promise<ManuscriptDocument> {
   const block = args.doc.blocks.find((b) => b.id === args.blockId);
   if (!block) return args.doc;
-  if (args.field === 'title' && block.type === 'paragraph') return args.doc;
-  if (args.field === 'text' && block.type !== 'paragraph') return args.doc;
+  if (args.field === 'title' && isProseBlock(block.type)) return args.doc;
+  if (args.field === 'text' && !isProseBlock(block.type)) return args.doc;
 
   const current = args.field === 'title' ? block.title : block.text;
   const insert = args.field === 'title' ? args.insert.replace(/\r?\n/g, ' ') : args.insert;
@@ -290,7 +290,7 @@ export async function splitParagraph(args: {
   const index = args.doc.blocks.findIndex((b) => b.id === args.blockId);
   const block = args.doc.blocks[index];
   if (!block) return args.doc;
-  if (block.type !== 'paragraph') {
+  if (!isProseBlock(block.type)) {
     const id = args.newId();
     const blocks = [...args.doc.blocks];
     blocks.splice(index + 1, 0, emptyBlock('paragraph', id));
@@ -333,10 +333,12 @@ export async function splitParagraph(args: {
   blocks[index] = { ...block, text: leftText, marks: leftMarks };
   blocks.splice(index + 1, 0, {
     id: rightId,
-    type: 'paragraph',
+    type: block.type,
     title: '',
     text: rightText,
     marks: rightMarks,
+    listStyle: block.listStyle ?? null,
+    indentLevel: block.indentLevel ?? 0,
   });
   const points = [
     ...args.doc.points.filter((p) => p.blockId !== block.id && p.blockId !== rightId),
@@ -363,9 +365,9 @@ export async function mergeParagraphBackward(args: {
 }): Promise<ManuscriptDocument> {
   const index = args.doc.blocks.findIndex((b) => b.id === args.blockId);
   const block = args.doc.blocks[index];
-  if (!block || block.type !== 'paragraph' || index <= 0) return args.doc;
+  if (!block || !isProseBlock(block.type) || index <= 0) return args.doc;
   const prev = args.doc.blocks[index - 1]!;
-  if (prev.type !== 'paragraph') {
+  if (!isProseBlock(prev.type) || prev.type !== block.type) {
     if (!block.text) {
       const blocks = args.doc.blocks.filter((b) => b.id !== block.id);
       const provenance = { ...args.doc.provenance };
@@ -640,7 +642,9 @@ export function updateParagraphMeta(
 ): ManuscriptDocument {
   return {
     ...doc,
-    blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'paragraph' ? { ...b, ...patch } : b)),
+    blocks: doc.blocks.map((b) =>
+      b.id === blockId && isProseBlock(b.type) ? { ...b, ...patch } : b,
+    ),
   };
 }
 
@@ -662,6 +666,17 @@ export function updateImageBlock(
   };
 }
 
+export function updateDividerBlock(
+  doc: ManuscriptDocument,
+  blockId: string,
+  patch: { title?: string; dividerStyle?: DividerStyle },
+): ManuscriptDocument {
+  return {
+    ...doc,
+    blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'divider' ? { ...b, ...patch } : b)),
+  };
+}
+
 export function toggleFormat(
   doc: ManuscriptDocument,
   blockId: string,
@@ -671,7 +686,7 @@ export function toggleFormat(
   return {
     ...doc,
     blocks: doc.blocks.map((block) => {
-      if (block.id !== blockId || block.type !== 'paragraph') return block;
+      if (block.id !== blockId || !isProseBlock(block.type)) return block;
       const expanded = expandCollapsedRange(block.text, range.start, range.end);
       return { ...block, marks: toggleMark(block.marks, expanded.start, expanded.end, kind, block.text.length) };
     }),
@@ -683,7 +698,7 @@ export function certificationSummary(doc: ManuscriptDocument): { certified: numb
   let uncertified = 0;
   for (const block of doc.blocks) {
     const prov = doc.provenance[block.id];
-    if (block.type === 'paragraph') {
+    if (isProseBlock(block.type)) {
       const counts = countOriginWords(block.text, prov?.text ?? []);
       certified += counts.certified;
       uncertified += counts.uncertified;
@@ -725,8 +740,8 @@ export function certificationExport(doc: ManuscriptDocument, exportedAt: string)
     passages: doc.blocks.map((block) => ({
       id: block.id,
       type: block.type,
-      text: block.type === 'paragraph' ? block.text : block.title,
-      spans: (block.type === 'paragraph' ? doc.provenance[block.id]?.text : doc.provenance[block.id]?.title) ?? [],
+      text: isProseBlock(block.type) ? block.text : block.title,
+      spans: (isProseBlock(block.type) ? doc.provenance[block.id]?.text : doc.provenance[block.id]?.title) ?? [],
     })),
   };
 }
@@ -742,11 +757,12 @@ export function manuscriptExport(doc: ManuscriptDocument, exportedAt: string) {
     blocks: doc.blocks.map((block) => ({
       id: block.id,
       type: block.type,
-      title: block.type === 'paragraph' ? undefined : block.title,
-      text: block.type === 'paragraph' ? block.text : undefined,
-      marks: block.type === 'paragraph' ? block.marks : undefined,
-      listStyle: block.type === 'paragraph' ? block.listStyle : undefined,
-      indentLevel: block.type === 'paragraph' ? block.indentLevel : undefined,
+      title: isProseBlock(block.type) ? undefined : block.title,
+      text: isProseBlock(block.type) ? block.text : undefined,
+      marks: isProseBlock(block.type) ? block.marks : undefined,
+      listStyle: isProseBlock(block.type) ? block.listStyle : undefined,
+      indentLevel: isProseBlock(block.type) ? block.indentLevel : undefined,
+      dividerStyle: block.type === 'divider' ? block.dividerStyle : undefined,
       tableRows: block.type === 'table' ? block.tableRows : undefined,
       imageSrc: block.type === 'image' ? block.imageSrc : undefined,
       imageAlt: block.type === 'image' ? block.imageAlt : undefined,

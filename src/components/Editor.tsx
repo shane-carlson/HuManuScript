@@ -14,6 +14,7 @@ import {
   splitParagraph,
   mergeParagraphBackward,
   toggleFormat,
+  updateDividerBlock,
   updateImageBlock,
   updateParagraphMeta,
   updateTableRows,
@@ -22,9 +23,10 @@ import {
 import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
 import { clearFormatting, expandCollapsedRange } from '../core/richText.ts';
 import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
-import type { BlockType, InlineMarkKind } from '../core/types.ts';
+import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { loadEditorView, saveEditorView, type EditorViewMode } from '../storage.ts';
+import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
@@ -74,7 +76,7 @@ export function Editor({
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
-  const canvasRef = useRef<HTMLElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     saveEditorView(viewMode);
@@ -192,10 +194,20 @@ export function Editor({
     });
   };
 
+  const insertNear = (kind: BlockType) => {
+    commit((current) => {
+      const index = selection
+        ? current.blocks.findIndex((b) => b.id === selection.blockId)
+        : current.blocks.length - 1;
+      const at = index >= 0 ? index + 1 : 0;
+      return insertStructure(current, kind, at, ids.current());
+    });
+  };
+
   const onClearFormatForBlock = (blockId: string) => {
     commit((current) => {
       const block = current.blocks.find((b) => b.id === blockId);
-      if (!block || block.type !== 'paragraph') return current;
+      if (!block || !isProseBlock(block.type)) return current;
       if (selection && selection.blockId === blockId) {
         const range = expandCollapsedRange(block.text, selection.start, selection.end);
         return {
@@ -227,7 +239,8 @@ export function Editor({
           <span className="focus-hint">Esc</span>
         </div>
       )}
-      <main className="canvas manuscript-surface" ref={canvasRef}>
+      <main className="canvas manuscript-surface">
+        <div className="canvas-head">
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>Chapter</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>Scene</button>
@@ -235,6 +248,9 @@ export function Editor({
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>Paragraph</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>Table</button>
           <button type="button" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>Image</button>
+          <button type="button" onClick={() => insertNear('pageBreak')}>Page break</button>
+          <button type="button" onClick={() => insertNear('divider')}>Scene break</button>
+          <button type="button" onClick={() => insertNear('blockquote')}>Block quote</button>
           <span className="toolbar-gap" />
           <button type="button" aria-label="Bold" onClick={() => onFormat('bold')}><b>B</b></button>
           <button type="button" aria-label="Italic" onClick={() => onFormat('italic')}><i>I</i></button>
@@ -306,7 +322,9 @@ export function Editor({
           <input id="find" value={query} onChange={(e) => { setQuery(e.target.value); setHit(0); }} placeholder="Search the manuscript" />
           <span>{query.trim() ? `${matches.length ? (hit % matches.length) + 1 : 0} of ${matches.length}` : ' '}</span>
         </form>
+        </div>
 
+        <div className="canvas-body" ref={canvasRef}>
         {doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>
@@ -316,17 +334,22 @@ export function Editor({
         ) : (
           <div className={`manuscript${dragging != null ? ' is-dragging' : ''}`}>
             {doc.blocks.map((block, index) => {
-              const provSpans =
-                block.type === 'paragraph'
-                  ? doc.provenance[block.id]?.text ?? []
-                  : block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
-                    ? doc.provenance[block.id]?.title ?? []
-                    : [];
-              const provText =
-                block.type === 'paragraph' ? block.text : block.type === 'table' || block.type === 'image' ? '' : block.title;
+              const provSpans = isProseBlock(block.type)
+                ? doc.provenance[block.id]?.text ?? []
+                : block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
+                  ? doc.provenance[block.id]?.title ?? []
+                  : [];
+              const provText = isProseBlock(block.type)
+                ? block.text
+                : block.type === 'table' ||
+                    block.type === 'image' ||
+                    block.type === 'pageBreak' ||
+                    block.type === 'divider'
+                  ? ''
+                  : block.title;
               const state = passageState(provSpans, provText);
               const mixLabel =
-                block.type === 'paragraph' && state === 'mixed'
+                isProseBlock(block.type) && state === 'mixed'
                   ? formatMixLabel(provenanceMix(block.text, provSpans))
                   : null;
               const highlight = activeHit && activeHit.blockId === block.id
@@ -381,6 +404,9 @@ export function Editor({
                     {block.type === 'section' && <span className="kicker">Section</span>}
                     {block.type === 'table' && <span className="kicker">Table</span>}
                     {block.type === 'image' && <span className="kicker">Image</span>}
+                    {block.type === 'pageBreak' && <span className="kicker">Page break</span>}
+                    {block.type === 'divider' && <span className="kicker">Scene break</span>}
+                    {block.type === 'blockquote' && <span className="kicker">Block quote</span>}
                     {block.type === 'table' ? (
                       <ManuscriptTable
                         rows={block.tableRows}
@@ -441,23 +467,51 @@ export function Editor({
                         onAltChange={(alt) => commit((current) => updateImageBlock(current, block.id, { imageAlt: alt }))}
                         onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '' }))}
                       />
+                    ) : block.type === 'pageBreak' ? (
+                      <ManuscriptPageBreak />
+                    ) : block.type === 'divider' ? (
+                      <ManuscriptDivider
+                        style={block.dividerStyle ?? 'scene'}
+                        label={block.title}
+                        onStyleChange={(dividerStyle) => commit((current) => updateDividerBlock(current, block.id, { dividerStyle }))}
+                        onLabelChange={(title) => commit((current) => updateDividerBlock(current, block.id, { title }))}
+                      />
                     ) : (
                       <ProvenanceField
-                        text={block.type === 'paragraph' ? block.text : block.title}
-                        spans={block.type === 'paragraph' ? doc.provenance[block.id]?.text ?? [] : doc.provenance[block.id]?.title ?? []}
-                        marks={block.type === 'paragraph' ? block.marks : []}
-                        highlight={block.type === 'paragraph' || activeHit?.field === 'title' ? highlight : null}
-                        placeholder={block.type === 'paragraph' ? 'Write the paragraph…' : block.type === 'chapter' ? 'Chapter title' : block.type === 'scene' ? 'Scene title' : 'Section title'}
-                        className={block.type === 'paragraph' ? 'ms-para-editor' : 'ms-title-editor'}
-                        ariaLabel={block.type === 'paragraph' ? 'Paragraph' : `${block.type} title`}
+                        text={isProseBlock(block.type) ? block.text : block.title}
+                        spans={isProseBlock(block.type) ? doc.provenance[block.id]?.text ?? [] : doc.provenance[block.id]?.title ?? []}
+                        marks={isProseBlock(block.type) ? block.marks : []}
+                        highlight={isProseBlock(block.type) || activeHit?.field === 'title' ? highlight : null}
+                        placeholder={
+                          block.type === 'paragraph'
+                            ? 'Write the paragraph…'
+                            : block.type === 'blockquote'
+                              ? 'Block quote…'
+                              : block.type === 'chapter'
+                                ? 'Chapter title'
+                                : block.type === 'scene'
+                                  ? 'Scene title'
+                                  : 'Section title'
+                        }
+                        className={
+                          block.type === 'blockquote'
+                            ? 'ms-para-editor ms-blockquote-editor'
+                            : block.type === 'paragraph'
+                              ? 'ms-para-editor'
+                              : 'ms-title-editor'
+                        }
+                        ariaLabel={isProseBlock(block.type) ? (block.type === 'blockquote' ? 'Block quote' : 'Paragraph') : `${block.type} title`}
                         listStyle={block.type === 'paragraph' ? block.listStyle ?? null : null}
-                        indentLevel={block.type === 'paragraph' ? block.indentLevel ?? 0 : 0}
+                        indentLevel={isProseBlock(block.type) ? block.indentLevel ?? 0 : 0}
                         onParagraphMeta={(patch) => commit((current) => updateParagraphMeta(current, block.id, patch))}
                         onInsertTable={() => insertAfter(block.id, 'table')}
                         onInsertImage={() => insertAfter(block.id, 'image')}
-                        onCommit={(change) => applyCommit(block.id, block.type === 'paragraph' ? 'text' : 'title', change)}
+                        onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
+                        onInsertDivider={() => insertAfter(block.id, 'divider')}
+                        onInsertBlockquote={() => insertAfter(block.id, 'blockquote')}
+                        onCommit={(change) => applyCommit(block.id, isProseBlock(block.type) ? 'text' : 'title', change)}
                         onSplit={(offset) => commit((current) => splitParagraph({ doc: current, blockId: block.id, offset, now: new Date().toISOString(), newId: ids.current }))}
-                        onMergeBackward={() => commit((current) => block.type === 'paragraph'
+                        onMergeBackward={() => commit((current) => isProseBlock(block.type)
                           ? mergeParagraphBackward({ doc: current, blockId: block.id, now: new Date().toISOString(), newId: ids.current })
                           : current)}
                         onSelect={(start, end) => setSelection({ blockId: block.id, start, end })}
@@ -489,7 +543,7 @@ export function Editor({
                       />
                     )}
                     <div className="ms-meta">
-                      {showHighlights && block.type === 'paragraph' && (
+                      {showHighlights && isProseBlock(block.type) && (
                         <>
                           <span className={`pip pip-${state}`}>
                             {state === 'empty' ? 'Empty' : state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
@@ -497,13 +551,21 @@ export function Editor({
                           {mixLabel && <span className="mix-label" title="Character mix in this paragraph">{mixLabel}</span>}
                         </>
                       )}
-                      {showHighlights && block.type !== 'paragraph' && block.type !== 'table' && block.type !== 'image' && provText.trim() && (
+                      {showHighlights &&
+                        !isProseBlock(block.type) &&
+                        block.type !== 'table' &&
+                        block.type !== 'image' &&
+                        block.type !== 'pageBreak' &&
+                        block.type !== 'divider' &&
+                        provText.trim() && (
                         <span className={`pip pip-${state}`}>
                           {state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
                         </span>
                       )}
                       <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
-                        {block.type === 'paragraph' || block.type === 'table' || block.type === 'image' ? 'Remove' : 'Remove heading'}
+                        {block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
+                          ? 'Remove heading'
+                          : 'Remove'}
                       </button>
                     </div>
                   </article>
@@ -532,6 +594,7 @@ export function Editor({
         {!focusMode && (
           <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
         )}
+        </div>
       </main>
 
       {!focusMode && (

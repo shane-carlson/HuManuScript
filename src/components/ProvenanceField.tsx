@@ -127,6 +127,9 @@ export function ProvenanceField({
   onParagraphMeta,
   onInsertTable,
   onInsertImage,
+  onInsertPageBreak,
+  onInsertDivider,
+  onInsertBlockquote,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -152,6 +155,9 @@ export function ProvenanceField({
   onParagraphMeta?: (patch: { listStyle?: ListStyle; indentLevel?: number }) => void;
   onInsertTable?: () => void;
   onInsertImage?: () => void;
+  onInsertPageBreak?: () => void;
+  onInsertDivider?: () => void;
+  onInsertBlockquote?: () => void;
 }) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -464,6 +470,9 @@ export function ProvenanceField({
       onOutdent={() => onParagraphMeta?.({ indentLevel: Math.max(0, indentLevel - 1) })}
       onInsertTable={() => onInsertTable?.()}
       onInsertImage={() => onInsertImage?.()}
+      onInsertPageBreak={() => onInsertPageBreak?.()}
+      onInsertDivider={() => onInsertDivider?.()}
+      onInsertBlockquote={() => onInsertBlockquote?.()}
       onReplaceWord={(replacement) => {
         const sel = selection();
         const word = wordAtCaret(textRef.current, sel.start);

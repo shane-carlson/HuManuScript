@@ -4,13 +4,16 @@
  * Dragging a heading moves the heading plus the body under it.
  */
 
-import type { BlockType, ManuscriptBlock } from './types.ts';
+import type { BlockType, DividerStyle, ManuscriptBlock } from './types.ts';
 
 const STRUCTURE_RANK: Record<BlockType, number> = {
   chapter: 0,
   scene: 1,
   section: 1,
   paragraph: 2,
+  blockquote: 2,
+  pageBreak: 2,
+  divider: 2,
   table: 2,
   image: 2,
 };
@@ -35,6 +38,9 @@ export function emptyBlock(kind: BlockType, id: string): ManuscriptBlock {
     };
   }
   if (kind === 'image') return { ...base, imageSrc: '', imageAlt: '' };
+  if (kind === 'pageBreak') return { ...base, type: 'pageBreak' };
+  if (kind === 'divider') return { ...base, type: 'divider', dividerStyle: 'scene' };
+  if (kind === 'blockquote') return { ...base, type: 'blockquote' };
   return base;
 }
 
@@ -135,6 +141,13 @@ export function dragPreviewLabel(block: ManuscriptBlock, chapterNo?: number): st
   if (block.type === 'section') return block.title.trim() || 'Section';
   if (block.type === 'table') return 'Table';
   if (block.type === 'image') return block.imageAlt?.trim() || 'Image';
+  if (block.type === 'pageBreak') return 'Page break';
+  if (block.type === 'divider') return block.title.trim() || 'Scene break';
+  if (block.type === 'blockquote') {
+    const text = block.text.replace(/\s+/g, ' ').trim();
+    if (!text) return 'Block quote';
+    return text.length > 42 ? `${text.slice(0, 41)}…` : text;
+  }
   const text = block.text.replace(/\s+/g, ' ').trim();
   if (!text) return 'Paragraph';
   return text.length > 42 ? `${text.slice(0, 41)}…` : text;
@@ -149,6 +162,12 @@ export function unwrapHeading(blocks: ManuscriptBlock[], blockId: string): Manus
 
 export function deleteParagraph(blocks: ManuscriptBlock[], blockId: string): ManuscriptBlock[] {
   return blocks.filter((b) => !(b.id === blockId && b.type === 'paragraph'));
+}
+
+export function dividerDisplayText(style: DividerStyle | undefined, title: string): string {
+  if (title.trim()) return title.trim();
+  const map: Record<DividerStyle, string> = { scene: '* * *', line: '— — —', ornament: '§' };
+  return map[style ?? 'scene'];
 }
 
 export function countWords(text: string): number {
@@ -169,7 +188,7 @@ export function manuscriptStats(blocks: ManuscriptBlock[]): {
     if (block.type === 'chapter') stats.chapters += 1;
     else if (block.type === 'scene') stats.scenes += 1;
     else if (block.type === 'section') stats.sections += 1;
-    else {
+    else if (block.type === 'paragraph' || block.type === 'blockquote') {
       stats.paragraphs += 1;
       stats.words += countWords(block.text);
     }
@@ -186,7 +205,11 @@ export function findMatches(
   const hits: Array<{ blockId: string; field: 'title' | 'text'; start: number; end: number }> = [];
   for (const block of blocks) {
     const fields: Array<['title' | 'text', string]> =
-      block.type === 'paragraph' ? [['text', block.text]] : [['title', block.title]];
+      block.type === 'paragraph' || block.type === 'blockquote'
+        ? [['text', block.text]]
+        : block.type === 'pageBreak' || block.type === 'divider' || block.type === 'table' || block.type === 'image'
+          ? []
+          : [['title', block.title]];
     for (const [field, value] of fields) {
       const hay = value.toLowerCase();
       let from = 0;

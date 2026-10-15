@@ -1,6 +1,18 @@
 /** Block model from Speak Fiction's manuscript editor. */
 
-export type BlockType = 'chapter' | 'scene' | 'section' | 'paragraph' | 'table' | 'image';
+export type BlockType =
+  | 'chapter'
+  | 'scene'
+  | 'section'
+  | 'paragraph'
+  | 'blockquote'
+  | 'pageBreak'
+  | 'divider'
+  | 'table'
+  | 'image';
+
+/** Visual style for a divider / scene-break block. */
+export type DividerStyle = 'scene' | 'line' | 'ornament';
 
 export type ListStyle = 'bullet' | 'number' | null;
 
@@ -30,4 +42,10 @@ export interface ManuscriptBlock {
   /** Data URL or object URL when type is `image`. */
   imageSrc?: string;
   imageAlt?: string;
+  /** Divider appearance when type is `divider`. */
+  dividerStyle?: DividerStyle;
+}
+
+export function isProseBlock(type: BlockType): boolean {
+  return type === 'paragraph' || type === 'blockquote';
 }
