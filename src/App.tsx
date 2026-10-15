@@ -5,6 +5,15 @@ import { ManuscriptStatsBar } from './components/ManuscriptStatsBar.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import { updateActiveBookDocument, type Library } from './core/library.ts';
 import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT } from './core/document.ts';
+import {
+  listBookVersions,
+  loadVersionLedger,
+  maybeAutoVersion,
+  pushVersion,
+  restoreBookVersion,
+  saveVersionLedger,
+  type VersionLedger,
+} from './core/versions.ts';
 import { createIdFactory } from './core/uid.ts';
 import {
   clearLibrary,
@@ -52,13 +61,16 @@ export default function App() {
   const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadSidebarCollapsed());
   const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
+  const [versions, setVersions] = useState<VersionLedger>(() => loadVersionLedger());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const stored = localStorage.getItem(THEME_KEY);
     return stored === 'dark' ? 'dark' : 'light';
   });
   const ids = useRef(createIdFactory('hm'));
   const libraryRef = useRef(library);
+  const versionsRef = useRef(versions);
   libraryRef.current = library;
+  versionsRef.current = versions;
 
   useEffect(() => {
     let cancelled = false;
@@ -106,12 +118,66 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [library, phase]);
 
+  useEffect(() => {
+    saveVersionLedger(versions);
+  }, [versions]);
+
+  useEffect(() => {
+    if (phase !== 'ready' || !library?.activeBookId) return;
+    const book = library.books.find((b) => b.id === library.activeBookId);
+    if (!book) return;
+    const timer = window.setTimeout(() => {
+      setVersions((ledger) => maybeAutoVersion(ledger, book.id, book.document, ids.current));
+    }, 10_000);
+    return () => window.clearTimeout(timer);
+  }, [library, phase]);
+
   const activeBook = library?.books.find((b) => b.id === library.activeBookId) ?? null;
   const doc = activeBook?.document ?? null;
 
   const setDoc = useCallback((next: typeof doc) => {
     if (!next || !libraryRef.current) return;
     setLibrary(updateActiveBookDocument(libraryRef.current, next));
+  }, []);
+
+  const handleSaveVersion = useCallback(
+    (label: string) => {
+      const lib = libraryRef.current;
+      const book = lib?.books.find((b) => b.id === lib.activeBookId);
+      if (!book) return;
+      setVersions((ledger) =>
+        pushVersion(ledger, {
+          bookId: book.id,
+          document: book.document,
+          label,
+          kind: 'manual',
+          id: ids.current(),
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleRestoreVersion = useCallback(async (versionId: string) => {
+    const lib = libraryRef.current;
+    const book = lib?.books.find((b) => b.id === lib?.activeBookId);
+    if (!book || !lib) return;
+    const result = restoreBookVersion(versionsRef.current, book.id, versionId, book.document, ids.current);
+    if (!result) return;
+    setVersions(result.ledger);
+    const reconciled = await reconcileLoadedDocument(result.document, new Date().toISOString(), ids.current);
+    setLibrary(updateActiveBookDocument(lib, reconciled));
+  }, []);
+
+  const handleImportBackup = useCallback(async (nextLibrary: Library, nextVersions: VersionLedger) => {
+    const reconciledBooks = await Promise.all(
+      nextLibrary.books.map(async (b) => ({
+        ...b,
+        document: await reconcileLoadedDocument(b.document, new Date().toISOString(), ids.current),
+      })),
+    );
+    setVersions(nextVersions);
+    setLibrary({ ...nextLibrary, books: reconciledBooks });
   }, []);
 
   const handleLibraryChange = useCallback(async (next: Library) => {
@@ -194,6 +260,11 @@ export default function App() {
             onTabChange={setTab}
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
+            bookVersions={activeBook ? listBookVersions(versions, activeBook.id) : []}
+            onSaveVersion={handleSaveVersion}
+            onRestoreVersion={(id) => void handleRestoreVersion(id)}
+            versions={versions}
+            onImportBackup={(lib, v) => void handleImportBackup(lib, v)}
           />
           <div className="workspace-main">
             {tab === 'export' ? (

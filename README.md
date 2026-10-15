@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). Use the left **Export** workspace to pick a destination, read the guided steps, and download; every writer format leads with a certification summary page. The certification panel still offers a certification JSON download per book.
+The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). In the left library pane, **Version history** saves named snapshots per book (with auto-save checkpoints and a safety copy before restore), and **Backup & restore** downloads JSON for selected books (all selected by default) or merges a backup file back in. Use the left **Export** workspace to pick a destination, read the guided steps, and download; every writer format leads with a certification summary page. The certification panel still offers a certification JSON download per book.
 
 ### Desktop (macOS)
 

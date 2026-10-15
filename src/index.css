@@ -294,6 +294,61 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .book-row__title { font-family: var(--serif); font-size: 0.95rem; }
 .book-row__meta { font-size: 0.72rem; color: var(--text-dim); }
+.workspace-versions,
+.workspace-backup {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.workspace-versions h3,
+.workspace-backup h3 { margin: 0 0 6px; font-size: 0.95rem; }
+.version-save { display: grid; gap: 8px; margin-bottom: 10px; }
+.version-save__btn { justify-self: start; }
+.version-empty { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+.version-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
+}
+.version-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  font-size: 0.82rem;
+}
+.version-list__main { display: grid; gap: 2px; min-width: 0; }
+.version-list__label { font-weight: 600; }
+.version-list__time { color: var(--text-faint); font-size: 0.75rem; }
+.version-list__kind {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.version-list__restore { font-size: 0.75rem; padding: 3px 8px; flex-shrink: 0; }
+.backup-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+.backup-actions button { font-size: 0.75rem; padding: 3px 8px; }
+.backup-book-pick {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 0.85rem;
+}
+.backup-book-pick li { margin-bottom: 4px; }
+.backup-book-pick label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.backup-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-message { font-size: 0.8rem; color: var(--text-dim); margin: 8px 0 0; }
+
 .workspace-series { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .workspace-series h3 { margin: 0 0 6px; font-size: 0.95rem; }
 .card-inset .sub { color: var(--text-dim); font-size: 0.82rem; margin: 0 0 10px; }
