@@ -6,36 +6,32 @@
     </linearGradient>
     <mask id="person-cut">
       <rect width="512" height="512" fill="white"/>
-      <!-- Quill shaft cutout through the torso -->
       <path
         fill="none"
         stroke="black"
-        stroke-width="26"
+        stroke-width="20"
         stroke-linecap="round"
-        d="M 346 102 L 224 302"
+        d="M 352 98 L 224 304"
       />
     </mask>
   </defs>
 
   <rect width="512" height="512" rx="112" fill="url(#hm-bg)"/>
 
-  <!-- Person: head, neck, shoulders, torso (no arms) -->
   <g fill="#12081c" mask="url(#person-cut)">
-    <circle cx="222" cy="188" r="34"/>
-    <path d="M208 220h28v12c-7 2-14 2-21 0v-12z"/>
-    <path d="M178 234h88v8H178z"/>
-    <path d="M186 242l74 2 10 108-44 8-44-8 4-110z"/>
+    <circle cx="224" cy="180" r="32"/>
+    <path d="M210 210h28v10c-7 2-14 2-21 0v-10z"/>
+    <path d="M182 224h84v8H182z"/>
+    <path d="M190 232h68v112h-68V232z"/>
   </g>
 
-  <!-- Quill in front: vane + nib (shaft is the cutout) -->
   <g fill="#12081c">
     <path
-      d="M 346 102
-        c46 14 54 88 6 124
-        l-22-10
-        c36-28 42-76 14-100
-        l-6-14z"
+      d="M 352 98
+        C 404 118 412 196 368 228
+        L 346 214
+        C 378 182 384 132 352 98 Z"
     />
-    <path d="M 224 302l-18 28 24-10-6-18z"/>
+    <path d="M 224 304l-14 28 20-8-6-20z"/>
   </g>
 </svg>
