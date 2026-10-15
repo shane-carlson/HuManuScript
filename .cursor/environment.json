@@ -1,0 +1,4 @@
+{
+  "name": "HuManuScript",
+  "install": "npm ci"
+}

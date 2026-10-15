@@ -51,6 +51,16 @@ The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` 
 
 The workflow uploads `HuManuScript-*-arm64-signed` from the Actions **Artifacts** tab. Local `pack:mac` still works unsigned when those env vars are unset.
 
+#### Cloud agent: trigger the workflow
+
+Same pattern as Speak Fiction / StoryBind: add a **fine-grained PAT** to your **Cloud Agent environment secrets** as **`GH_TOKEN`** (Actions read/write on this repo). Then:
+
+```bash
+npm run dispatch:pack-mac
+```
+
+See `.cursor/CLOUD-AGENT.md` for PAT scopes and optional env vars.
+
 ```bash
 npm run dev:electron   # Vite + Electron against localhost:47321
 ```
