@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   certificationExport,
   chapterOrder,
@@ -29,6 +29,7 @@ import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel } from '../core/deviceName.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
+import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
   loadEditorView,
@@ -120,6 +121,8 @@ export function Editor({
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
+  const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
+  const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -344,6 +347,19 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const openCards = useMemo(
+    () => (showHighlights ? openPassageCards(doc) : []),
+    [doc, showHighlights],
+  );
+  if (!showHighlights && linkedCardId !== null) setLinkedCardId(null);
+
+  useLayoutEffect(() => {
+    if (!showHighlights || !linkedCardId) return;
+    const card = pointListRef.current?.querySelector<HTMLElement>(
+      `[data-card-id="${CSS.escape(linkedCardId)}"]`,
+    );
+    if (card) scrollCardIntoCertificationPane(card);
+  }, [showHighlights, linkedCardId, doc.points.length, openCards.length]);
   const [previewExportedAt, setPreviewExportedAt] = useState(() => new Date().toISOString());
   const previewModel = useMemo(
     () => buildCertificationPageModel(doc, previewExportedAt, {
@@ -786,6 +802,8 @@ export function Editor({
                         }}
                         renderToken={renderToken}
                         showProvenance={showHighlights}
+                        blockId={block.id}
+                        onCertificationHover={showHighlights ? setLinkedCardId : undefined}
                         onInternalDrop={(toOffset) => {
                           const source = textDrag.current;
                           textDrag.current = null;
@@ -883,12 +901,17 @@ export function Editor({
               </div>
             </div>
           </div>
-          {doc.points.length === 0 ? (
+          {doc.points.length === 0 && (
             <p className="points-empty">Nothing is sealed yet. Keyboard text lands here with a content hash and the input events behind it. Pasted text never will.</p>
-          ) : (
-            <ol className="point-list">
+          )}
+          {(doc.points.length > 0 || openCards.length > 0) && (
+            <ol className="point-list" ref={pointListRef}>
               {doc.points.map((point) => (
-                <li key={point.id}>
+                <li
+                  key={point.id}
+                  data-card-id={point.id}
+                  className={linkedCardId === point.id ? 'is-linked' : undefined}
+                >
                   <header>
                     <span>Certified</span>
                     <time dateTime={point.updatedAt}>{new Date(point.updatedAt).toLocaleString()}</time>
@@ -898,6 +921,23 @@ export function Editor({
                   <p className="point-device">Device: {formatTypingDeviceLabel(point.typingDevice)}</p>
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
+                </li>
+              ))}
+              {openCards.length > 0 && doc.points.length > 0 && (
+                <li className="point-list__divider">Not sealed</li>
+              )}
+              {openCards.map((card) => (
+                <li
+                  key={card.id}
+                  data-card-id={card.id}
+                  data-origin={card.origin}
+                  className={`is-uncertified${linkedCardId === card.id ? ' is-linked' : ''}`}
+                >
+                  <header>
+                    <span>Uncertified</span>
+                    <span>{originWord(card.origin)}</span>
+                  </header>
+                  <blockquote>{card.text}</blockquote>
                 </li>
               ))}
             </ol>
@@ -918,4 +958,29 @@ export function Editor({
       )}
     </div>
   );
+}
+
+function scrollCardIntoCertificationPane(card: HTMLElement) {
+  const pane = card.closest('.points');
+  if (!pane || card.getClientRects().length === 0) return;
+  let node = card.parentElement;
+  while (node && pane.contains(node)) {
+    const overflowY = getComputedStyle(node).overflowY;
+    const scrollable =
+      (overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    if (scrollable) {
+      const bounds = node.getBoundingClientRect();
+      const rect = card.getBoundingClientRect();
+      const delta = scrollDelta(bounds.top, bounds.bottom, rect.top, rect.bottom);
+      if (delta !== 0) node.scrollTop += delta;
+    }
+    node = node.parentElement;
+  }
+}
+
+function originWord(origin: string): string {
+  if (origin === 'paste') return 'Paste';
+  if (origin === 'drop') return 'Drop';
+  if (origin === 'other') return 'Other';
+  return 'Uncertified';
 }
