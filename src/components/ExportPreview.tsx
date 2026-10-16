@@ -36,6 +36,10 @@ export function CertificationSummaryPage({ model }: { model: CertificationPageMo
             <strong>{model.totals.keyboardSealed}</strong>
           </div>
           <div>
+            <span>Dictation, sealed</span>
+            <strong>{model.totals.dictationSealed}</strong>
+          </div>
+          <div>
             <span>Pasted / uncertified</span>
             <strong>{model.totals.pastedUncertified}</strong>
           </div>
@@ -60,7 +64,15 @@ export function CertificationSummaryPage({ model }: { model: CertificationPageMo
           </div>
           <div>
             <dt>Certified words</dt>
+            <dd>{model.totals.keyboardSealed + model.totals.dictationSealed}</dd>
+          </div>
+          <div>
+            <dt>Keyboard, certified</dt>
             <dd>{model.totals.keyboardSealed}</dd>
+          </div>
+          <div>
+            <dt>Dictation, sealed</dt>
+            <dd>{model.totals.dictationSealed}</dd>
           </div>
           <div>
             <dt>Pasted / uncertified</dt>

@@ -11,10 +11,12 @@ import { isProseBlock } from './types.ts';
 
 export interface OriginWordTotals {
   keyboardSealed: number;
+  /** Sealed dictated words. Not included in keyboard, paste, drop, or other. */
+  dictationSealed: number;
   paste: number;
   drop: number;
   other: number;
-  /** Paste + drop + other. */
+  /** Paste + drop + other. Dictation is sealed, so it is not included. */
   pastedUncertified: number;
   totalWords: number;
 }
@@ -65,7 +67,15 @@ export function formatExportDateTime(iso: string): string {
 }
 
 function emptyTotals(): OriginWordTotals {
-  return { keyboardSealed: 0, paste: 0, drop: 0, other: 0, pastedUncertified: 0, totalWords: 0 };
+  return {
+    keyboardSealed: 0,
+    dictationSealed: 0,
+    paste: 0,
+    drop: 0,
+    other: 0,
+    pastedUncertified: 0,
+    totalWords: 0,
+  };
 }
 
 function wordTotals(text: string, spans: ProvenanceSpan[]): OriginWordTotals {
@@ -77,17 +87,19 @@ function wordTotals(text: string, spans: ProvenanceSpan[]): OriginWordTotals {
     const at = match.index;
     const span = spans.find((s) => s.start <= at && s.end > at);
     if (span?.origin === 'keyboard' && span.certificationId) totals.keyboardSealed += 1;
+    else if (span?.origin === 'dictation' && span.certificationId) totals.dictationSealed += 1;
     else if (span?.origin === 'paste') totals.paste += 1;
     else if (span?.origin === 'drop') totals.drop += 1;
     else totals.other += 1;
   }
   totals.pastedUncertified = totals.paste + totals.drop + totals.other;
-  totals.totalWords = totals.keyboardSealed + totals.pastedUncertified;
+  totals.totalWords = totals.keyboardSealed + totals.dictationSealed + totals.pastedUncertified;
   return totals;
 }
 
 function mergeTotals(into: OriginWordTotals, add: OriginWordTotals): void {
   into.keyboardSealed += add.keyboardSealed;
+  into.dictationSealed += add.dictationSealed;
   into.paste += add.paste;
   into.drop += add.drop;
   into.other += add.other;
@@ -145,6 +157,7 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
     '',
     'Certified versus pasted',
     `Keyboard-certified words: ${model.totals.keyboardSealed}`,
+    `Dictation-certified words: ${model.totals.dictationSealed}`,
     `Pasted / uncertified words: ${model.totals.pastedUncertified}`,
     `Paste: ${model.totals.paste}`,
     `Drop: ${model.totals.drop}`,
@@ -153,7 +166,7 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
     'Statistics',
     `Exported: ${model.exportedAtLabel}`,
     `Total words: ${model.totals.totalWords}`,
-    `Certified words: ${model.totals.keyboardSealed}`,
+    `Certified words: ${model.totals.keyboardSealed + model.totals.dictationSealed}`,
     `Pasted / uncertified words: ${model.totals.pastedUncertified}`,
     `Chapters: ${model.chapters}`,
     `Scenes: ${model.scenes}`,

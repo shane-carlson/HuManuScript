@@ -260,7 +260,7 @@ async function pasteMultiline(args: {
       points,
       evidence:
         args.event && line
-          ? { spanIds: spans.filter((s) => s.origin === 'keyboard').map((s) => s.id), event: args.event }
+          ? { spanIds: spans.filter((s) => s.origin === 'keyboard' || s.origin === 'dictation').map((s) => s.id), event: args.event }
           : null,
       now: args.now,
       newId: args.newId,
@@ -715,15 +715,15 @@ export function certificationSummary(doc: ManuscriptDocument): { certified: numb
 
 export function passageState(spans: ProvenanceSpan[], text: string): 'empty' | 'certified' | 'uncertified' | 'mixed' {
   if (!text) return 'empty';
-  let keyboard = false;
+  let sealed = false;
   let other = false;
   for (const span of spans) {
     if (span.end <= span.start) continue;
-    if (span.origin === 'keyboard' && span.certificationId) keyboard = true;
+    if ((span.origin === 'keyboard' || span.origin === 'dictation') && span.certificationId) sealed = true;
     else other = true;
   }
-  if (keyboard && other) return 'mixed';
-  if (keyboard) return 'certified';
+  if (sealed && other) return 'mixed';
+  if (sealed) return 'certified';
   if (!spans.length) return 'uncertified';
   return 'uncertified';
 }

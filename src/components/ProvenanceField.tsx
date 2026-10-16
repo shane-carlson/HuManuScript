@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { offsetsFromDomRange, setDomCaretFromOffset } from '../core/domCaret.ts';
 import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/certification.ts';
-import { classifyInsertion } from '../core/certification.ts';
+import { classifyInsertion, MAX_KEYBOARD_INSERT_CHARS } from '../core/certification.ts';
 import { passageCardId } from '../core/passageCard.ts';
 import { describePasteSource } from '../core/pasteHint.ts';
 import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
@@ -327,7 +327,7 @@ export function ProvenanceField({
               sinceLastMs,
             })
           : null;
-        const origin = meta
+        let origin = meta
           ? meta.origin
           : classified?.kind === 'insert'
             ? classified.origin
@@ -336,6 +336,17 @@ export function ProvenanceField({
               : change.insert
                 ? 'other'
                 : null;
+        // beforeinput may have seen an empty or one-character payload while the
+        // field actually received a multi-character dictation insert.
+        if (
+          change.insert.length > MAX_KEYBOARD_INSERT_CHARS &&
+          origin !== 'paste' &&
+          origin !== 'drop' &&
+          classified?.kind === 'insert' &&
+          classified.origin === 'dictation'
+        ) {
+          origin = 'dictation';
+        }
         if (origin === 'keyboard') lastKeyAt.current = Date.now();
         const caretPos = selection().end;
         caret.current = caretPos;

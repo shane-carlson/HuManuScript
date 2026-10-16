@@ -1,9 +1,11 @@
 /**
  * Human-authorship certification for a Speak Fiction-style manuscript.
  *
- * A certification point seals the current text of one keyboard-origin span
- * with a SHA-256 content hash, the input events observed for that span, and
- * the time. Paste, drop, and other insertions stay uncertified.
+ * A certification point seals the current text of one keyboard or dictation
+ * span with a SHA-256 content hash, the input events observed for that span,
+ * and the time. Dictation is its own origin: sealed like keyboard, and not
+ * counted as keyboard, paste, or other. Paste, drop, and other insertions
+ * stay uncertified.
  *
  * Browser events are evidence of how text entered this editor. They are not
  * proof against someone simulating events.
@@ -13,7 +15,14 @@ import { getTypingDeviceLabel } from './deviceName.ts';
 import type { InlineMark } from './types.ts';
 import { normalizeMarks } from './richText.ts';
 
-export type InsertionOrigin = 'keyboard' | 'paste' | 'drop' | 'other';
+export type InsertionOrigin = 'keyboard' | 'dictation' | 'paste' | 'drop' | 'other';
+
+/** Origins that receive a SHA-256 certification point. */
+export type SealedOrigin = 'keyboard' | 'dictation';
+
+export function isSealedOrigin(origin: InsertionOrigin | null | undefined): origin is SealedOrigin {
+  return origin === 'keyboard' || origin === 'dictation';
+}
 
 export interface ProvenanceSpan {
   id: string;
@@ -43,7 +52,7 @@ export interface CertificationPoint {
   contentHash: string;
   sealedAt: string;
   updatedAt: string;
-  origin: 'keyboard';
+  origin: SealedOrigin;
   evidence: {
     inputTypes: string[];
     eventCount: number;
@@ -66,13 +75,16 @@ export interface MoveRecord {
 }
 
 export const TRUST_STATEMENT =
-  'Browser keystroke, paste, and drop events are evidence of how text entered this editor. They are not proof against someone simulating those events. A certification point is a SHA-256 hash of the current keyboard-typed span plus the input events observed with it. It is not a cryptographic authorship certificate, and it does not prove the writer was unaided outside this page.';
+  'Browser keystroke, dictation, paste, and drop events are evidence of how text entered this editor. They are not proof against someone simulating those events. A certification point is a SHA-256 hash of the current keyboard-typed or dictated span plus the input events observed with it. It is not a cryptographic authorship certificate, and it does not prove the writer was unaided outside this page.';
 
 export const MAX_EVIDENCE_EVENTS = 40;
 export const MAX_PRIOR_HASHES = 12;
 const MAX_EVENT_DATA = 240;
 
-/** Single trusted insertText events only; bulk insertText is treated as synthetic. */
+/**
+ * A trusted insertText of this many characters is one keystroke.
+ * A longer trusted insertText is the platform dictation path (not a paste, drop, or keystroke).
+ */
 export const MAX_KEYBOARD_INSERT_CHARS = 1;
 /** Inter-key interval below this is not treated as human typing for sealing. */
 export const MIN_HUMAN_KEY_INTERVAL_MS = 6;
@@ -109,10 +121,13 @@ export function classifyInsertion(args: {
   if (kindName.startsWith('history') || kindName.startsWith('format')) return { kind: 'ignore' };
   if (!kindName.startsWith('insert')) return { kind: 'ignore' };
 
+  if (kindName === 'insertFromDictation') return { kind: 'insert', origin: 'dictation' };
+
   if (kindName === 'insertText' || (!kindName && typeof args.data === 'string')) {
     if (!args.trusted) return { kind: 'insert', origin: 'other' };
     const len = args.data?.length ?? 0;
-    if (len > MAX_KEYBOARD_INSERT_CHARS) return { kind: 'insert', origin: 'other' };
+    // Platform dictation often arrives as one multi-character insertText, not insertFromDictation.
+    if (len > MAX_KEYBOARD_INSERT_CHARS) return { kind: 'insert', origin: 'dictation' };
     if (args.sinceLastMs != null && args.sinceLastMs < MIN_HUMAN_KEY_INTERVAL_MS) {
       return { kind: 'insert', origin: 'other' };
     }
@@ -141,7 +156,7 @@ export async function contentHash(text: string): Promise<string> {
 
 function canMerge(a: ProvenanceSpan, b: ProvenanceSpan): boolean {
   if (a.origin !== b.origin) return false;
-  if (a.origin !== 'keyboard') return true;
+  if (!isSealedOrigin(a.origin)) return true;
   if (!a.certificationId || !b.certificationId) return true;
   return a.certificationId === b.certificationId;
 }
@@ -235,7 +250,8 @@ export interface TextChange {
 /**
  * Replace [start, end) with `insert`.
  * `origin` is null for a pure deletion.
- * Keyboard text merges into a neighboring keyboard seal; paste never does.
+ * Keyboard text merges into a neighboring keyboard seal, and dictation into a
+ * neighboring dictation seal. Paste never merges into a seal.
  */
 export function applyTextChange(args: {
   text: string;
@@ -305,8 +321,8 @@ export function applyTextChange(args: {
   const regionEnd = start + insertLen;
   const evidenceSpanIds =
     insertLen > 0
-      ? spans.filter((s) => s.origin === 'keyboard' && s.start < regionEnd && s.end > start).map((s) => s.id)
-      : spans.filter((s) => s.origin === 'keyboard' && (s.end === start || s.start === start)).map((s) => s.id);
+      ? spans.filter((s) => isSealedOrigin(s.origin) && s.start < regionEnd && s.end > start).map((s) => s.id)
+      : spans.filter((s) => isSealedOrigin(s.origin) && (s.end === start || s.start === start)).map((s) => s.id);
 
   return {
     text: nextText,
@@ -445,21 +461,23 @@ export async function syncBlockPoints(args: {
   const event = args.evidence ? clipEvidence(args.evidence.event) : null;
 
   for (const span of spans) {
-    if (span.origin !== 'keyboard') {
+    if (!isSealedOrigin(span.origin)) {
       delete span.certificationId;
       continue;
     }
+    const sealedOrigin = span.origin;
+    const stayed = sealedOrigin === 'dictation' ? 'dictated' : 'keyboard-typed';
     const slice = args.text.slice(span.start, span.end);
     const hash = await contentHash(slice);
     const source = span.certificationId ? pool.get(span.certificationId) : undefined;
     const foreign = Boolean(source && source.blockId !== args.blockId);
-    let point = source && !foreign ? source : undefined;
+    let point = source && !foreign && source.origin === sealedOrigin ? source : undefined;
     let lineage = point?.lineage;
-    if (source && (foreign || usedCert.has(source.id))) {
+    if (source && source.origin === sealedOrigin && (foreign || usedCert.has(source.id))) {
       const id = args.newId();
       lineage = foreign
-        ? `Split from certification ${source.id} when the passage moved to another block. The remnant stayed keyboard-typed.`
-        : `Split from certification ${source.id}. The remnant stayed keyboard-typed; this hash covers only this piece.`;
+        ? `Split from certification ${source.id} when the passage moved to another block. The remnant stayed ${stayed}.`
+        : `Split from certification ${source.id}. The remnant stayed ${stayed}; this hash covers only this piece.`;
       point = {
         ...source,
         id,
@@ -468,6 +486,7 @@ export async function syncBlockPoints(args: {
         text: slice,
         contentHash: hash,
         updatedAt: args.now,
+        origin: sealedOrigin,
         priorHashes:
           source.contentHash === hash
             ? source.priorHashes
@@ -491,7 +510,7 @@ export async function syncBlockPoints(args: {
         contentHash: hash,
         sealedAt: args.now,
         updatedAt: args.now,
-        origin: 'keyboard',
+        origin: sealedOrigin,
         evidence: { inputTypes: [], eventCount: 0, events: [] },
         priorHashes: [],
         typingDevice: typingDevice ?? undefined,
@@ -536,8 +555,8 @@ export async function syncBlockPoints(args: {
 }
 
 /**
- * After JSON/localStorage load, drop keyboard seals that do not match stored hashes or text.
- * Does not upgrade unknown text to keyboard.
+ * After JSON/localStorage load, drop keyboard and dictation seals that do not match stored hashes or text.
+ * Does not upgrade unknown text to a sealed origin.
  */
 export async function stripInvalidKeyboardSeals(args: {
   text: string;
@@ -548,13 +567,13 @@ export async function stripInvalidKeyboardSeals(args: {
   const byId = new Map(args.points.map((p) => [p.id, p]));
   const spans = normalizeSpans(args.text, args.spans, args.newId).map((span) => ({ ...span }));
   for (const span of spans) {
-    if (span.origin !== 'keyboard' || !span.certificationId) {
-      if (span.origin !== 'keyboard') delete span.certificationId;
+    if (!isSealedOrigin(span.origin) || !span.certificationId) {
+      if (!isSealedOrigin(span.origin)) delete span.certificationId;
       continue;
     }
     const slice = args.text.slice(span.start, span.end);
     const point = byId.get(span.certificationId);
-    if (!point || point.text !== slice) {
+    if (!point || point.origin !== span.origin || point.text !== slice) {
       span.origin = 'other';
       delete span.certificationId;
       continue;
@@ -571,7 +590,7 @@ export async function stripInvalidKeyboardSeals(args: {
 export function countOriginWords(text: string, spans: ProvenanceSpan[]): { certified: number; uncertified: number } {
   const certifiedSet = new Set<number>();
   for (const span of spans) {
-    if (span.origin !== 'keyboard' || !span.certificationId) continue;
+    if (!isSealedOrigin(span.origin) || !span.certificationId) continue;
     for (let i = span.start; i < span.end; i++) certifiedSet.add(i);
   }
   let certified = 0;

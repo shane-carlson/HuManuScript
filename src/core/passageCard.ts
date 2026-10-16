@@ -1,10 +1,10 @@
 /**
  * Which certification-pane card a manuscript span links to.
- * Sealed keyboard spans use their certification id. Other spans use a display key.
+ * Sealed keyboard and dictation spans use their certification id. Other spans use a display key.
  * This does not create or change certification points.
  */
 
-import type { ProvenanceSpan } from './certification.ts';
+import { isSealedOrigin, type ProvenanceSpan } from './certification.ts';
 import type { ManuscriptDocument } from './document.ts';
 import { isProseBlock } from './types.ts';
 
@@ -17,7 +17,7 @@ export interface PassageSpanLink {
 /** Card id for a span, or null when the span has no id to hang a card on. */
 export function passageCardId(blockId: string, span: PassageSpanLink): string | null {
   if (!span.id) return null;
-  if (span.origin === 'keyboard' && span.certificationId) return span.certificationId;
+  if (isSealedOrigin(span.origin) && span.certificationId) return span.certificationId;
   return `span:${blockId}:${span.id}`;
 }
 
@@ -37,7 +37,7 @@ export function openPassageCards(doc: ManuscriptDocument): OpenPassageCard[] {
     const spans = (prose ? doc.provenance[block.id]?.text : doc.provenance[block.id]?.title) ?? [];
     for (const span of spans) {
       if (span.end <= span.start) continue;
-      if (span.origin === 'keyboard' && span.certificationId) continue;
+      if (isSealedOrigin(span.origin) && span.certificationId) continue;
       const slice = text.slice(Math.max(0, span.start), Math.min(text.length, span.end));
       if (!slice.trim()) continue;
       const id = passageCardId(block.id, span);

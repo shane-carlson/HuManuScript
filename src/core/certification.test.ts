@@ -29,7 +29,7 @@ function event(inputType: string, data: string | null, trusted = true) {
   return { at: now, inputType, data, trusted };
 }
 
-test('classifyInsertion rejects bulk trusted insertText and sub-human intervals', () => {
+test('classifyInsertion keeps a keystroke as keyboard and a multi-character insert as dictation', () => {
   assert.deepEqual(
     classifyInsertion({ inputType: 'insertText', trusted: true, data: 'a', sinceLastMs: null }),
     { kind: 'insert', origin: 'keyboard' },
@@ -39,6 +39,24 @@ test('classifyInsertion rejects bulk trusted insertText and sub-human intervals'
       inputType: 'insertText',
       trusted: true,
       data: 'x'.repeat(MAX_KEYBOARD_INSERT_CHARS + 1),
+      sinceLastMs: null,
+    }),
+    { kind: 'insert', origin: 'dictation' },
+  );
+  assert.deepEqual(
+    classifyInsertion({
+      inputType: 'insertText',
+      trusted: true,
+      data: 'hello there',
+      sinceLastMs: MIN_HUMAN_KEY_INTERVAL_MS - 1,
+    }),
+    { kind: 'insert', origin: 'dictation' },
+  );
+  assert.deepEqual(
+    classifyInsertion({
+      inputType: 'insertText',
+      trusted: false,
+      data: 'hello there',
       sinceLastMs: null,
     }),
     { kind: 'insert', origin: 'other' },
@@ -52,6 +70,18 @@ test('classifyInsertion rejects bulk trusted insertText and sub-human intervals'
     }),
     { kind: 'insert', origin: 'other' },
   );
+  assert.deepEqual(
+    classifyInsertion({ inputType: 'insertFromDictation', trusted: true, data: 'spoken line', sinceLastMs: null }),
+    { kind: 'insert', origin: 'dictation' },
+  );
+  assert.deepEqual(
+    classifyInsertion({ inputType: 'insertFromDictation', trusted: true, data: 'I', sinceLastMs: 0 }),
+    { kind: 'insert', origin: 'dictation' },
+  );
+  assert.deepEqual(
+    classifyInsertion({ inputType: 'insertFromPaste', trusted: true, data: 'hello there', sinceLastMs: null }),
+    { kind: 'insert', origin: 'paste' },
+  );
 });
 
 test('classifies keyboard, paste, drop, and other insertions', () => {
@@ -59,6 +89,7 @@ test('classifies keyboard, paste, drop, and other insertions', () => {
   assert.deepEqual(classifyInputType('insertText', false), { kind: 'insert', origin: 'other' });
   assert.deepEqual(classifyInputType('insertFromPaste', true), { kind: 'insert', origin: 'paste' });
   assert.deepEqual(classifyInputType('insertFromYank', true), { kind: 'insert', origin: 'paste' });
+  assert.deepEqual(classifyInputType('insertFromDictation', true), { kind: 'insert', origin: 'dictation' });
   assert.deepEqual(classifyInputType('insertFromDrop', true), { kind: 'insert', origin: 'drop' });
   assert.deepEqual(classifyInputType('insertReplacementText', true), { kind: 'insert', origin: 'other' });
   assert.equal(classifyInputType('deleteContentBackward', true).kind, 'delete');
@@ -106,6 +137,127 @@ test('keyboard text is sealed and paste stays uncertified', async () => {
   assert.equal(doc.points[0]!.contentHash, await contentHash('Hello'));
   assert.equal(doc.points[0]!.evidence.eventCount, 1);
   assert.equal(doc.points[0]!.origin, 'keyboard');
+});
+
+test('dictation is sealed, a typed character stays keyboard, and paste stays uncertified', async () => {
+  const ids = sequenceIds('id');
+  let doc = insertStructure(emptyDocument(ids()), 'paragraph', 0, ids());
+  const blockId = doc.blocks[0]!.id;
+
+  const typed = classifyInsertion({ inputType: 'insertText', trusted: true, data: 'H', sinceLastMs: null });
+  assert.equal(typed.kind, 'insert');
+  if (typed.kind !== 'insert') return;
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: 0,
+    end: 0,
+    insert: 'H',
+    origin: typed.origin,
+    event: event('insertText', 'H'),
+    now,
+    newId: ids,
+  });
+
+  const dictated = classifyInsertion({
+    inputType: 'insertFromDictation',
+    trusted: true,
+    data: ' spoken words',
+    sinceLastMs: 40,
+  });
+  assert.equal(dictated.kind, 'insert');
+  if (dictated.kind !== 'insert') return;
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: 1,
+    end: 1,
+    insert: ' spoken words',
+    origin: dictated.origin,
+    event: event('insertFromDictation', ' spoken words'),
+    now,
+    newId: ids,
+  });
+
+  const platform = classifyInsertion({
+    inputType: 'insertText',
+    trusted: true,
+    data: ' aloud',
+    sinceLastMs: 4,
+  });
+  assert.deepEqual(platform, { kind: 'insert', origin: 'dictation' });
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: doc.blocks[0]!.text.length,
+    end: doc.blocks[0]!.text.length,
+    insert: ' aloud',
+    origin: 'dictation',
+    event: event('insertText', ' aloud'),
+    now,
+    newId: ids,
+  });
+
+  const pasted = classifyInsertion({
+    inputType: 'insertFromPaste',
+    trusted: true,
+    data: ' from a chat',
+    sinceLastMs: null,
+  });
+  assert.deepEqual(pasted, { kind: 'insert', origin: 'paste' });
+  doc = await editField({
+    doc,
+    blockId,
+    field: 'text',
+    start: doc.blocks[0]!.text.length,
+    end: doc.blocks[0]!.text.length,
+    insert: ' from a chat',
+    origin: 'paste',
+    event: event('insertFromPaste', ' from a chat'),
+    now,
+    newId: ids,
+  });
+
+  assert.equal(doc.blocks[0]!.text, 'H spoken words aloud from a chat');
+  const spans = doc.provenance[blockId]!.text;
+  assert.deepEqual(
+    spans.map((span) => span.origin),
+    ['keyboard', 'dictation', 'paste'],
+  );
+  assert.equal(doc.blocks[0]!.text.slice(spans[0]!.start, spans[0]!.end), 'H');
+  assert.equal(doc.blocks[0]!.text.slice(spans[1]!.start, spans[1]!.end), ' spoken words aloud');
+  assert.equal(doc.blocks[0]!.text.slice(spans[2]!.start, spans[2]!.end), ' from a chat');
+  assert.ok(spans[0]!.certificationId);
+  assert.ok(spans[1]!.certificationId);
+  assert.equal(spans[2]!.certificationId, undefined);
+
+  const keyboardPoint = doc.points.find((point) => point.id === spans[0]!.certificationId);
+  const dictationPoint = doc.points.find((point) => point.id === spans[1]!.certificationId);
+  assert.equal(keyboardPoint?.origin, 'keyboard');
+  assert.equal(keyboardPoint?.text, 'H');
+  assert.equal(keyboardPoint?.contentHash, await contentHash('H'));
+  assert.deepEqual(keyboardPoint?.evidence.inputTypes, ['insertText']);
+  assert.equal(dictationPoint?.origin, 'dictation');
+  assert.equal(dictationPoint?.text, ' spoken words aloud');
+  assert.equal(dictationPoint?.contentHash, await contentHash(' spoken words aloud'));
+  assert.ok(dictationPoint?.evidence.inputTypes.includes('insertFromDictation'));
+  assert.ok(dictationPoint?.evidence.inputTypes.includes('insertText'));
+  assert.equal(doc.points.some((point) => point.origin === 'paste'), false);
+
+  const model = buildCertificationPageModel(doc, now);
+  assert.equal(model.totals.keyboardSealed, 1);
+  assert.equal(model.totals.dictationSealed, 3);
+  assert.equal(model.totals.paste, 3);
+  assert.equal(model.totals.other, 0);
+  assert.equal(model.totals.pastedUncertified, 3);
+  assert.equal(model.totals.totalWords, 7);
+  const plain = certificationPagePlain(model);
+  assert.match(plain, /Keyboard-certified words: 1/);
+  assert.match(plain, /Dictation-certified words: 3/);
+  assert.match(plain, /Pasted \/ uncertified words: 3/);
 });
 
 test('paste in the middle splits a certified span and leaves both remnants sealed', async () => {
@@ -360,6 +512,7 @@ test('certification summary is one page of facts, not a passage dump', async () 
   });
   const plain = certificationPagePlain(model);
   assert.equal(model.totals.keyboardSealed, 1);
+  assert.equal(model.totals.dictationSealed, 0);
   assert.equal(model.totals.paste, 1);
   assert.equal(model.totals.drop, 0);
   assert.equal(model.totals.pastedUncertified, 1);
@@ -369,6 +522,7 @@ test('certification summary is one page of facts, not a passage dump', async () 
   assert.equal(model.seriesLabel, 'Book 2 of Harbor Saga');
   assert.equal(model.exportedAtLabel, '14 October 2026, 18:00 UTC');
   assert.match(plain, /Keyboard-certified words: 1/);
+  assert.match(plain, /Dictation-certified words: 0/);
   assert.match(plain, /Pasted \/ uncertified words: 1/);
   assert.match(plain, /Paste: 1/);
   assert.match(plain, /Drop: 0/);

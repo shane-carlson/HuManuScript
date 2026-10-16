@@ -2,7 +2,7 @@
 
 A manuscript editor for writers who want a record of how the prose got onto the page. It is built on the manuscript model from [Speak Fiction](https://github.com/shane-carlson/SpeakFiction) (MIT): chapters, scenes, sections, and paragraphs; bold, italic, and underline marks stored as offsets into the plain text; and drag-to-reorder, where a chapter takes the prose beneath it with it.
 
-HuManuScript adds a certification layer. As you type, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text is sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as a spellcheck replacement or an untrusted scripted edit.
+HuManuScript adds a certification layer. As you type, dictate, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text and dictated text are each sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Dictation is its own origin: sealed, and not counted as keyboard, paste, or other. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as a spellcheck replacement or an untrusted scripted edit.
 
 This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated in the editor and in the certification file you export.
 
@@ -67,15 +67,16 @@ npm run dev:electron   # Vite + Electron against localhost:47321
 
 ## What came from Speak Fiction
 
-The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. Dictation and licensing are out of scope; the Electron shell and `pack:mac` script are included for local Mac installs.
+The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. A speech engine and licensing are out of scope; dictated text that the platform already inserts is sealed as its own origin. The Electron shell and `pack:mac` script are included for local Mac installs.
 
 ## Certification, briefly
 
 | How text entered | What you see | Sealed? |
 | --- | --- | --- |
-| Keyboard, including an IME composition | Green underline | Yes |
+| Keyboard, including an IME composition | Green underline | Yes, as keyboard |
+| Dictation (`insertFromDictation`, or a trusted multi-character insert that is not a paste, drop, or keystroke) | Teal underline | Yes, as dictation |
 | Paste, including middle-click yank | Amber underline | No |
 | Drop from outside the page | Blue underline | No |
-| Anything else, including an untrusted `insertText` | Purple underline | No |
+| Anything else, including an untrusted `insertText` or a too-fast keystroke | Purple underline | No |
 
 Moving a block, or dragging a passage to another place in the manuscript, keeps a keyboard seal on that text. The move is recorded. A paste that lands in the middle of a sealed sentence splits it: the typed remnants stay sealed, and the pasted middle does not.

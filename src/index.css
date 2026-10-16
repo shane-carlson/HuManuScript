@@ -14,6 +14,7 @@ html[data-mode='light'] {
   --good: #0f7a4b;
   --warn: #9a5b00;
   --drop: #0f5f8a;
+  --dictation: #0c6b62;
   --other: #6d4ea8;
   --accent: #8b6914;
   --accent-2: #6f8f86;
@@ -38,6 +39,7 @@ html[data-mode='dark'] {
   --good: #7dcea5;
   --warn: #e6b15c;
   --drop: #8ec8e6;
+  --dictation: #7dcec4;
   --other: #c4b0e8;
   --accent: #d4b483;
   --accent-2: #8fbfb4;
@@ -489,7 +491,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .summary-mono { font-family: var(--mono); font-size: 0.78rem; word-break: break-all; }
 .summary-rollup {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 .summary-rollup div {
@@ -948,6 +950,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .prov { border-radius: 2px; }
 .prov:hover { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: 1px; }
 .prov-keyboard { background: color-mix(in srgb, var(--good) 22%, transparent); box-shadow: inset 0 -2px 0 var(--good); }
+.prov-dictation { background: color-mix(in srgb, var(--dictation) 24%, transparent); box-shadow: inset 0 -2px 0 var(--dictation); }
 .prov-paste { background: color-mix(in srgb, var(--warn) 24%, transparent); box-shadow: inset 0 -2px 0 var(--warn); }
 .prov-drop { background: color-mix(in srgb, var(--drop) 22%, transparent); box-shadow: inset 0 -2px 0 var(--drop); }
 .prov-other { background: color-mix(in srgb, var(--other) 24%, transparent); box-shadow: inset 0 -2px 0 var(--other); }
@@ -1006,6 +1009,12 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   border-color: var(--other);
   background: color-mix(in srgb, var(--other) 18%, var(--bg));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--other) 48%, transparent);
+}
+.point-list li[data-origin='dictation'] header { color: var(--dictation); }
+.point-list li[data-origin='dictation'].is-linked {
+  border-color: var(--dictation);
+  background: color-mix(in srgb, var(--dictation) 18%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dictation) 48%, transparent);
 }
 .point-list header { display: flex; justify-content: space-between; gap: 8px; font-size: 0.75rem; color: var(--good); }
 .point-list blockquote { margin: 8px 0; font-family: var(--serif); }

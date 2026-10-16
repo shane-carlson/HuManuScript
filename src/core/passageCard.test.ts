@@ -8,6 +8,10 @@ test('sealed spans link to their certification point', () => {
     passageCardId('block-1', { id: 'span-1', origin: 'keyboard', certificationId: 'point-9' }),
     'point-9',
   );
+  assert.equal(
+    passageCardId('block-1', { id: 'span-6', origin: 'dictation', certificationId: 'point-6' }),
+    'point-6',
+  );
 });
 
 test('unsealed spans link to a display card for that span', () => {
