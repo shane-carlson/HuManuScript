@@ -763,10 +763,37 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   border-radius: 0;
 }
 .focus-exit-bar p { margin: 0; flex: 1; font-size: 0.9rem; }
+.focus-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.focus-zoom button {
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  border-color: transparent;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+.focus-zoom__level {
+  min-width: 3rem;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
 .focus-exit-bar .primary {
   background: var(--bg);
   color: var(--text);
   border-color: var(--bg);
+}
+.page-view {
+  zoom: var(--view-scale, 1);
 }
 .focus-hint {
   font-family: var(--mono);
