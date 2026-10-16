@@ -606,6 +606,7 @@ export function Editor({
         {showHighlights && (
           <ul className="legend legend--inline" aria-label="Passage origins">
             <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
+            <li><i className="swatch prov-dictation" /> Dictation, sealed</li>
             <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
             <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
             <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
@@ -619,7 +620,7 @@ export function Editor({
         ) : doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>
-            <p>Start a chapter and write into it. Only letters that come from the keyboard are sealed. A paste from a chat window stays marked, and it is never certified.</p>
+            <p>Start a chapter and write into it. Letters from the keyboard and from dictation are sealed. A paste from a chat window stays marked, and it is never certified.</p>
             <button type="button" className="primary" onClick={() => commit((current) => insertStructure(current, 'chapter', 0, ids.current()))}>Start a chapter</button>
           </div>
         ) : (
@@ -911,7 +912,7 @@ export function Editor({
             </div>
           </div>
           {doc.points.length === 0 && (
-            <p className="points-empty">Nothing is sealed yet. Keyboard text lands here with a content hash and the input events behind it. Pasted text never will.</p>
+            <p className="points-empty">Nothing is sealed yet. Keyboard and dictated text land here with a content hash and the input events behind them. Pasted text never will.</p>
           )}
           {(doc.points.length > 0 || openCards.length > 0) && (
             <ol className="point-list" ref={pointListRef}>
@@ -919,10 +920,11 @@ export function Editor({
                 <li
                   key={point.id}
                   data-card-id={point.id}
+                  data-origin={point.origin}
                   className={linkedCardId === point.id ? 'is-linked' : undefined}
                 >
                   <header>
-                    <span>Certified</span>
+                    <span>{point.origin === 'dictation' ? 'Dictation, sealed' : 'Certified'}</span>
                     <time dateTime={point.updatedAt}>{new Date(point.updatedAt).toLocaleString()}</time>
                   </header>
                   <blockquote>{point.text}</blockquote>
@@ -998,6 +1000,7 @@ function scrollCardIntoCertificationPane(card: HTMLElement) {
 }
 
 function originWord(origin: string): string {
+  if (origin === 'dictation') return 'Dictation';
   if (origin === 'paste') return 'Paste';
   if (origin === 'drop') return 'Drop';
   if (origin === 'other') return 'Other';

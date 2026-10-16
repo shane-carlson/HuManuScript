@@ -108,7 +108,7 @@ const BLOCKS = new Set<BlockType>([
   'table',
   'image',
 ]);
-const ORIGINS = new Set(['keyboard', 'paste', 'drop', 'other']);
+const ORIGINS = new Set(['keyboard', 'dictation', 'paste', 'drop', 'other']);
 
 function isSpan(value: unknown): value is ProvenanceSpan {
   if (!value || typeof value !== 'object') return false;
@@ -136,7 +136,12 @@ function isMark(value: unknown): value is InlineMark {
 function isPoint(value: unknown): value is CertificationPoint {
   if (!value || typeof value !== 'object') return false;
   const point = value as CertificationPoint;
-  return point.origin === 'keyboard' && typeof point.id === 'string' && typeof point.contentHash === 'string' && typeof point.text === 'string';
+  return (
+    (point.origin === 'keyboard' || point.origin === 'dictation') &&
+    typeof point.id === 'string' &&
+    typeof point.contentHash === 'string' &&
+    typeof point.text === 'string'
+  );
 }
 
 function isMove(value: unknown): value is MoveRecord {
