@@ -7,6 +7,8 @@ import {
   editField,
   insertStructure,
   movePassage,
+  replaceAllManuscriptMatches,
+  replaceManuscriptMatch,
   nudgeBlock,
   passageState,
   removeBlock,
@@ -22,7 +24,7 @@ import {
 } from '../core/document.ts';
 import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
 import { clearFormatting, expandCollapsedRange } from '../core/richText.ts';
-import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
+import { findMatches, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel } from '../core/deviceName.ts';
@@ -45,6 +47,8 @@ import {
   IconCertificationView,
   IconChapter,
   IconExportPreview,
+  IconFindNext,
+  IconFindPrevious,
   IconImage,
   IconItalic,
   IconManuscriptView,
@@ -52,6 +56,8 @@ import {
   IconPageBreak,
   IconParagraph,
   IconRedo,
+  IconReplace,
+  IconReplaceAll,
   IconScene,
   IconSceneBreak,
   IconSection,
@@ -105,6 +111,8 @@ export function Editor({
   const [undo, setUndo] = useState<ManuscriptDocument[]>([]);
   const [redo, setRedo] = useState<ManuscriptDocument[]>([]);
   const [query, setQuery] = useState('');
+  const [replacement, setReplacement] = useState('');
+  const [replaceNote, setReplaceNote] = useState('');
   const [hit, setHit] = useState(0);
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
   const [renderToken, setRenderToken] = useState(0);
@@ -178,7 +186,10 @@ export function Editor({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [focusMode, onFocusModeChange]);
 
-  const commit = (recipe: (current: ManuscriptDocument) => Promise<ManuscriptDocument> | ManuscriptDocument) => {
+  const commit = (
+    recipe: (current: ManuscriptDocument) => Promise<ManuscriptDocument> | ManuscriptDocument,
+    options?: { external?: boolean },
+  ) => {
     const snapshot = docRef.current;
     chain.current = chain.current.then(async () => {
       try {
@@ -187,6 +198,7 @@ export function Editor({
         docRef.current = next;
         setUndo((stack) => [...stack, snapshot].slice(-40));
         setRedo([]);
+        if (options?.external) setRenderToken((token) => token + 1);
         onChange(next);
       } catch (error) {
         console.error(error);
@@ -213,7 +225,8 @@ export function Editor({
   };
 
   const matches = useMemo(() => findMatches(doc.blocks, query), [doc.blocks, query]);
-  const activeHit = matches.length ? matches[hit % matches.length]! : null;
+  const activeIndex = matches.length ? ((hit % matches.length) + matches.length) % matches.length : 0;
+  const activeHit = matches.length ? matches[activeIndex]! : null;
   const numbers = useMemo(() => new Map(chapterOrder(doc.blocks).map((c) => [c.id, c.number])), [doc.blocks]);
   const name = slug(displayTitle(doc));
 
@@ -221,6 +234,68 @@ export function Editor({
     if (!activeHit) return;
     document.getElementById(`block-${activeHit.blockId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [activeHit]);
+
+  const stepMatch = (delta: number) => {
+    if (!matches.length) return;
+    setHit((n) => {
+      const current = ((n % matches.length) + matches.length) % matches.length;
+      return (current + delta + matches.length) % matches.length;
+    });
+  };
+
+  const replaceCurrent = () => {
+    if (!matches.length || !query.trim()) return;
+    const current = matches[activeIndex]!;
+    const queryNow = query;
+    const replacementNow = replacement;
+    commit(async (currentDoc) => {
+      const live = findMatches(currentDoc.blocks, queryNow);
+      const match = live.find(
+        (item) =>
+          item.blockId === current.blockId &&
+          item.field === current.field &&
+          item.start === current.start &&
+          item.end === current.end,
+      );
+      if (!match) return currentDoc;
+      const next = await replaceManuscriptMatch({
+        doc: currentDoc,
+        match,
+        replacement: replacementNow,
+        now: new Date().toISOString(),
+        newId: ids.current,
+      });
+      if (next === currentDoc) return currentDoc;
+      const nextMatches = findMatches(next.blocks, queryNow);
+      const idx = matchIndexAtOrAfter(next.blocks, nextMatches, {
+        blockId: match.blockId,
+        field: match.field,
+        at: match.start + replacementNow.length,
+      });
+      setHit(idx >= 0 ? idx : 0);
+      setReplaceNote('Replaced 1');
+      return next;
+    }, { external: true });
+  };
+
+  const replaceEvery = () => {
+    if (!query.trim()) return;
+    const queryNow = query;
+    const replacementNow = replacement;
+    commit(async (currentDoc) => {
+      const result = await replaceAllManuscriptMatches({
+        doc: currentDoc,
+        query: queryNow,
+        replacement: replacementNow,
+        now: new Date().toISOString(),
+        newId: ids.current,
+      });
+      if (result.doc === currentDoc) return currentDoc;
+      setHit(0);
+      setReplaceNote(result.count === 1 ? 'Replaced 1' : `Replaced ${result.count}`);
+      return result.doc;
+    }, { external: true });
+  };
 
   const onFormat = (kind: InlineMarkKind) => {
     if (!selection) return;
@@ -450,11 +525,64 @@ export function Editor({
         )}
 
         {!showPreview && (
-        <form className="find" role="search" onSubmit={(e) => { e.preventDefault(); setHit((n) => n + 1); }}>
-          <label htmlFor="find">Find</label>
-          <input id="find" value={query} onChange={(e) => { setQuery(e.target.value); setHit(0); }} placeholder="Search the manuscript" />
-          <span>{query.trim() ? `${matches.length ? (hit % matches.length) + 1 : 0} of ${matches.length}` : ' '}</span>
-        </form>
+        <div className="find" role="search" aria-label="Find and replace">
+          <div className="find-row">
+            <label htmlFor="find">Find</label>
+            <input
+              id="find"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setHit(0);
+                setReplaceNote('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                stepMatch(e.shiftKey ? -1 : 1);
+              }}
+              placeholder="Search the manuscript"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <span className="find-count" aria-live="polite">
+              {query.trim() ? `${matches.length ? activeIndex + 1 : 0} of ${matches.length}` : ''}
+            </span>
+            <div className="find-actions" role="group" aria-label="Find in the manuscript">
+              <ToolbarIconButton label="Find previous" disabled={!matches.length} onClick={() => stepMatch(-1)}>
+                <IconFindPrevious />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Find next" disabled={!matches.length} onClick={() => stepMatch(1)}>
+                <IconFindNext />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="find-row">
+            <label htmlFor="replace">Replace</label>
+            <input
+              id="replace"
+              value={replacement}
+              onChange={(e) => setReplacement(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                replaceCurrent();
+              }}
+              placeholder="Replacement"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <span className="find-count">{replaceNote}</span>
+            <div className="find-actions" role="group" aria-label="Replace in the manuscript">
+              <ToolbarIconButton label="Replace" disabled={!matches.length} onClick={replaceCurrent}>
+                <IconReplace />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Replace all" disabled={!matches.length} onClick={replaceEvery}>
+                <IconReplaceAll />
+              </ToolbarIconButton>
+            </div>
+          </div>
+        </div>
         )}
         </div>
 

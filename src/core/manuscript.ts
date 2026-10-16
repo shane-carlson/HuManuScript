@@ -196,13 +196,17 @@ export function manuscriptStats(blocks: ManuscriptBlock[]): {
   return stats;
 }
 
-export function findMatches(
-  blocks: ManuscriptBlock[],
-  query: string,
-): Array<{ blockId: string; field: 'title' | 'text'; start: number; end: number }> {
+export interface ManuscriptMatch {
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+}
+
+export function findMatches(blocks: ManuscriptBlock[], query: string): ManuscriptMatch[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
-  const hits: Array<{ blockId: string; field: 'title' | 'text'; start: number; end: number }> = [];
+  const hits: ManuscriptMatch[] = [];
   for (const block of blocks) {
     const fields: Array<['title' | 'text', string]> =
       block.type === 'paragraph' || block.type === 'blockquote'
@@ -222,4 +226,23 @@ export function findMatches(
     }
   }
   return hits;
+}
+
+/** First match at or after `anchor` in manuscript order. -1 when none remain. */
+export function matchIndexAtOrAfter(
+  blocks: Array<{ id: string }>,
+  matches: ManuscriptMatch[],
+  anchor: { blockId: string; field: 'title' | 'text'; at: number },
+): number {
+  const order = new Map(blocks.map((block, index) => [block.id, index]));
+  const anchorOrder = order.get(anchor.blockId);
+  if (anchorOrder == null) return -1;
+  return matches.findIndex((match) => {
+    const matchOrder = order.get(match.blockId);
+    if (matchOrder == null) return false;
+    if (matchOrder > anchorOrder) return true;
+    if (matchOrder < anchorOrder) return false;
+    if (match.field !== anchor.field) return anchor.field === 'title' && match.field === 'text';
+    return match.start >= anchor.at;
+  });
 }

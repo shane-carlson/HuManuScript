@@ -206,6 +206,43 @@ export function IconExportPreview() {
   );
 }
 
+export function IconFindPrevious() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M6 14l6-6 6 6" />
+    </svg>
+  );
+}
+
+export function IconFindNext() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M6 10l6 6 6-6" />
+    </svg>
+  );
+}
+
+export function IconReplace() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M5 7h8" />
+      <path d="M5 17h14" />
+      <path d="M15 4l3 3-3 3" />
+    </svg>
+  );
+}
+
+export function IconReplaceAll() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 8h10" />
+      <path d="M4 16h10" />
+      <path d="M15 5l3 3-3 3" />
+      <path d="M15 13l3 3-3 3" />
+    </svg>
+  );
+}
+
 export function IconCertificationView() {
   return (
     <svg {...iconProps} aria-hidden="true">

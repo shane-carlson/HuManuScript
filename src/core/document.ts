@@ -21,12 +21,14 @@ import {
   chapterOrder,
   dragPreviewLabel,
   emptyBlock,
+  findMatches,
   manuscriptStats,
   moveBlockBy,
   moveBlockRange,
   movableRange,
   unwrapHeading,
   type BlockRange,
+  type ManuscriptMatch,
 } from './manuscript.ts';
 import { expandCollapsedRange, toggleMark } from './richText.ts';
 import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
@@ -744,6 +746,64 @@ export function certificationExport(doc: ManuscriptDocument, exportedAt: string)
       spans: (isProseBlock(block.type) ? doc.provenance[block.id]?.text : doc.provenance[block.id]?.title) ?? [],
     })),
   };
+}
+
+/**
+ * Replace one find hit. The new text is an other insertion, never a keyboard seal.
+ * Remnants on either side keep their seals, the same way a paste splits a span.
+ */
+export async function replaceManuscriptMatch(args: {
+  doc: ManuscriptDocument;
+  match: ManuscriptMatch;
+  replacement: string;
+  now: string;
+  newId: () => string;
+}): Promise<ManuscriptDocument> {
+  return editField({
+    doc: args.doc,
+    blockId: args.match.blockId,
+    field: args.match.field,
+    start: args.match.start,
+    end: args.match.end,
+    insert: args.replacement,
+    origin: 'other',
+    event: null,
+    now: args.now,
+    newId: args.newId,
+  });
+}
+
+/**
+ * Replace every current match once, from the end of each field so earlier offsets stay valid.
+ * Text inserted by the replacement is not searched again.
+ */
+export async function replaceAllManuscriptMatches(args: {
+  doc: ManuscriptDocument;
+  query: string;
+  replacement: string;
+  now: string;
+  newId: () => string;
+}): Promise<{ doc: ManuscriptDocument; count: number }> {
+  const matches = findMatches(args.doc.blocks, args.query);
+  if (!matches.length) return { doc: args.doc, count: 0 };
+  const indexOf = new Map(args.doc.blocks.map((block, index) => [block.id, index]));
+  const ordered = [...matches].sort((a, b) => {
+    const ai = indexOf.get(a.blockId) ?? 0;
+    const bi = indexOf.get(b.blockId) ?? 0;
+    if (ai !== bi) return bi - ai;
+    return b.start - a.start;
+  });
+  let doc = args.doc;
+  for (const match of ordered) {
+    doc = await replaceManuscriptMatch({
+      doc,
+      match,
+      replacement: args.replacement,
+      now: args.now,
+      newId: args.newId,
+    });
+  }
+  return { doc, count: matches.length };
 }
 
 export function manuscriptExport(doc: ManuscriptDocument, exportedAt: string) {
