@@ -529,6 +529,35 @@ export function Editor({
                         <IconFindNext />
                       </ToolbarIconButton>
                     </div>
+                    {showReplace && (
+                      <div className="find-row find-row--replace">
+                        <div className="find-field">
+                          <input
+                            id="replace"
+                            aria-label="Replace"
+                            value={replacement}
+                            onChange={(e) => setReplacement(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter') return;
+                              e.preventDefault();
+                              replaceCurrent();
+                            }}
+                            placeholder="Replacement"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <div className="find-actions" role="group" aria-label="Replace in the manuscript">
+                            <ToolbarIconButton label="Replace" disabled={!matches.length} onClick={replaceCurrent}>
+                              <IconReplace />
+                            </ToolbarIconButton>
+                            <ToolbarIconButton label="Replace all" disabled={!matches.length} onClick={replaceEvery}>
+                              <IconReplaceAll />
+                            </ToolbarIconButton>
+                          </div>
+                        </div>
+                        {replaceNote ? <span className="find-count">{replaceNote}</span> : null}
+                      </div>
+                    )}
                   </div>
                   {query.trim() ? (
                     <span className="find-count" aria-live="polite">
@@ -536,35 +565,6 @@ export function Editor({
                     </span>
                   ) : null}
                 </div>
-                {showReplace && (
-                  <div className="find-row find-row--replace">
-                    <div className="find-field">
-                      <input
-                        id="replace"
-                        aria-label="Replace"
-                        value={replacement}
-                        onChange={(e) => setReplacement(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Enter') return;
-                          e.preventDefault();
-                          replaceCurrent();
-                        }}
-                        placeholder="Replacement"
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <div className="find-actions" role="group" aria-label="Replace in the manuscript">
-                        <ToolbarIconButton label="Replace" disabled={!matches.length} onClick={replaceCurrent}>
-                          <IconReplace />
-                        </ToolbarIconButton>
-                        <ToolbarIconButton label="Replace all" disabled={!matches.length} onClick={replaceEvery}>
-                          <IconReplaceAll />
-                        </ToolbarIconButton>
-                      </div>
-                    </div>
-                    {replaceNote ? <span className="find-count">{replaceNote}</span> : null}
-                  </div>
-                )}
               </div>
             )}
           </div>

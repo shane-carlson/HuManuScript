@@ -779,6 +779,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   align-items: center;
 }
 .find-field {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -819,8 +820,22 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
+  right: 0;
+  width: auto;
   z-index: 3;
   background: var(--bg-elev);
+}
+.find-row--replace .find-field {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.find-row--replace .find-count {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
 }
 .canvas-head.is-replace-open {
   padding-bottom: 46px;
