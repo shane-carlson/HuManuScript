@@ -23,7 +23,6 @@ import {
   type ManuscriptDocument,
 } from '../core/document.ts';
 import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
-import { clearFormatting, expandCollapsedRange } from '../core/richText.ts';
 import { findMatches, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
@@ -321,28 +320,6 @@ export function Editor({
         : current.blocks.length - 1;
       const at = index >= 0 ? index + 1 : 0;
       return insertStructure(current, kind, at, ids.current());
-    });
-  };
-
-  const onClearFormatForBlock = (blockId: string) => {
-    commit((current) => {
-      const block = current.blocks.find((b) => b.id === blockId);
-      if (!block || !isProseBlock(block.type)) return current;
-      if (selection && selection.blockId === blockId) {
-        const range = expandCollapsedRange(block.text, selection.start, selection.end);
-        return {
-          ...current,
-          blocks: current.blocks.map((b) =>
-            b.id === blockId
-              ? { ...b, marks: clearFormatting(b.marks, range.start, range.end, b.text.length) }
-              : b,
-          ),
-        };
-      }
-      return {
-        ...current,
-        blocks: current.blocks.map((b) => (b.id === blockId ? { ...b, marks: [] } : b)),
-      };
     });
   };
 
@@ -806,7 +783,6 @@ export function Editor({
                         ariaLabel={isProseBlock(block.type) ? (block.type === 'blockquote' ? 'Block quote' : 'Paragraph') : `${block.type} title`}
                         listStyle={block.type === 'paragraph' ? block.listStyle ?? null : null}
                         indentLevel={isProseBlock(block.type) ? block.indentLevel ?? 0 : 0}
-                        onParagraphMeta={(patch) => commit((current) => updateParagraphMeta(current, block.id, patch))}
                         onInsertTable={() => insertAfter(block.id, 'table')}
                         onInsertImage={() => insertAfter(block.id, 'image')}
                         onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
@@ -819,7 +795,6 @@ export function Editor({
                           : current)}
                         onSelect={(start, end) => setSelection({ blockId: block.id, start, end })}
                         onFormat={onFormat}
-                        onClearFormat={() => onClearFormatForBlock(block.id)}
                         onInternalDrag={(start, end) => {
                           textDrag.current = { blockId: block.id, start, end };
                         }}

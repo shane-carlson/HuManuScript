@@ -2,6 +2,8 @@
 
 export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
+  /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
+  getSpellSuggestions?: (word: string) => string[];
 };
 
 declare global {
