@@ -497,6 +497,12 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .summary-rollup span { display: block; color: var(--text-dim); font-size: 0.8rem; }
 .summary-rollup strong { font-family: var(--serif); font-size: 1.8rem; font-weight: 600; }
+.summary-device-list {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.summary-device-list li + li { margin-top: 2px; }
 .summary-origin-list {
   display: flex;
   flex-wrap: wrap;

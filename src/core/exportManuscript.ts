@@ -14,6 +14,7 @@ import {
 } from 'docx';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
+import { getTypingDeviceLabel } from './deviceName.ts';
 import {
   buildCertificationPageModel,
   certificationFactLines,
@@ -547,7 +548,8 @@ export async function exportManuscriptBlob(
   exportedAt: string = new Date().toISOString(),
   identity: CertificationPageIdentity = {},
 ): Promise<Blob> {
-  const model = buildCertificationPageModel(doc, exportedAt, identity);
+  const liveDevice = await getTypingDeviceLabel();
+  const model = buildCertificationPageModel(doc, exportedAt, identity, liveDevice);
   switch (format) {
     case 'plain': {
       const text = joinAfterPageBreak(certificationPagePlain(model), PLAIN_PAGE_BREAK, bodyPlain(doc));

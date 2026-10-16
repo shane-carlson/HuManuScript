@@ -355,8 +355,8 @@ export function Editor({
     () => buildCertificationPageModel(doc, previewExportedAt, {
       bookTitle: bookTitle || displayTitle(doc),
       seriesLabel,
-    }),
-    [doc, previewExportedAt, bookTitle, seriesLabel],
+    }, liveDevice),
+    [doc, previewExportedAt, bookTitle, seriesLabel, liveDevice],
   );
   const openPreview = () => {
     setPreviewExportedAt(new Date().toISOString());

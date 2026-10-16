@@ -86,6 +86,22 @@ export function CertificationSummaryPage({ model }: { model: CertificationPageMo
             <dt>Certification points</dt>
             <dd>{model.certificationPoints}</dd>
           </div>
+          {model.devices.length > 0 ? (
+            <div>
+              <dt>{model.devices.length === 1 ? 'Device' : 'Devices'}</dt>
+              <dd>
+                {model.devices.length === 1 ? (
+                  model.devices[0]
+                ) : (
+                  <ul className="summary-device-list">
+                    {model.devices.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Book</dt>
             <dd>{model.bookTitle}</dd>

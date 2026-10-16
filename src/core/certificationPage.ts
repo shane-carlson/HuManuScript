@@ -4,6 +4,7 @@
  */
 
 import { TRUST_STATEMENT, type ProvenanceSpan } from './certification.ts';
+import { UNAVAILABLE_DEVICE_LABEL, formatTypingDeviceLabel } from './deviceName.ts';
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
 import { manuscriptStats } from './manuscript.ts';
@@ -43,6 +44,8 @@ export interface CertificationPageModel {
   exportedAtLabel: string;
   /** Purpose and trust limit in one block. */
   banner: string;
+  /** Distinct card labels for certified spans, in manuscript order. */
+  devices: string[];
   totals: OriginWordTotals;
   chapters: number;
   scenes: number;
@@ -104,10 +107,42 @@ function mergeTotals(into: OriginWordTotals, add: OriginWordTotals): void {
   into.totalWords += add.totalWords;
 }
 
+/**
+ * Distinct device labels on certified spans, in manuscript order.
+ * The unavailable sentence is replaced the same way a card replaces it.
+ */
+export function manuscriptDeviceLabels(doc: ManuscriptDocument, live?: string | null): string[] {
+  const byId = new Map(doc.points.map((point) => [point.id, point]));
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const block of doc.blocks) {
+    const prov = doc.provenance[block.id];
+    const spans = [...(prov?.title ?? []), ...(prov?.text ?? [])];
+    for (const span of spans) {
+      if (!span.certificationId) continue;
+      const stored = byId.get(span.certificationId)?.typingDevice;
+      if (!stored?.trim()) continue;
+      const label = formatTypingDeviceLabel(stored, live);
+      if (!label || label === UNAVAILABLE_DEVICE_LABEL || seen.has(label)) continue;
+      seen.add(label);
+      labels.push(label);
+    }
+  }
+  return labels;
+}
+
+/** One stored device names itself. Several are listed by name. */
+export function deviceStatLine(devices: string[]): string | null {
+  if (devices.length === 0) return null;
+  if (devices.length === 1) return `Device: ${devices[0]}`;
+  return `Devices: ${devices.join(', ')}`;
+}
+
 export function buildCertificationPageModel(
   doc: ManuscriptDocument,
   exportedAt: string,
   identity: CertificationPageIdentity = {},
+  liveDevice?: string | null,
 ): CertificationPageModel {
   const totals = emptyTotals();
   for (const block of doc.blocks) {
@@ -129,6 +164,7 @@ export function buildCertificationPageModel(
     exportedAt,
     exportedAtLabel: formatExportDateTime(exportedAt),
     banner: certificationBannerText(),
+    devices: manuscriptDeviceLabels(doc, liveDevice),
     totals,
     chapters: stats.chapters,
     scenes: stats.scenes,
@@ -169,8 +205,10 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
     `Sections: ${model.sections}`,
     `Paragraphs: ${model.paragraphs}`,
     `Certification points: ${model.certificationPoints}`,
-    `Book: ${model.bookTitle}`,
   );
+  const devices = deviceStatLine(model.devices);
+  if (devices) lines.push(devices);
+  lines.push(`Book: ${model.bookTitle}`);
   if (model.seriesLabel) lines.push(`Series: ${model.seriesLabel}`);
   return lines;
 }

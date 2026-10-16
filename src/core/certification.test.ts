@@ -11,7 +11,8 @@ import {
   stripInvalidKeyboardSeals,
   syncBlockPoints,
 } from './certification.ts';
-import { certificationBannerText, buildCertificationPageModel, certificationPagePlain } from './certificationPage.ts';
+import { certificationBannerText, buildCertificationPageModel, certificationPagePlain, deviceStatLine } from './certificationPage.ts';
+import { UNAVAILABLE_DEVICE_LABEL } from './deviceName.ts';
 import {
   editField,
   emptyDocument,
@@ -383,6 +384,58 @@ test('certification summary is one page of facts, not a passage dump', async () 
   assert.doesNotMatch(plain, /Hash:/);
   assert.doesNotMatch(plain, /\[paste\]/);
   assert.equal(plain.split('\f').length, 1);
+});
+
+function sealedPoint(id: string, blockId: string, text: string, typingDevice?: string) {
+  return {
+    id,
+    blockId,
+    spanId: `span-${id}`,
+    text,
+    contentHash: 'abc',
+    sealedAt: now,
+    updatedAt: now,
+    origin: 'keyboard' as const,
+    evidence: { inputTypes: ['insertText'], eventCount: 1, events: [] },
+    priorHashes: [],
+    typingDevice,
+  };
+}
+
+test('summary lists each stored device and never the unavailable sentence', () => {
+  const doc = emptyDocument('ms-devices');
+  doc.blocks = [
+    { id: 'p1', type: 'paragraph', title: '', text: 'Hello', marks: [] },
+    { id: 'p2', type: 'paragraph', title: '', text: 'There', marks: [] },
+    { id: 'p3', type: 'paragraph', title: '', text: 'Again', marks: [] },
+    { id: 'p4', type: 'paragraph', title: '', text: 'Pasted', marks: [] },
+  ];
+  doc.provenance = {
+    p1: { title: [], text: [{ id: 's1', start: 0, end: 5, origin: 'keyboard', certificationId: 'c1' }] },
+    p2: { title: [], text: [{ id: 's2', start: 0, end: 5, origin: 'keyboard', certificationId: 'c2' }] },
+    p3: { title: [], text: [{ id: 's3', start: 0, end: 5, origin: 'keyboard', certificationId: 'c1' }] },
+    p4: { title: [], text: [{ id: 's4', start: 0, end: 6, origin: 'paste' }] },
+  };
+  doc.points = [
+    sealedPoint('c1', 'p1', 'Hello', 'writers-mac.local'),
+    sealedPoint('c2', 'p2', 'There', UNAVAILABLE_DEVICE_LABEL),
+  ];
+  const several = buildCertificationPageModel(doc, now, {}, 'Linux · Chrome');
+  assert.deepEqual(several.devices, ['writers-mac.local', 'Linux · Chrome']);
+  assert.equal(deviceStatLine(several.devices), 'Devices: writers-mac.local, Linux · Chrome');
+  assert.match(certificationPagePlain(several), /Devices: writers-mac\.local, Linux · Chrome/);
+  assert.doesNotMatch(certificationPagePlain(several), /unavailable/);
+
+  doc.points = [sealedPoint('c1', 'p1', 'Hello', 'writers-mac.local')];
+  const one = buildCertificationPageModel(doc, now, {}, 'Linux · Chrome');
+  assert.deepEqual(one.devices, ['writers-mac.local']);
+  assert.equal(deviceStatLine(one.devices), 'Device: writers-mac.local');
+
+  doc.points = [sealedPoint('c1', 'p1', 'Hello')];
+  const none = buildCertificationPageModel(doc, now, {}, null);
+  assert.deepEqual(none.devices, []);
+  assert.equal(deviceStatLine(none.devices), null);
+  assert.doesNotMatch(certificationPagePlain(none), /Device/);
 });
 
 test('chapter drag moves the following paragraph with the chapter', () => {
