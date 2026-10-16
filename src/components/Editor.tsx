@@ -370,7 +370,7 @@ export function Editor({
           <span className="focus-hint">Esc</span>
         </div>
       )}
-      <main className="canvas manuscript-surface">
+      <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
         <div className="canvas-head">
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
           <div className="toolbar-group">
