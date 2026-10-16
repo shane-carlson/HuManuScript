@@ -26,7 +26,7 @@ import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
 import { findMatches, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
-import { formatTypingDeviceLabel } from '../core/deviceName.ts';
+import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
 import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
@@ -122,6 +122,7 @@ export function Editor({
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
+  const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -133,6 +134,16 @@ export function Editor({
   useEffect(() => {
     saveCertificationCollapsed(certCollapsed);
   }, [certCollapsed]);
+
+  useEffect(() => {
+    let cancel = false;
+    void getTypingDeviceLabel().then((label) => {
+      if (!cancel) setLiveDevice(label);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   useEffect(() => {
     docRef.current = doc;
@@ -916,7 +927,7 @@ export function Editor({
                   </header>
                   <blockquote>{point.text}</blockquote>
                   <code title={point.contentHash}>{point.contentHash.slice(0, 16)}…</code>
-                  <p className="point-device">Device: {formatTypingDeviceLabel(point.typingDevice)}</p>
+                  <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
                 </li>
@@ -956,6 +967,12 @@ export function Editor({
       )}
     </div>
   );
+}
+
+function DeviceLine({ stored, live }: { stored?: string; live: string | null }) {
+  const label = formatTypingDeviceLabel(stored, live);
+  if (!label) return null;
+  return <p className="point-device">Device: {label}</p>;
 }
 
 function scrollCardIntoCertificationPane(card: HTMLElement) {
