@@ -229,7 +229,7 @@ export default function App() {
           <span className="mark" aria-hidden="true">H</span>
           <div>
             <p className="wordmark">HuManuScript</p>
-            <p className="tag">Keyboard-sealed prose, on the Speak Fiction manuscript</p>
+            <p className="tag">Helping authors document the humanity of their prose.</p>
           </div>
         </div>
         {phase === 'ready' && doc && library && activeBook && (
