@@ -30,7 +30,6 @@ export function VersionHistoryPane({
       <div className="version-history-pane__head">
         <div>
           <h2>Version history</h2>
-          <p>Named snapshots for this book, and a portable backup of the library.</p>
         </div>
         <div className="book-pill">
           <span aria-hidden="true">📖</span>

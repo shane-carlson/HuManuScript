@@ -88,7 +88,7 @@ export function LibraryBackup({
 
   return (
     <section className="workspace-backup card-inset">
-      <h3>Backup &amp; restore</h3>
+      <h3 className="sr-only">Backup &amp; restore</h3>
       <p className="sub">Download a portable JSON backup. Choose which books to include (default: all).</p>
       <div className="backup-actions">
         <button type="button" onClick={() => setAll(true)}>Select all</button>

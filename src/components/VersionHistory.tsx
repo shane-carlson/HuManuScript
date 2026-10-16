@@ -32,7 +32,7 @@ export function VersionHistory({
 
   return (
     <section className="workspace-versions card-inset">
-      <h3>Version history</h3>
+      <h3 className="sr-only">Version history</h3>
       <p className="sub">Named snapshots for <strong>{bookTitle}</strong>, like Speak Fiction book versions. Restore rolls back the whole book.</p>
       <div className="version-save">
         <label className="field">
