@@ -120,6 +120,7 @@ export function Editor({
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -344,6 +345,7 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const showReplace = replaceOpen && !showPreview;
   const [previewExportedAt, setPreviewExportedAt] = useState(() => new Date().toISOString());
   const previewModel = useMemo(
     () => buildCertificationPageModel(doc, previewExportedAt, {
@@ -370,8 +372,8 @@ export function Editor({
           <span className="focus-hint">Esc</span>
         </div>
       )}
-      <main className="canvas manuscript-surface">
-        <div className="canvas-head">
+      <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
+        <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
@@ -449,36 +451,118 @@ export function Editor({
               </ToolbarIconButton>
             </div>
           </div>
-          <div className="toolbar-group">
-            <span className="toolbar-group__label" id="toolbar-history">History</span>
-            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-history">
-              <ToolbarIconButton
-                label="Undo"
-                disabled={!undo.length}
-                onClick={() => {
-                  const previous = undo[undo.length - 1];
-                  if (!previous) return;
-                  setUndo(undo.slice(0, -1));
-                  setRedo([doc, ...redo]);
-                  replace(previous);
-                }}
-              >
-                <IconUndo />
-              </ToolbarIconButton>
-              <ToolbarIconButton
-                label="Redo"
-                disabled={!redo.length}
-                onClick={() => {
-                  const next = redo[0];
-                  if (!next) return;
-                  setRedo(redo.slice(1));
-                  setUndo([...undo, doc]);
-                  replace(next);
-                }}
-              >
-                <IconRedo />
-              </ToolbarIconButton>
+          <div className="toolbar-history-find">
+            <div className="toolbar-group">
+              <span className="toolbar-group__label" id="toolbar-history">History</span>
+              <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-history">
+                <ToolbarIconButton
+                  label="Undo"
+                  disabled={!undo.length}
+                  onClick={() => {
+                    const previous = undo[undo.length - 1];
+                    if (!previous) return;
+                    setUndo(undo.slice(0, -1));
+                    setRedo([doc, ...redo]);
+                    replace(previous);
+                  }}
+                >
+                  <IconUndo />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Redo"
+                  disabled={!redo.length}
+                  onClick={() => {
+                    const next = redo[0];
+                    if (!next) return;
+                    setRedo(redo.slice(1));
+                    setUndo([...undo, doc]);
+                    replace(next);
+                  }}
+                >
+                  <IconRedo />
+                </ToolbarIconButton>
+              </div>
             </div>
+            {!showPreview && (
+              <div
+                className="find"
+                role="search"
+                aria-label={showReplace ? 'Find and replace' : 'Find'}
+                onBlur={(event) => {
+                  const next = event.relatedTarget;
+                  if (next instanceof Node && event.currentTarget.contains(next)) return;
+                  setReplaceOpen(false);
+                }}
+              >
+                <label className="toolbar-group__label" htmlFor="find">
+                  {showReplace ? 'Find & replace' : 'Find'}
+                </label>
+                <div className="find-row">
+                  <div className="find-field">
+                    <input
+                      id="find"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setHit(0);
+                        setReplaceNote('');
+                      }}
+                      onFocus={() => setReplaceOpen(true)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        stepMatch(e.shiftKey ? -1 : 1);
+                      }}
+                      placeholder="Search the manuscript"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <div className="find-actions" role="group" aria-label="Find in the manuscript">
+                      <ToolbarIconButton label="Find previous" disabled={!matches.length} onClick={() => stepMatch(-1)}>
+                        <IconFindPrevious />
+                      </ToolbarIconButton>
+                      <ToolbarIconButton label="Find next" disabled={!matches.length} onClick={() => stepMatch(1)}>
+                        <IconFindNext />
+                      </ToolbarIconButton>
+                    </div>
+                  </div>
+                  {query.trim() ? (
+                    <span className="find-count" aria-live="polite">
+                      {matches.length ? activeIndex + 1 : 0} of {matches.length}
+                    </span>
+                  ) : null}
+                </div>
+                {showReplace && (
+                  <div className="find-row find-row--replace">
+                    <div className="find-field">
+                      <input
+                        id="replace"
+                        aria-label="Replace"
+                        value={replacement}
+                        onChange={(e) => setReplacement(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          replaceCurrent();
+                        }}
+                        placeholder="Replacement"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <div className="find-actions" role="group" aria-label="Replace in the manuscript">
+                        <ToolbarIconButton label="Replace" disabled={!matches.length} onClick={replaceCurrent}>
+                          <IconReplace />
+                        </ToolbarIconButton>
+                        <ToolbarIconButton label="Replace all" disabled={!matches.length} onClick={replaceEvery}>
+                          <IconReplaceAll />
+                        </ToolbarIconButton>
+                      </div>
+                    </div>
+                    {replaceNote ? <span className="find-count">{replaceNote}</span> : null}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="toolbar-group toolbar-group--end">
             <span className="toolbar-group__label" id="toolbar-view">View</span>
@@ -522,67 +606,6 @@ export function Editor({
             <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
             <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
           </ul>
-        )}
-
-        {!showPreview && (
-        <div className="find" role="search" aria-label="Find and replace">
-          <div className="find-row">
-            <label htmlFor="find">Find</label>
-            <input
-              id="find"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setHit(0);
-                setReplaceNote('');
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                stepMatch(e.shiftKey ? -1 : 1);
-              }}
-              placeholder="Search the manuscript"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="find-count" aria-live="polite">
-              {query.trim() ? `${matches.length ? activeIndex + 1 : 0} of ${matches.length}` : ''}
-            </span>
-            <div className="find-actions" role="group" aria-label="Find in the manuscript">
-              <ToolbarIconButton label="Find previous" disabled={!matches.length} onClick={() => stepMatch(-1)}>
-                <IconFindPrevious />
-              </ToolbarIconButton>
-              <ToolbarIconButton label="Find next" disabled={!matches.length} onClick={() => stepMatch(1)}>
-                <IconFindNext />
-              </ToolbarIconButton>
-            </div>
-          </div>
-          <div className="find-row">
-            <label htmlFor="replace">Replace</label>
-            <input
-              id="replace"
-              value={replacement}
-              onChange={(e) => setReplacement(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                replaceCurrent();
-              }}
-              placeholder="Replacement"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="find-count">{replaceNote}</span>
-            <div className="find-actions" role="group" aria-label="Replace in the manuscript">
-              <ToolbarIconButton label="Replace" disabled={!matches.length} onClick={replaceCurrent}>
-                <IconReplace />
-              </ToolbarIconButton>
-              <ToolbarIconButton label="Replace all" disabled={!matches.length} onClick={replaceEvery}>
-                <IconReplaceAll />
-              </ToolbarIconButton>
-            </div>
-          </div>
-        </div>
         )}
         </div>
 
