@@ -54,10 +54,13 @@ jobs:
           exit 1
 
       - name: Install Apple notarization API key
-        if: ${{ secrets.APPLE_API_KEY_ID != '' }}
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
+          if [ -z "$APPLE_API_KEY_ID" ]; then
+            echo "No App Store Connect API key id; skipping key file install."
+            exit 0
+          fi
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           printf '%s' "$APPLE_API_KEY" > "$KEY_PATH"
           echo >> "$KEY_PATH"
