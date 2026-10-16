@@ -752,40 +752,85 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .legend li { display: flex; align-items: center; gap: 8px; }
 .swatch { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
 .trust { color: var(--text-dim); font-size: 0.86rem; }
+.toolbar-history-find {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
 .find {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
+  align-items: flex-start;
+  gap: 0;
+  margin: 0;
+  min-width: 0;
 }
 .find-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
   align-items: center;
 }
 .find-row label {
-  flex: 0 0 4.75rem;
-  font-size: 0.8rem;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
+.find-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
 .find input {
-  flex: 1 1 180px;
-  width: auto;
-  max-width: 320px;
-  min-width: 140px;
+  flex: 1 1 12.5rem;
+  width: 12.5rem;
+  max-width: 14rem;
+  min-width: 8rem;
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 0.875rem;
 }
 .find-count {
-  flex: 0 1 auto;
-  min-width: 5.5rem;
-  font-size: 0.8rem;
+  flex: 0 0 auto;
+  min-width: 0;
+  font-size: 0.75rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+.find-count:empty { display: none; }
 .find-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
+}
+.find .toolbar-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.find .toolbar-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.find-row--replace {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
+  background: var(--bg-elev);
+}
+.canvas-head.is-replace-open {
+  padding-bottom: 46px;
+}
+.canvas-head.is-replace-open:has(.legend--inline) {
+  padding-bottom: 10px;
+}
+.canvas-head.is-replace-open .legend--inline {
+  margin-top: 38px;
 }
 .toolbar {
   display: flex;
@@ -800,7 +845,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 4px;
   min-width: 0;
 }
-.toolbar-group--end { margin-left: auto; }
+.toolbar-group--end { margin-left: auto; flex-shrink: 0; }
 .toolbar-group__label {
   font-family: var(--sans);
   font-size: 0.68rem;
@@ -1206,7 +1251,8 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }
   .toolbar-group--end { margin-left: 0; }
-  .find input { min-width: 0; flex-basis: 8rem; }
+  .toolbar-history-find { flex-wrap: wrap; }
+  .find input { min-width: 0; flex-basis: 8rem; width: 8rem; }
   .summary-rollup { grid-template-columns: 1fr; }
 
   /* Full screen still locks the tools and scrolls only the manuscript. */
