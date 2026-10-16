@@ -4,7 +4,7 @@ A manuscript editor for writers who want a record of how the prose got onto the 
 
 HuManuScript adds a certification layer. As you type, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text is sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as a spellcheck replacement or an untrusted scripted edit.
 
-This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated in the editor and in the certification file you export.
+This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated on the certification summary that leads every export.
 
 ## Run it
 

@@ -11,7 +11,7 @@ import {
   stripInvalidKeyboardSeals,
   syncBlockPoints,
 } from './certification.ts';
-import { buildCertificationPageModel, certificationPagePlain } from './certificationPage.ts';
+import { CERTIFICATION_PURPOSE, TRUST_STATEMENT, buildCertificationPageModel, certificationPagePlain } from './certificationPage.ts';
 import {
   editField,
   emptyDocument,
@@ -376,6 +376,10 @@ test('certification summary is one page of facts, not a passage dump', async () 
   assert.match(plain, /Chapters: 1/);
   assert.match(plain, /Series: Book 2 of Harbor Saga/);
   assert.match(plain, /Exported: 14 October 2026, 18:00 UTC/);
+  assert.match(plain, new RegExp(CERTIFICATION_PURPOSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(plain, /Trust limit/);
+  assert.match(plain, new RegExp(TRUST_STATEMENT.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(plain, /how much was typed in/);
   assert.doesNotMatch(plain, /Hash:/);
   assert.doesNotMatch(plain, /\[paste\]/);
   assert.equal(plain.split('\f').length, 1);

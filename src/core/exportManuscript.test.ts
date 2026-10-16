@@ -43,6 +43,8 @@ function manuscriptWithBreaks(): ManuscriptDocument {
 function assertOrder(label: string, parts: string[]) {
   assert.equal(parts.length, 3, `${label} should have a summary break and one manuscript page break`);
   assert.match(parts[0]!, /HuManuScript certification summary/);
+  assert.match(parts[0]!, /on what devices specific parts of the manuscript were introduced/);
+  assert.match(parts[0]!, /Trust limit/);
   assert.match(parts[0]!, /Keyboard-certified words:/);
   assert.match(parts[0]!, /Book 2 of Harbor Saga/);
   assert.match(parts[0]!, /14 October 2026, 18:00 UTC/);
@@ -92,6 +94,8 @@ test('word, odt, and pdf start the manuscript on the next page and keep the auth
   const pdf = pdfBuf.toString('latin1');
   const pageCount = pdf.match(/\/Type\s*\/Page(?!s)/g)?.length ?? 0;
   assert.equal(pageCount, 3, `pdf pages: ${pageCount}`);
+  assert.ok(pdf.includes('on what devices specific parts of the manuscript were introduced'));
+  assert.ok(pdf.includes('Browser keystroke'));
   const summaryAt = pdf.indexOf('HuManuScript certification summary');
   const beforeAt = pdf.indexOf('Before the break');
   const sceneAt = pdf.indexOf('* * *');

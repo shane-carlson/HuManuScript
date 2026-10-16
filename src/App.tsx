@@ -279,7 +279,6 @@ export default function App() {
           {theme === 'light' ? 'Dark paper' : 'Light paper'}
         </button>
       </header>
-      <p className="purpose-banner app-chrome">HuManuScript tracks and certifies how a manuscript is written — typed versus pasted — as evidence of human-written content. It does not guarantee the work is human-generated. It shows how much was typed in and how much was pasted in.</p>
       {phase === 'loading' && (
         <section className="status" aria-live="polite">
           <h1>Opening the library…</h1>

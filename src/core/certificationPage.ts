@@ -25,6 +25,9 @@ export interface CertificationPageIdentity {
   seriesLabel?: string | null;
 }
 
+export const CERTIFICATION_PURPOSE =
+  'HuManuScript tracks and certifies how a manuscript is written — typed versus pasted — as evidence of human-written content. It does not guarantee the work is human-generated. It shows how, when, and on what devices specific parts of the manuscript were introduced, and by what means: keyboard versus pasted. Certifications are timestamped and include a SHA key tied to the manuscript ID and device.';
+
 export interface CertificationPageModel {
   product: 'HuManuScript';
   bookTitle: string;
@@ -33,6 +36,8 @@ export interface CertificationPageModel {
   manuscriptId: string;
   exportedAt: string;
   exportedAtLabel: string;
+  /** Purpose banner on the summary page. Separate from the trust-limit paragraph. */
+  purpose: string;
   trust: string;
   totals: OriginWordTotals;
   chapters: number;
@@ -119,6 +124,7 @@ export function buildCertificationPageModel(
     manuscriptId: doc.manuscriptId,
     exportedAt,
     exportedAtLabel: formatExportDateTime(exportedAt),
+    purpose: CERTIFICATION_PURPOSE,
     trust: TRUST_STATEMENT,
     totals,
     chapters: stats.chapters,
@@ -133,6 +139,9 @@ export function buildCertificationPageModel(
 export function certificationFactLines(model: CertificationPageModel): string[] {
   const lines = [
     'HuManuScript certification summary',
+    '',
+    model.purpose,
+    '',
     `Book: ${model.bookTitle}`,
   ];
   if (model.seriesLabel) lines.push(`Series: ${model.seriesLabel}`);

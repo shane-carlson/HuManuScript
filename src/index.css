@@ -85,8 +85,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   flex-direction: column;
   overflow: hidden;
 }
-.app-chrome,
-.purpose-banner {
+.app-chrome {
   flex-shrink: 0;
 }
 .top {
@@ -132,17 +131,6 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .title-field input:focus, .find input:focus, .ms-field:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   border-color: var(--accent);
-}
-.purpose-banner {
-  margin: 0 22px 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-elev);
-  color: var(--text-dim);
-  font-size: 0.95rem;
-  line-height: 1.45;
-  max-width: 88ch;
 }
 .workspace-layout {
   display: grid;
@@ -464,6 +452,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .summary-page__head h3 { margin: 2px 0 6px; font-size: 1.45rem; }
 .summary-page__book { margin: 0; font-family: var(--serif); font-size: 1.15rem; }
 .summary-page__series { margin: 2px 0 0; color: var(--text-dim); font-size: 0.9rem; }
+.summary-purpose {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
 .summary-page h4 {
   margin: 16px 0 6px;
   font-family: var(--sans);
@@ -1281,7 +1279,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .stats--bar.stats--bar-one-row > div { padding: 8px 6px; }
   .stats--bar.stats--bar-one-row dd { font-size: 1.1rem; }
   .top { padding: 14px 14px 0; }
-  .purpose-banner, .empty, .status { margin-left: 14px; margin-right: 14px; }
+  .empty, .status { margin-left: 14px; margin-right: 14px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }
   .toolbar-group--end { margin-left: 0; }

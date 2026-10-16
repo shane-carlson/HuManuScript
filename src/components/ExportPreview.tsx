@@ -13,6 +13,8 @@ export function CertificationSummaryPage({ model }: { model: CertificationPageMo
         {model.seriesLabel ? <p className="summary-page__series">{model.seriesLabel}</p> : null}
       </header>
 
+      <p className="summary-purpose">{model.purpose}</p>
+
       <section className="summary-page__facts" aria-label="Key certification facts">
         <h4>Trust limit</h4>
         <p>{model.trust}</p>
