@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { buildCertificationPageModel, type CertificationPageIdentity } from '../core/certificationPage.ts';
+import { useMemo, useState, type ReactNode } from 'react';
+import { type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
 import {
   EXPORT_FORMAT_LABELS,
@@ -8,7 +8,6 @@ import {
   SCRIVENER_SPLIT_SEPARATOR,
   type ExportFormat,
 } from '../core/exportManuscript.ts';
-import { ExportPreview } from './ExportPreview.tsx';
 
 interface TargetInfo {
   id: string;
@@ -121,19 +120,10 @@ export function ExportPane({
     () => ({ bookTitle: bookTitle || title, seriesLabel }),
     [bookTitle, seriesLabel, title],
   );
-  const [exportedAt, setExportedAt] = useState(() => new Date().toISOString());
-  useEffect(() => {
-    setExportedAt(new Date().toISOString());
-  }, [doc]);
-  const previewModel = useMemo(
-    () => buildCertificationPageModel(doc, exportedAt, identity),
-    [doc, exportedAt, identity],
-  );
-
   const runExport = async () => {
     setExporting(true);
     try {
-      const blob = await exportManuscriptBlob(doc, target.format, previewModel.exportedAt, identity);
+      const blob = await exportManuscriptBlob(doc, target.format, new Date().toISOString(), identity);
       downloadBlob(exportFilename(title, target.format), blob);
     } catch (error) {
       console.error(error);
@@ -160,12 +150,11 @@ export function ExportPane({
       </div>
 
       <p className="export-cert-note">
-        Every download starts with a one-page <strong>certification summary</strong> — key facts, keyboard-certified words
-        versus pasted or uncertified words, and the manuscript counts — then a page break. The manuscript follows with no
-        certification highlights, and pasted text stays uncertified.
+        Every download starts with the one-page <strong>certification summary</strong> from the manuscript{' '}
+        <strong>Export preview</strong> — key facts, keyboard-certified words versus pasted or uncertified words, and the
+        manuscript counts — then a page break. The manuscript follows with no certification highlights, and pasted text
+        stays uncertified.
       </p>
-
-      <ExportPreview model={previewModel} doc={doc} />
 
       <div className="stepper" aria-label="Export steps">
         <div className="step is-active"><span className="num">1</span> Choose destination</div>

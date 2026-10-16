@@ -445,6 +445,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .instruction-list li { margin-bottom: 8px; }
 .export-download { padding: 10px 18px; }
 .export-preview { margin: 0 0 18px; }
+.canvas-body .export-preview { margin: 0; }
 .export-preview__head h3 { margin: 0 0 4px; }
 .export-preview__head p { margin: 0 0 12px; color: var(--text-dim); font-size: 0.88rem; max-width: 62ch; }
 .export-sheet {

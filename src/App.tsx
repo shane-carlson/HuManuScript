@@ -351,6 +351,17 @@ export default function App() {
                   onChange={setDoc}
                   focusMode={focusActive}
                   onFocusModeChange={setManuscriptFocus}
+                  bookTitle={activeBook?.title}
+                  seriesLabel={
+                    activeBook
+                      ? seriesMembershipLabel(
+                          activeBook,
+                          activeBook.seriesId
+                            ? library.series.find((series) => series.id === activeBook.seriesId)?.name
+                            : undefined,
+                        )
+                      : null
+                  }
                 />
               </>
             )}

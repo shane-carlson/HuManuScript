@@ -26,6 +26,7 @@ import { findMatches, nearestValidDropIndex, validDropIndices } from '../core/ma
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel } from '../core/deviceName.ts';
+import { buildCertificationPageModel } from '../core/certificationPage.ts';
 import {
   loadCertificationCollapsed,
   loadEditorView,
@@ -43,6 +44,7 @@ import {
   IconBulletList,
   IconCertificationView,
   IconChapter,
+  IconExportPreview,
   IconImage,
   IconItalic,
   IconManuscriptView,
@@ -59,6 +61,7 @@ import {
   ToolbarIconButton,
 } from './ManuscriptToolbarIcons.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
+import { ExportPreview } from './ExportPreview.tsx';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 
@@ -86,11 +89,15 @@ export function Editor({
   onChange,
   focusMode = false,
   onFocusModeChange,
+  bookTitle,
+  seriesLabel = null,
 }: {
   doc: ManuscriptDocument;
   onChange: (doc: ManuscriptDocument) => void;
   focusMode?: boolean;
   onFocusModeChange?: (focus: boolean) => void;
+  bookTitle?: string;
+  seriesLabel?: string | null;
 }) {
   const ids = useRef(createIdFactory('hm'));
   const docRef = useRef(doc);
@@ -261,6 +268,19 @@ export function Editor({
   };
 
   const showHighlights = viewMode === 'highlights';
+  const showPreview = viewMode === 'preview';
+  const [previewExportedAt, setPreviewExportedAt] = useState(() => new Date().toISOString());
+  const previewModel = useMemo(
+    () => buildCertificationPageModel(doc, previewExportedAt, {
+      bookTitle: bookTitle || displayTitle(doc),
+      seriesLabel,
+    }),
+    [doc, previewExportedAt, bookTitle, seriesLabel],
+  );
+  const openPreview = () => {
+    setPreviewExportedAt(new Date().toISOString());
+    setViewMode('preview');
+  };
 
   return (
     <div
@@ -403,6 +423,13 @@ export function Editor({
                 >
                   <IconCertificationView />
                 </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Export preview"
+                  active={viewMode === 'preview'}
+                  onClick={openPreview}
+                >
+                  <IconExportPreview />
+                </ToolbarIconButton>
               </div>
               {!focusMode ? (
                 <button type="button" className="focus-enter" data-tooltip="Full screen" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
@@ -422,15 +449,19 @@ export function Editor({
           </ul>
         )}
 
+        {!showPreview && (
         <form className="find" role="search" onSubmit={(e) => { e.preventDefault(); setHit((n) => n + 1); }}>
           <label htmlFor="find">Find</label>
           <input id="find" value={query} onChange={(e) => { setQuery(e.target.value); setHit(0); }} placeholder="Search the manuscript" />
           <span>{query.trim() ? `${matches.length ? (hit % matches.length) + 1 : 0} of ${matches.length}` : ' '}</span>
         </form>
+        )}
         </div>
 
         <div className="canvas-body" ref={canvasRef}>
-        {doc.blocks.length === 0 ? (
+        {showPreview ? (
+          <ExportPreview model={previewModel} doc={doc} />
+        ) : doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>
             <p>Start a chapter and write into it. Only letters that come from the keyboard are sealed. A paste from a chat window stays marked, and it is never certified.</p>
@@ -696,7 +727,7 @@ export function Editor({
             />
           </div>
         )}
-        {!focusMode && (
+        {!focusMode && !showPreview && (
           <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
         )}
         </div>

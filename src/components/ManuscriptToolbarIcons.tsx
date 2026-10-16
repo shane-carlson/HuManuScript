@@ -195,6 +195,17 @@ export function IconManuscriptView() {
   );
 }
 
+export function IconExportPreview() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z" />
+      <path d="M14 3.5V8h4.5" />
+      <path d="M8 13h8" strokeDasharray="2.2 2.2" />
+      <path d="M8 17h5" />
+    </svg>
+  );
+}
+
 export function IconCertificationView() {
   return (
     <svg {...iconProps} aria-hidden="true">
