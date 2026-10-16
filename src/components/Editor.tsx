@@ -971,8 +971,12 @@ function scrollCardIntoCertificationPane(card: HTMLElement) {
     if (scrollable) {
       const bounds = node.getBoundingClientRect();
       const rect = card.getBoundingClientRect();
-      const delta = scrollDelta(bounds.top, bounds.bottom, rect.top, rect.bottom);
-      if (delta !== 0) node.scrollTop += delta;
+      const top = Math.max(bounds.top, 0);
+      const bottom = Math.min(bounds.bottom, window.innerHeight);
+      if (bottom > top + 24) {
+        const delta = scrollDelta(top, bottom, rect.top, rect.bottom);
+        if (delta !== 0) node.scrollTop += delta;
+      }
     }
     node = node.parentElement;
   }
