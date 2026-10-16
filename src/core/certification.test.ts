@@ -324,10 +324,12 @@ test('stripInvalidKeyboardSeals downgrades tampered spans', async () => {
   assert.equal(spans[0]!.certificationId, undefined);
 });
 
-test('certification export page lists sealed and uncertified excerpts', async () => {
+test('certification summary is one page of facts, not a passage dump', async () => {
   const ids = sequenceIds('id');
-  let doc = insertStructure(emptyDocument(ids()), 'paragraph', 0, ids());
-  const blockId = doc.blocks[0]!.id;
+  let doc = insertStructure(emptyDocument(ids()), 'chapter', 0, ids());
+  doc = insertStructure(doc, 'paragraph', 1, ids());
+  doc = { ...doc, title: 'Harbor Light' };
+  const blockId = doc.blocks[1]!.id;
   doc = await editField({
     doc,
     blockId,
@@ -352,13 +354,31 @@ test('certification export page lists sealed and uncertified excerpts', async ()
     now,
     newId: ids,
   });
-  const model = buildCertificationPageModel(doc, now);
+  const model = buildCertificationPageModel(doc, now, {
+    bookTitle: 'Harbor Light',
+    seriesLabel: 'Book 2 of Harbor Saga',
+  });
   const plain = certificationPagePlain(model);
   assert.equal(model.totals.keyboardSealed, 1);
   assert.equal(model.totals.paste, 1);
-  assert.match(plain, /Keyboard-sealed words: 1/);
-  assert.match(plain, /Pasted words \(not sealed\): 1/);
-  assert.match(plain, /\[paste\]/);
+  assert.equal(model.totals.drop, 0);
+  assert.equal(model.totals.pastedUncertified, 1);
+  assert.equal(model.totals.totalWords, 2);
+  assert.equal(model.chapters, 1);
+  assert.equal(model.paragraphs, 1);
+  assert.equal(model.seriesLabel, 'Book 2 of Harbor Saga');
+  assert.equal(model.exportedAtLabel, '14 October 2026, 18:00 UTC');
+  assert.match(plain, /Keyboard-certified words: 1/);
+  assert.match(plain, /Pasted \/ uncertified words: 1/);
+  assert.match(plain, /Paste: 1/);
+  assert.match(plain, /Drop: 0/);
+  assert.match(plain, /Other: 0/);
+  assert.match(plain, /Chapters: 1/);
+  assert.match(plain, /Series: Book 2 of Harbor Saga/);
+  assert.match(plain, /Exported: 14 October 2026, 18:00 UTC/);
+  assert.doesNotMatch(plain, /Hash:/);
+  assert.doesNotMatch(plain, /\[paste\]/);
+  assert.equal(plain.split('\f').length, 1);
 });
 
 test('chapter drag moves the following paragraph with the chapter', () => {

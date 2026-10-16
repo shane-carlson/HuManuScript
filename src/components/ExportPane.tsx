@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { buildCertificationPageModel, type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
 import {
   EXPORT_FORMAT_LABELS,
@@ -7,6 +8,7 @@ import {
   SCRIVENER_SPLIT_SEPARATOR,
   type ExportFormat,
 } from '../core/exportManuscript.ts';
+import { ExportPreview } from './ExportPreview.tsx';
 
 interface TargetInfo {
   id: string;
@@ -26,7 +28,7 @@ const TARGETS: TargetInfo[] = [
     format: 'docx',
     steps: [
       'Download the .docx below.',
-      'Open it in Word. The first pages are the HuManuScript certification summary; the manuscript follows.',
+      'Open it in Word. The first page is the HuManuScript certification summary; a page break starts the manuscript.',
       'Use View → Navigation Pane to jump between chapters.',
     ],
   },
@@ -44,7 +46,7 @@ const TARGETS: TargetInfo[] = [
         Select <b>Split into sections by finding separators in the text</b>. Set the separator to exactly{' '}
         <span className="kbd">{SCRIVENER_SPLIT_SEPARATOR}</span> (a hash on its own line).
       </>,
-      'The certification summary is at the top of the file before the manuscript body.',
+      'A page break follows the certification summary. The manuscript starts on the next page.',
     ],
   },
   {
@@ -55,7 +57,7 @@ const TARGETS: TargetInfo[] = [
     format: 'odt',
     steps: [
       'Download the .odt below.',
-      'Open it in LibreOffice Writer. The certification summary is the first section.',
+      'Open it in LibreOffice Writer. The certification summary is its own page, then the manuscript.',
       'Use View → Navigator (F5) to move between chapters.',
     ],
   },
@@ -65,7 +67,7 @@ const TARGETS: TargetInfo[] = [
     icon: '📋',
     blurb: 'Universal .rtf for Pages, WordPad, and other editors.',
     format: 'rtf',
-    steps: ['Download the .rtf below.', 'Open in any rich-text editor. Certification pages appear before the body.'],
+    steps: ['Download the .rtf below.', 'Open in any rich-text editor. A page break follows the certification summary.'],
   },
   {
     id: 'markdown',
@@ -73,7 +75,7 @@ const TARGETS: TargetInfo[] = [
     icon: '⬇️',
     blurb: 'Portable Markdown with # headings.',
     format: 'markdown',
-    steps: ['Download the .md below.', 'Use with Obsidian, iA Writer, or any Markdown editor.'],
+    steps: ['Download the .md below.', 'A page-break marker follows the certification summary, then the manuscript.'],
   },
   {
     id: 'plaintext',
@@ -81,7 +83,7 @@ const TARGETS: TargetInfo[] = [
     icon: '🧾',
     blurb: 'Clean .txt for maximum compatibility.',
     format: 'plain',
-    steps: ['Download the .txt below.', 'Certification summary is plain text at the top.'],
+    steps: ['Download the .txt below.', 'A form feed follows the certification summary so the manuscript starts on the next page.'],
   },
   {
     id: 'pdf',
@@ -89,7 +91,7 @@ const TARGETS: TargetInfo[] = [
     icon: '📕',
     blurb: 'Printable PDF with certification summary, then the manuscript.',
     format: 'pdf',
-    steps: ['Download the .pdf below.', 'Share or print; the first pages are the certification summary.'],
+    steps: ['Download the .pdf below.', 'Share or print. The summary is page one; the manuscript starts on the next page.'],
   },
 ];
 
@@ -102,17 +104,36 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
-export function ExportPane({ doc }: { doc: ManuscriptDocument }) {
+export function ExportPane({
+  doc,
+  bookTitle,
+  seriesLabel = null,
+}: {
+  doc: ManuscriptDocument;
+  bookTitle?: string;
+  seriesLabel?: string | null;
+}) {
   const [target, setTarget] = useState<TargetInfo>(TARGETS[0]);
   const [exporting, setExporting] = useState(false);
   const stats = useMemo(() => manuscriptStats(doc.blocks), [doc.blocks]);
   const title = displayTitle(doc);
+  const identity = useMemo<CertificationPageIdentity>(
+    () => ({ bookTitle: bookTitle || title, seriesLabel }),
+    [bookTitle, seriesLabel, title],
+  );
+  const [exportedAt, setExportedAt] = useState(() => new Date().toISOString());
+  useEffect(() => {
+    setExportedAt(new Date().toISOString());
+  }, [doc]);
+  const previewModel = useMemo(
+    () => buildCertificationPageModel(doc, exportedAt, identity),
+    [doc, exportedAt, identity],
+  );
 
   const runExport = async () => {
     setExporting(true);
     try {
-      const at = new Date().toISOString();
-      const blob = await exportManuscriptBlob(doc, target.format, at);
+      const blob = await exportManuscriptBlob(doc, target.format, previewModel.exportedAt, identity);
       downloadBlob(exportFilename(title, target.format), blob);
     } catch (error) {
       console.error(error);
@@ -139,10 +160,12 @@ export function ExportPane({ doc }: { doc: ManuscriptDocument }) {
       </div>
 
       <p className="export-cert-note">
-        Every download starts with a <strong>certification summary page</strong> (trust limit, word counts by origin, sealed
-        passages with hashes, and uncertified excerpts). The manuscript body follows and does not reclassify pasted text as
-        keyboard-sealed.
+        Every download starts with a one-page <strong>certification summary</strong> — key facts, keyboard-certified words
+        versus pasted or uncertified words, and the manuscript counts — then a page break. The manuscript follows with no
+        certification highlights, and pasted text stays uncertified.
       </p>
+
+      <ExportPreview model={previewModel} doc={doc} />
 
       <div className="stepper" aria-label="Export steps">
         <div className="step is-active"><span className="num">1</span> Choose destination</div>

@@ -19,7 +19,7 @@ export function ToolbarIconButton({
       className={`toolbar-icon-btn${active ? ' is-active' : ''}`}
       onClick={onClick}
       disabled={disabled}
-      title={label}
+      data-tooltip={label}
       aria-label={label}
     >
       {children}
@@ -27,7 +27,18 @@ export function ToolbarIconButton({
   );
 }
 
-const iconProps = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+const iconProps = {
+  width: 20,
+  height: 20,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.75,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  preserveAspectRatio: 'xMidYMid meet' as const,
+  focusable: 'false' as const,
+};
 
 export function IconChapter() {
   return (
@@ -160,8 +171,8 @@ export function IconNumberList() {
 export function IconUndo() {
   return (
     <svg {...iconProps} aria-hidden="true">
-      <path d="M9 7H5v4" />
-      <path d="M5 11a7 7 0 1 1 2 5" />
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11" />
     </svg>
   );
 }
@@ -169,8 +180,8 @@ export function IconUndo() {
 export function IconRedo() {
   return (
     <svg {...iconProps} aria-hidden="true">
-      <path d="M15 7h4v4" />
-      <path d="M19 11a7 7 0 1 1-2 5" />
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13" />
     </svg>
   );
 }

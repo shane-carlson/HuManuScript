@@ -1,12 +1,8 @@
-import { useEffect, useState } from 'react';
 import {
-  assignSeriesToBook,
   bookDisplayTitle,
   createBook,
-  formatSeriesBookNumber,
   groupLibraryBooks,
   seriesMembershipLabel,
-  setBookSeriesNumber,
   type Book,
   type Library,
 } from '../core/library.ts';
@@ -43,18 +39,6 @@ export function WorkspaceSidebar({
   onImportBackup: (library: Library, versions: VersionLedger) => void;
 }) {
   const active = library.books.find((b) => b.id === library.activeBookId) ?? library.books[0];
-  const seriesName = active?.seriesId
-    ? library.series.find((s) => s.id === active.seriesId)?.name ?? ''
-    : '';
-  const [seriesDraft, setSeriesDraft] = useState(seriesName);
-  const [numberDraft, setNumberDraft] = useState(
-    active?.seriesBookNumber != null ? formatSeriesBookNumber(active.seriesBookNumber) : '',
-  );
-
-  useEffect(() => {
-    setSeriesDraft(seriesName);
-    setNumberDraft(active?.seriesBookNumber != null ? formatSeriesBookNumber(active.seriesBookNumber) : '');
-  }, [active?.id, seriesName, active?.seriesBookNumber]);
 
   if (!active) return null;
 
@@ -73,7 +57,7 @@ export function WorkspaceSidebar({
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
         aria-label={collapsed ? 'Expand library pane' : 'Collapse library pane'}
-        title={collapsed ? 'Expand' : 'Collapse'}
+        data-tooltip={collapsed ? 'Expand library' : 'Collapse library'}
       >
         {collapsed ? '›' : '‹'}
       </button>
@@ -82,7 +66,7 @@ export function WorkspaceSidebar({
           type="button"
           className={`workspace-nav__item${tab === 'manuscript' ? ' is-active' : ''}`}
           onClick={() => onTabChange('manuscript')}
-          title="Manuscript"
+          data-tooltip="Manuscript"
         >
           <span className="ico" aria-hidden="true">✍️</span>
           <span className="workspace-nav__label">Manuscript</span>
@@ -91,7 +75,7 @@ export function WorkspaceSidebar({
           type="button"
           className={`workspace-nav__item${tab === 'export' ? ' is-active' : ''}`}
           onClick={() => onTabChange('export')}
-          title="Export"
+          data-tooltip="Export"
         >
           <span className="ico" aria-hidden="true">🔗</span>
           <span className="workspace-nav__label">Export</span>
@@ -147,39 +131,6 @@ export function WorkspaceSidebar({
       />
 
       <LibraryBackup library={library} versions={versions} onImport={onImportBackup} />
-
-      <section className="workspace-series card-inset">
-        <h3>Series</h3>
-        <p className="sub">A book belongs to a series, like Speak Fiction’s library. Leave blank for standalone.</p>
-        <label className="field">
-          <span>Series (optional)</span>
-          <input
-            list="humanuscript-series"
-            value={seriesDraft}
-            onChange={(e) => setSeriesDraft(e.target.value)}
-            onBlur={() => onLibraryChange(assignSeriesToBook(library, active.id, seriesDraft, newId))}
-            placeholder="Leave blank for standalone"
-          />
-        </label>
-        <datalist id="humanuscript-series">
-          {library.series.map((s) => (
-            <option key={s.id} value={s.name} />
-          ))}
-        </datalist>
-        {active.seriesId ? (
-          <label className="field">
-            <span>Book number in series</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={numberDraft}
-              onChange={(e) => setNumberDraft(e.target.value)}
-              onBlur={() => onLibraryChange(setBookSeriesNumber(library, active.id, numberDraft))}
-              placeholder="e.g. 1"
-            />
-          </label>
-        ) : null}
-      </section>
       </div>
     </aside>
   );

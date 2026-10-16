@@ -278,114 +278,139 @@ export function Editor({
       <main className="canvas manuscript-surface">
         <div className="canvas-head">
         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
-          <ToolbarIconButton label="Chapter" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>
-            <IconChapter />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Scene" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>
-            <IconScene />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Section" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>
-            <IconSection />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
-            <IconParagraph />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Table" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>
-            <IconTable />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
-            <IconImage />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Page break" onClick={() => insertNear('pageBreak')}>
-            <IconPageBreak />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Scene break" onClick={() => insertNear('divider')}>
-            <IconSceneBreak />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
-            <IconBlockQuote />
-          </ToolbarIconButton>
-          <span className="toolbar-gap" />
-          <ToolbarIconButton label="Bold" onClick={() => onFormat('bold')}>
-            <IconBold />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Italic" onClick={() => onFormat('italic')}>
-            <IconItalic />
-          </ToolbarIconButton>
-          <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
-            <IconUnderline />
-          </ToolbarIconButton>
-          <span className="toolbar-gap" />
-          <ToolbarIconButton
-            label="Bullet list"
-            disabled={!selection}
-            onClick={() => {
-              if (!selection) return;
-              commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
-            }}
-          >
-            <IconBulletList />
-          </ToolbarIconButton>
-          <ToolbarIconButton
-            label="Numbered list"
-            disabled={!selection}
-            onClick={() => {
-              if (!selection) return;
-              commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
-            }}
-          >
-            <IconNumberList />
-          </ToolbarIconButton>
-          <span className="toolbar-gap" />
-          <ToolbarIconButton
-            label="Undo"
-            disabled={!undo.length}
-            onClick={() => {
-              const previous = undo[undo.length - 1];
-              if (!previous) return;
-              setUndo(undo.slice(0, -1));
-              setRedo([doc, ...redo]);
-              replace(previous);
-            }}
-          >
-            <IconUndo />
-          </ToolbarIconButton>
-          <ToolbarIconButton
-            label="Redo"
-            disabled={!redo.length}
-            onClick={() => {
-              const next = redo[0];
-              if (!next) return;
-              setRedo(redo.slice(1));
-              setUndo([...undo, doc]);
-              replace(next);
-            }}
-          >
-            <IconRedo />
-          </ToolbarIconButton>
-          <span className="toolbar-gap" />
-          <div className="view-toggle" role="group" aria-label="Editor view">
-            <ToolbarIconButton
-              label="Manuscript view"
-              active={viewMode === 'manuscript'}
-              onClick={() => setViewMode('manuscript')}
-            >
-              <IconManuscriptView />
-            </ToolbarIconButton>
-            <ToolbarIconButton
-              label="Certification highlights"
-              active={viewMode === 'highlights'}
-              onClick={() => setViewMode('highlights')}
-            >
-              <IconCertificationView />
-            </ToolbarIconButton>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
+              <ToolbarIconButton label="Chapter" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>
+                <IconChapter />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Scene" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>
+                <IconScene />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Section" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>
+                <IconSection />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
+                <IconParagraph />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Table" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>
+                <IconTable />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
+                <IconImage />
+              </ToolbarIconButton>
+            </div>
           </div>
-          <span className="toolbar-gap" />
-          {!focusMode ? (
-            <button type="button" className="focus-enter" title="Full screen" onClick={() => onFocusModeChange?.(true)}>
-              Full screen
-            </button>
-          ) : null}
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-breaks">Breaks</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-breaks">
+              <ToolbarIconButton label="Page break" onClick={() => insertNear('pageBreak')}>
+                <IconPageBreak />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Scene break" onClick={() => insertNear('divider')}>
+                <IconSceneBreak />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-formatting">Formatting</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-formatting">
+              <ToolbarIconButton label="Bold" onClick={() => onFormat('bold')}>
+                <IconBold />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Italic" onClick={() => onFormat('italic')}>
+                <IconItalic />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
+                <IconUnderline />
+              </ToolbarIconButton>
+              <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
+                <IconBlockQuote />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-lists">Lists</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-lists">
+              <ToolbarIconButton
+                label="Bullet list"
+                disabled={!selection}
+                onClick={() => {
+                  if (!selection) return;
+                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
+                }}
+              >
+                <IconBulletList />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                label="Numbered list"
+                disabled={!selection}
+                onClick={() => {
+                  if (!selection) return;
+                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
+                }}
+              >
+                <IconNumberList />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-history">History</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-history">
+              <ToolbarIconButton
+                label="Undo"
+                disabled={!undo.length}
+                onClick={() => {
+                  const previous = undo[undo.length - 1];
+                  if (!previous) return;
+                  setUndo(undo.slice(0, -1));
+                  setRedo([doc, ...redo]);
+                  replace(previous);
+                }}
+              >
+                <IconUndo />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                label="Redo"
+                disabled={!redo.length}
+                onClick={() => {
+                  const next = redo[0];
+                  if (!next) return;
+                  setRedo(redo.slice(1));
+                  setUndo([...undo, doc]);
+                  replace(next);
+                }}
+              >
+                <IconRedo />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="toolbar-group toolbar-group--end">
+            <span className="toolbar-group__label" id="toolbar-view">View</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-view">
+              <div className="view-toggle" role="group" aria-label="Editor view">
+                <ToolbarIconButton
+                  label="Manuscript view"
+                  active={viewMode === 'manuscript'}
+                  onClick={() => setViewMode('manuscript')}
+                >
+                  <IconManuscriptView />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Certification highlights"
+                  active={viewMode === 'highlights'}
+                  onClick={() => setViewMode('highlights')}
+                >
+                  <IconCertificationView />
+                </ToolbarIconButton>
+              </div>
+              {!focusMode ? (
+                <button type="button" className="focus-enter" data-tooltip="Full screen" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
+                  Full screen
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         {showHighlights && (
@@ -685,7 +710,7 @@ export function Editor({
           onClick={() => setCertCollapsed((c) => !c)}
           aria-expanded={!certCollapsed}
           aria-label={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
-          title={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
+          data-tooltip={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
         >
           {certCollapsed ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>

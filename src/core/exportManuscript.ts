@@ -16,7 +16,9 @@ import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 import {
   buildCertificationPageModel,
+  certificationFactLines,
   certificationPagePlain,
+  type CertificationPageIdentity,
   type CertificationPageModel,
 } from './certificationPage.ts';
 import type { ManuscriptDocument } from './document.ts';
@@ -27,6 +29,13 @@ import { isProseBlock, type ManuscriptBlock } from './types.ts';
 
 export const SCRIVENER_SPLIT_SEPARATOR = '#';
 const SCENE_BREAK = '* * *';
+
+/** Form feed: the page-break character plain text can represent. */
+export const PLAIN_PAGE_BREAK = '\f';
+/** Explicit page break Markdown can carry, including author page breaks. */
+export const MARKDOWN_PAGE_BREAK = '<!-- pagebreak -->';
+
+export type { CertificationPageIdentity };
 
 export type ExportFormat =
   | 'docx'
@@ -63,16 +72,18 @@ function rtfEscape(text: string): string {
 }
 
 function certificationRtf(model: CertificationPageModel): string {
-  const plain = certificationPagePlain(model).replace(/---\n\n$/, '');
-  const parts = plain.split('\n').map((line) => {
-    if (!line.trim()) return '\\par';
-    if (line === line.toUpperCase() && line.length < 60 && !line.startsWith(' ')) {
-      return `\\pard{\\b ${rtfEscape(line)}\\par}`;
-    }
-    if (line.endsWith('---') || line.match(/^[-=]+$/)) return '\\par';
-    return `\\pard ${rtfEscape(line)}\\par`;
-  });
-  return parts.join('\n');
+  return certificationFactLines(model)
+    .map((line) => {
+      if (!line.trim()) return '\\par';
+      const heading =
+        line === 'HuManuScript certification summary' ||
+        line === 'Trust limit' ||
+        line === 'Certified versus pasted' ||
+        line === 'Statistics';
+      if (heading) return `\\pard{\\b ${rtfEscape(line)}\\par}`;
+      return `\\pard ${rtfEscape(line)}\\par`;
+    })
+    .join('\n');
 }
 
 function bodyMarkdown(doc: ManuscriptDocument): string {
@@ -99,7 +110,7 @@ function bodyMarkdown(doc: ManuscriptDocument): string {
         break;
       }
       case 'pageBreak':
-        lines.push('', '<!-- pagebreak -->', '');
+        lines.push('', MARKDOWN_PAGE_BREAK, '');
         break;
       case 'divider':
         lines.push('', dividerDisplayText(block.dividerStyle, block.title), '');
@@ -126,7 +137,16 @@ function bodyMarkdown(doc: ManuscriptDocument): string {
         break;
     }
   }
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  return `${trimBlankEdges(lines.join('\n').replace(/\n{3,}/g, '\n\n'))}\n`;
+}
+
+/** Trim spaces and newlines without eating a leading or trailing form feed. */
+function trimBlankEdges(text: string): string {
+  return text.replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '');
+}
+
+function joinAfterPageBreak(summary: string, breakToken: string, body: string): string {
+  return `${trimBlankEdges(summary)}\n\n${breakToken}\n\n${trimBlankEdges(body)}\n`;
 }
 
 function bodyPlain(doc: ManuscriptDocument): string {
@@ -152,7 +172,7 @@ function bodyPlain(doc: ManuscriptDocument): string {
         }
         break;
       case 'pageBreak':
-        lines.push('', '[PAGE BREAK]', '');
+        lines.push('', PLAIN_PAGE_BREAK, '');
         break;
       case 'divider':
         lines.push('', dividerDisplayText(block.dividerStyle, block.title), '');
@@ -168,7 +188,7 @@ function bodyPlain(doc: ManuscriptDocument): string {
         break;
     }
   }
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  return `${trimBlankEdges(lines.join('\n').replace(/\n{3,}/g, '\n\n'))}\n`;
 }
 
 function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
@@ -227,48 +247,26 @@ function wrapRtf(inner: string): string {
 }
 
 function certificationMarkdown(model: CertificationPageModel): string {
-  const plain = certificationPagePlain(model);
-  return plain
-    .split('\n')
+  const headings = new Set(['Trust limit', 'Certified versus pasted', 'Statistics']);
+  return certificationFactLines(model)
     .map((line) => {
-      if (line === 'HUMANUSCRIPT CERTIFICATION SUMMARY') return '# HuManuScript certification summary';
-      if (line.match(/^=+$/)) return '';
-      if (line.endsWith('---') && line.length < 6) return '---';
-      if (line.match(/^[A-Z].*-$/) && !line.includes(':')) return `## ${line.replace(/-+$/, '').trim()}`;
+      if (line === 'HuManuScript certification summary') return '# HuManuScript certification summary';
+      if (headings.has(line)) return `## ${line}`;
       return line;
     })
     .join('\n');
 }
 
 function certificationDocxParagraphs(model: CertificationPageModel): Paragraph[] {
-  const out: Paragraph[] = [
-    new Paragraph({ text: 'HuManuScript certification summary', heading: HeadingLevel.HEADING_1 }),
-    new Paragraph(`Manuscript: ${model.manuscriptTitle}`),
-    new Paragraph(`Exported: ${new Date(model.exportedAt).toLocaleString()}`),
-    new Paragraph({ text: 'Trust limit', heading: HeadingLevel.HEADING_2 }),
-    new Paragraph({ children: [new TextRun({ text: model.trust })] }),
-    new Paragraph({ text: 'Word counts', heading: HeadingLevel.HEADING_2 }),
-    new Paragraph(`Keyboard-sealed words: ${model.totals.keyboardSealed}`),
-    new Paragraph(`Pasted words (not sealed): ${model.totals.paste}`),
-    new Paragraph(`Dropped words (not sealed): ${model.totals.drop}`),
-    new Paragraph(`Other / unknown (not sealed): ${model.totals.other}`),
-    new Paragraph(`Certification points: ${model.certificationPoints}`),
-  ];
-  if (model.sealedPassages.length) {
-    out.push(new Paragraph({ text: 'Keyboard-sealed passages', heading: HeadingLevel.HEADING_2 }));
-    for (const p of model.sealedPassages) {
-      out.push(new Paragraph({ children: [new TextRun({ text: p.text, bold: true })] }));
-      out.push(new Paragraph({ children: [new TextRun({ text: `Hash: ${p.contentHash}`, size: 20 })] }));
+  const headings = new Set(['HuManuScript certification summary', 'Trust limit', 'Certified versus pasted', 'Statistics']);
+  return certificationFactLines(model).map((line) => {
+    if (!line) return new Paragraph('');
+    if (line === 'HuManuScript certification summary') {
+      return new Paragraph({ text: line, heading: HeadingLevel.HEADING_1 });
     }
-  }
-  if (model.uncertifiedExcerpts.length) {
-    out.push(new Paragraph({ text: 'Not keyboard-sealed', heading: HeadingLevel.HEADING_2 }));
-    for (const u of model.uncertifiedExcerpts) {
-      out.push(new Paragraph(`[${u.origin}] ${u.blockLabel}: ${u.text}`));
-    }
-  }
-  out.push(new Paragraph({ text: 'Manuscript', heading: HeadingLevel.HEADING_1, pageBreakBefore: true }));
-  return out;
+    if (headings.has(line)) return new Paragraph({ text: line, heading: HeadingLevel.HEADING_2 });
+    return new Paragraph({ children: [new TextRun(line)] });
+  });
 }
 
 function proseToMarkdown(block: ManuscriptBlock): string | null {
@@ -371,28 +369,20 @@ function xmlEscape(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+const ODT_PAGE_BREAK = '<text:p text:style-name="PageBreak"/>';
+
 function certificationOdtBody(model: CertificationPageModel): string {
-  const lines: string[] = [
-    '<text:h text:style-name="Heading_20_1">HuManuScript certification summary</text:h>',
-    `<text:p>Manuscript: ${xmlEscape(model.manuscriptTitle)}</text:p>`,
-    `<text:p>Exported: ${xmlEscape(model.exportedAt)}</text:p>`,
-    '<text:h text:style-name="Heading_20_2">Trust limit</text:h>',
-    `<text:p>${xmlEscape(model.trust)}</text:p>`,
-    '<text:h text:style-name="Heading_20_2">Word counts</text:h>',
-    `<text:p>Keyboard-sealed words: ${model.totals.keyboardSealed}</text:p>`,
-    `<text:p>Pasted words: ${model.totals.paste}</text:p>`,
-    `<text:p>Dropped words: ${model.totals.drop}</text:p>`,
-    `<text:p>Other / unknown: ${model.totals.other}</text:p>`,
-  ];
-  for (const p of model.sealedPassages) {
-    lines.push(`<text:p text:style-name="Quotations">${xmlEscape(p.text)}</text:p>`);
-    lines.push(`<text:p>${xmlEscape(p.contentHash)}</text:p>`);
-  }
-  for (const u of model.uncertifiedExcerpts) {
-    lines.push(`<text:p>[${xmlEscape(u.origin)}] ${xmlEscape(u.text)}</text:p>`);
-  }
-  lines.push('<text:h text:style-name="Heading_20_1">Manuscript</text:h>');
-  return lines.join('');
+  const headings = new Set(['Trust limit', 'Certified versus pasted', 'Statistics']);
+  return certificationFactLines(model)
+    .map((line) => {
+      if (!line) return '<text:p/>';
+      if (line === 'HuManuScript certification summary') {
+        return `<text:h text:style-name="Heading_20_1">${xmlEscape(line)}</text:h>`;
+      }
+      if (headings.has(line)) return `<text:h text:style-name="Heading_20_2">${xmlEscape(line)}</text:h>`;
+      return `<text:p>${xmlEscape(line)}</text:p>`;
+    })
+    .join('');
 }
 
 function bodyOdt(doc: ManuscriptDocument): string {
@@ -441,7 +431,15 @@ function bodyOdt(doc: ManuscriptDocument): string {
 
 async function buildOdtBlob(innerXml: string): Promise<Blob> {
   const content = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2">
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:fo:1.0" office:version="1.2">
+  <office:automatic-styles>
+    <style:style style:name="PageBreak" style:family="paragraph">
+      <style:paragraph-properties fo:break-before="page"/>
+    </style:style>
+    <style:style style:name="Center" style:family="paragraph">
+      <style:paragraph-properties fo:text-align="center"/>
+    </style:style>
+  </office:automatic-styles>
   <office:body><office:text>${innerXml}</office:text></office:body>
 </office:document-content>`;
   const zip = new JSZip();
@@ -458,10 +456,18 @@ async function buildOdtBlob(innerXml: string): Promise<Blob> {
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.oasis.opendocument.text' });
 }
 
-function pdfAddWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
-  const lines = doc.splitTextToSize(text, maxWidth);
+function pdfAddWrapped(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  allowPageBreak: boolean,
+): number {
+  const lines = doc.splitTextToSize(text, maxWidth) as string[];
   for (const line of lines) {
-    if (y > 270) {
+    if (allowPageBreak && y > 270) {
       doc.addPage();
       y = 20;
     }
@@ -472,23 +478,36 @@ function pdfAddWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth:
 }
 
 async function buildPdfBlob(model: CertificationPageModel, manuscript: ManuscriptDocument): Promise<Blob> {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-  let y = 20;
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: false });
   const margin = 18;
   const width = 210 - margin * 2;
+  let y = 20;
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.text('HuManuScript certification summary', margin, y);
-  y += 10;
-  doc.setFontSize(10);
-  y = pdfAddWrapped(doc, certificationPagePlain(model), margin, y, width, 5);
-  y += 8;
-  doc.setFontSize(14);
-  if (y > 250) {
-    doc.addPage();
-    y = 20;
+  y += 9;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  for (const line of certificationFactLines(model).slice(1)) {
+    if (!line) {
+      y += 3;
+      continue;
+    }
+    const heading = line === 'Trust limit' || line === 'Certified versus pasted' || line === 'Statistics';
+    if (heading) {
+      y += 1;
+      doc.setFont('helvetica', 'bold');
+    }
+    y = pdfAddWrapped(doc, line, margin, y, width, 5, false);
+    if (heading) doc.setFont('helvetica', 'normal');
   }
+  doc.addPage();
+  y = 20;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
   doc.text(displayTitle(manuscript), margin, y);
-  y += 8;
+  y += 10;
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   let chapterNo = 0;
   for (const block of manuscript.blocks) {
@@ -499,24 +518,24 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
         y = 20;
       }
       doc.setFont('helvetica', 'bold');
-      y = pdfAddWrapped(doc, chapterHeading(block, chapterNo), margin, y, width, 6);
+      y = pdfAddWrapped(doc, chapterHeading(block, chapterNo), margin, y, width, 6, true);
       doc.setFont('helvetica', 'normal');
       y += 2;
     } else if (block.type === 'section') {
-      y = pdfAddWrapped(doc, block.title.trim() || 'Section', margin, y, width, 6);
+      y = pdfAddWrapped(doc, block.title.trim() || 'Section', margin, y, width, 6, true);
     } else if (block.type === 'scene') {
-      y = pdfAddWrapped(doc, block.title.trim() || SCENE_BREAK, margin, y, width, 6);
+      y = pdfAddWrapped(doc, block.title.trim() || SCENE_BREAK, margin, y, width, 6, true);
     } else if (block.type === 'pageBreak') {
       doc.addPage();
       y = 20;
     } else if (block.type === 'divider') {
-      y = pdfAddWrapped(doc, dividerDisplayText(block.dividerStyle, block.title), margin, y, width, 6);
+      y = pdfAddWrapped(doc, dividerDisplayText(block.dividerStyle, block.title), margin, y, width, 6, true);
       y += 4;
     } else if ((block.type === 'paragraph' || block.type === 'blockquote') && block.text.trim()) {
       const text = block.type === 'blockquote' ? `"${block.text.trim()}"` : block.text.trim();
       const inset = block.type === 'blockquote' ? margin + 8 : margin;
       const w = block.type === 'blockquote' ? width - 8 : width;
-      y = pdfAddWrapped(doc, text, inset, y, w, 5);
+      y = pdfAddWrapped(doc, text, inset, y, w, 5, true);
       y += 2;
     }
   }
@@ -527,15 +546,16 @@ export async function exportManuscriptBlob(
   doc: ManuscriptDocument,
   format: ExportFormat,
   exportedAt: string = new Date().toISOString(),
+  identity: CertificationPageIdentity = {},
 ): Promise<Blob> {
-  const model = buildCertificationPageModel(doc, exportedAt);
+  const model = buildCertificationPageModel(doc, exportedAt, identity);
   switch (format) {
     case 'plain': {
-      const text = certificationPagePlain(model) + bodyPlain(doc);
+      const text = joinAfterPageBreak(certificationPagePlain(model), PLAIN_PAGE_BREAK, bodyPlain(doc));
       return new Blob([text], { type: 'text/plain;charset=utf-8' });
     }
     case 'markdown': {
-      const text = certificationMarkdown(model) + '\n\n' + bodyMarkdown(doc);
+      const text = joinAfterPageBreak(certificationMarkdown(model), MARKDOWN_PAGE_BREAK, bodyMarkdown(doc));
       return new Blob([text], { type: 'text/markdown;charset=utf-8' });
     }
     case 'rtf': {
@@ -550,14 +570,18 @@ export async function exportManuscriptBlob(
       const document = new Document({
         sections: [
           {
-            children: [...certificationDocxParagraphs(model), ...bodyDocxParagraphsFixed(doc)],
+            children: [
+              ...certificationDocxParagraphs(model),
+              new Paragraph({ children: [new PageBreak()] }),
+              ...bodyDocxParagraphsFixed(doc),
+            ],
           },
         ],
       });
       return Packer.toBlob(document);
     }
     case 'odt': {
-      const inner = certificationOdtBody(model) + bodyOdt(doc);
+      const inner = `${certificationOdtBody(model)}${ODT_PAGE_BREAK}${bodyOdt(doc)}`;
       return buildOdtBlob(inner);
     }
     case 'pdf':

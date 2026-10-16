@@ -1,55 +1,88 @@
 /**
- * Front-of-export certification summary. Describes origins; does not reclassify body text.
+ * One-page certification summary shared by the export preview and every exporter.
+ * Describes origins; does not reclassify body text or list every passage.
  */
 
-import { type InsertionOrigin, type ProvenanceSpan, TRUST_STATEMENT } from './certification.ts';
+import { TRUST_STATEMENT, type ProvenanceSpan } from './certification.ts';
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
-import type { ManuscriptBlock } from './types.ts';
+import { manuscriptStats } from './manuscript.ts';
+import { isProseBlock } from './types.ts';
 
 export interface OriginWordTotals {
   keyboardSealed: number;
   paste: number;
   drop: number;
   other: number;
+  /** Paste + drop + other. */
+  pastedUncertified: number;
+  totalWords: number;
+}
+
+export interface CertificationPageIdentity {
+  bookTitle?: string;
+  /** Preformatted series membership, omitted when the book is standalone. */
+  seriesLabel?: string | null;
 }
 
 export interface CertificationPageModel {
   product: 'HuManuScript';
+  bookTitle: string;
+  seriesLabel: string | null;
   manuscriptTitle: string;
   manuscriptId: string;
   exportedAt: string;
+  exportedAtLabel: string;
   trust: string;
   totals: OriginWordTotals;
+  chapters: number;
+  scenes: number;
+  sections: number;
+  paragraphs: number;
   certificationPoints: number;
-  sealedPassages: Array<{ text: string; contentHash: string; updatedAt: string }>;
-  uncertifiedExcerpts: Array<{ blockLabel: string; origin: InsertionOrigin; text: string }>;
 }
 
-function blockLabel(block: ManuscriptBlock, chapterNo?: number): string {
-  if (block.type === 'chapter') return chapterNo ? `Chapter ${chapterNo}` : 'Chapter';
-  if (block.type === 'scene') return block.title.trim() || 'Scene';
-  if (block.type === 'section') return block.title.trim() || 'Section';
-  return 'Paragraph';
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export function formatExportDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
+}
+
+function emptyTotals(): OriginWordTotals {
+  return { keyboardSealed: 0, paste: 0, drop: 0, other: 0, pastedUncertified: 0, totalWords: 0 };
 }
 
 function wordTotals(text: string, spans: ProvenanceSpan[]): OriginWordTotals {
-  const totals: OriginWordTotals = { keyboardSealed: 0, paste: 0, drop: 0, other: 0 };
+  const totals = emptyTotals();
   if (!text.trim()) return totals;
   const re = /\S+/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
     const at = match.index;
     const span = spans.find((s) => s.start <= at && s.end > at);
-    if (!span) {
-      totals.other += 1;
-      continue;
-    }
-    if (span.origin === 'keyboard' && span.certificationId) totals.keyboardSealed += 1;
-    else if (span.origin === 'paste') totals.paste += 1;
-    else if (span.origin === 'drop') totals.drop += 1;
+    if (span?.origin === 'keyboard' && span.certificationId) totals.keyboardSealed += 1;
+    else if (span?.origin === 'paste') totals.paste += 1;
+    else if (span?.origin === 'drop') totals.drop += 1;
     else totals.other += 1;
   }
+  totals.pastedUncertified = totals.paste + totals.drop + totals.other;
+  totals.totalWords = totals.keyboardSealed + totals.pastedUncertified;
   return totals;
 }
 
@@ -58,97 +91,83 @@ function mergeTotals(into: OriginWordTotals, add: OriginWordTotals): void {
   into.paste += add.paste;
   into.drop += add.drop;
   into.other += add.other;
+  into.pastedUncertified += add.pastedUncertified;
+  into.totalWords += add.totalWords;
 }
 
-export function buildCertificationPageModel(doc: ManuscriptDocument, exportedAt: string): CertificationPageModel {
-  const totals: OriginWordTotals = { keyboardSealed: 0, paste: 0, drop: 0, other: 0 };
-  const uncertifiedExcerpts: CertificationPageModel['uncertifiedExcerpts'] = [];
-  let chapterNo = 0;
-
+export function buildCertificationPageModel(
+  doc: ManuscriptDocument,
+  exportedAt: string,
+  identity: CertificationPageIdentity = {},
+): CertificationPageModel {
+  const totals = emptyTotals();
   for (const block of doc.blocks) {
-    if (block.type === 'chapter') chapterNo += 1;
-    const label = blockLabel(block, block.type === 'chapter' ? chapterNo : undefined);
-    const field = block.type === 'paragraph' || block.type === 'blockquote' ? 'text' : 'title';
-    const text = field === 'text' ? block.text : block.title;
-    const spans = doc.provenance[block.id]?.[field === 'text' ? 'text' : 'title'] ?? [];
-    if (!text.trim()) continue;
-    mergeTotals(totals, wordTotals(text, spans));
-    for (const span of spans) {
-      if (span.end <= span.start) continue;
-      const sealed = span.origin === 'keyboard' && span.certificationId;
-      if (sealed) continue;
-      const slice = text.slice(span.start, span.end).trim();
-      if (!slice) continue;
-      uncertifiedExcerpts.push({ blockLabel: label, origin: span.origin, text: slice });
+    const prov = doc.provenance[block.id];
+    if (isProseBlock(block.type)) {
+      mergeTotals(totals, wordTotals(block.text, prov?.text ?? []));
+    } else if (block.title.trim()) {
+      mergeTotals(totals, wordTotals(block.title, prov?.title ?? []));
     }
   }
-
+  const stats = manuscriptStats(doc.blocks);
+  const seriesLabel = identity.seriesLabel?.trim() || null;
   return {
     product: 'HuManuScript',
+    bookTitle: identity.bookTitle?.trim() || displayTitle(doc),
+    seriesLabel,
     manuscriptTitle: displayTitle(doc),
     manuscriptId: doc.manuscriptId,
     exportedAt,
+    exportedAtLabel: formatExportDateTime(exportedAt),
     trust: TRUST_STATEMENT,
     totals,
+    chapters: stats.chapters,
+    scenes: stats.scenes,
+    sections: stats.sections,
+    paragraphs: stats.paragraphs,
     certificationPoints: doc.points.length,
-    sealedPassages: doc.points.map((p) => ({
-      text: p.text,
-      contentHash: p.contentHash,
-      updatedAt: p.updatedAt,
-    })),
-    uncertifiedExcerpts,
   };
 }
 
-export function certificationPagePlain(model: CertificationPageModel): string {
-  const lines: string[] = [
-    'HUMANUSCRIPT CERTIFICATION SUMMARY',
-    '================================',
-    '',
+/** Ordered lines of the one-page summary. Exporters and the preview render these facts. */
+export function certificationFactLines(model: CertificationPageModel): string[] {
+  const lines = [
+    'HuManuScript certification summary',
+    `Book: ${model.bookTitle}`,
+  ];
+  if (model.seriesLabel) lines.push(`Series: ${model.seriesLabel}`);
+  lines.push(
     `Manuscript: ${model.manuscriptTitle}`,
     `Manuscript id: ${model.manuscriptId}`,
-    `Exported: ${model.exportedAt}`,
     '',
     'Trust limit',
-    '-----------',
     model.trust,
     '',
-    'Word counts by how text entered this editor',
-    '------------------------------------------',
-    `Keyboard-sealed words: ${model.totals.keyboardSealed}`,
-    `Pasted words (not sealed): ${model.totals.paste}`,
-    `Dropped words (not sealed): ${model.totals.drop}`,
-    `Other / unknown insertion (not sealed): ${model.totals.other}`,
-    `Certification points on file: ${model.certificationPoints}`,
+    'Certified versus pasted',
+    `Keyboard-certified words: ${model.totals.keyboardSealed}`,
+    `Pasted / uncertified words: ${model.totals.pastedUncertified}`,
+    `Paste: ${model.totals.paste}`,
+    `Drop: ${model.totals.drop}`,
+    `Other: ${model.totals.other}`,
     '',
-  ];
+    'Statistics',
+    `Exported: ${model.exportedAtLabel}`,
+    `Total words: ${model.totals.totalWords}`,
+    `Certified words: ${model.totals.keyboardSealed}`,
+    `Pasted / uncertified words: ${model.totals.pastedUncertified}`,
+    `Chapters: ${model.chapters}`,
+    `Scenes: ${model.scenes}`,
+    `Sections: ${model.sections}`,
+    `Paragraphs: ${model.paragraphs}`,
+    `Certification points: ${model.certificationPoints}`,
+    `Book: ${model.bookTitle}`,
+  );
+  if (model.seriesLabel) lines.push(`Series: ${model.seriesLabel}`);
+  return lines;
+}
 
-  if (model.sealedPassages.length) {
-    lines.push('Keyboard-sealed passages', '----------------------');
-    for (const passage of model.sealedPassages) {
-      lines.push(`• ${passage.text}`);
-      lines.push(`  Hash: ${passage.contentHash}`);
-      lines.push(`  Updated: ${passage.updatedAt}`);
-      lines.push('');
-    }
-  } else {
-    lines.push('No keyboard-sealed passages yet.', '');
-  }
-
-  if (model.uncertifiedExcerpts.length) {
-    lines.push('Passages that are not keyboard-sealed', '------------------------------------');
-    for (const item of model.uncertifiedExcerpts) {
-      lines.push(`• [${item.origin}] ${item.blockLabel}: ${item.text}`);
-    }
-    lines.push('');
-  }
-
-  lines.push('The manuscript body follows this page. Body text is exported as written.');
-  lines.push('Export does not turn pasted or dropped text into sealed keyboard text.');
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-  return lines.join('\n');
+export function certificationPagePlain(model: CertificationPageModel): string {
+  return `${certificationFactLines(model).join('\n')}\n`;
 }
 
 export { TRUST_STATEMENT };

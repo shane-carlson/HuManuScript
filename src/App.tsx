@@ -3,8 +3,15 @@ import { Editor } from './components/Editor.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { ManuscriptStatsBar } from './components/ManuscriptStatsBar.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
-import { updateActiveBookDocument, type Library } from './core/library.ts';
-import { displayTitle, reconcileLoadedDocument, TRUST_STATEMENT } from './core/document.ts';
+import {
+  assignSeriesToBook,
+  formatSeriesBookNumber,
+  seriesMembershipLabel,
+  setBookSeriesNumber,
+  updateActiveBookDocument,
+  type Library,
+} from './core/library.ts';
+import { displayTitle, reconcileLoadedDocument } from './core/document.ts';
 import {
   listBookVersions,
   loadVersionLedger,
@@ -134,6 +141,24 @@ export default function App() {
 
   const activeBook = library?.books.find((b) => b.id === library.activeBookId) ?? null;
   const doc = activeBook?.document ?? null;
+  const seriesName = activeBook?.seriesId
+    ? library?.series.find((series) => series.id === activeBook.seriesId)?.name ?? ''
+    : '';
+  const seriesKey = `${activeBook?.id ?? ''}|${seriesName}|${activeBook?.seriesBookNumber ?? ''}`;
+  const [seriesState, setSeriesState] = useState(() => ({
+    key: seriesKey,
+    draft: seriesName,
+    number: activeBook?.seriesBookNumber != null ? formatSeriesBookNumber(activeBook.seriesBookNumber) : '',
+  }));
+  if (seriesState.key !== seriesKey) {
+    setSeriesState({
+      key: seriesKey,
+      draft: seriesName,
+      number: activeBook?.seriesBookNumber != null ? formatSeriesBookNumber(activeBook.seriesBookNumber) : '',
+    });
+  }
+  const seriesDraft = seriesState.draft;
+  const numberDraft = seriesState.number;
 
   const setDoc = useCallback((next: typeof doc) => {
     if (!next || !libraryRef.current) return;
@@ -207,22 +232,54 @@ export default function App() {
             <p className="tag">Keyboard-sealed prose, on the Speak Fiction manuscript</p>
           </div>
         </div>
-        {phase === 'ready' && doc && (
-          <label className="title-field">
-            <span>Title</span>
-            <input
-              value={doc.title}
-              placeholder="Untitled manuscript"
-              aria-label="Manuscript title"
-              onChange={(e) => setDoc({ ...doc, title: e.target.value })}
-            />
-          </label>
+        {phase === 'ready' && doc && library && activeBook && (
+          <div className="book-identity">
+            <label className="title-field">
+              <span>Title</span>
+              <input
+                value={doc.title}
+                placeholder="Untitled manuscript"
+                aria-label="Book title"
+                onChange={(e) => setDoc({ ...doc, title: e.target.value })}
+              />
+            </label>
+            <label className="title-field title-field--series">
+              <span>Series</span>
+              <input
+                list="humanuscript-series"
+                value={seriesDraft}
+                aria-label="Series"
+                placeholder="Standalone"
+                onChange={(e) => setSeriesState((current) => ({ ...current, draft: e.target.value }))}
+                onBlur={() => handleLibraryChange(assignSeriesToBook(library, activeBook.id, seriesDraft, ids.current))}
+              />
+              <datalist id="humanuscript-series">
+                {library.series.map((series) => (
+                  <option key={series.id} value={series.name} />
+                ))}
+              </datalist>
+            </label>
+            {activeBook.seriesId ? (
+              <label className="title-field title-field--number">
+                <span>Number</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={numberDraft}
+                  aria-label="Book number in series"
+                  placeholder="1"
+                  onChange={(e) => setSeriesState((current) => ({ ...current, number: e.target.value }))}
+                  onBlur={() => handleLibraryChange(setBookSeriesNumber(library, activeBook.id, numberDraft))}
+                />
+              </label>
+            ) : null}
+          </div>
         )}
         <button type="button" className="ghost" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
           {theme === 'light' ? 'Dark paper' : 'Light paper'}
         </button>
       </header>
-      <p className="trust-banner app-chrome">{TRUST_STATEMENT}</p>
+      <p className="purpose-banner app-chrome">HuManuScript tracks and certifies how a manuscript is written — typed versus pasted — as evidence of human-written content. It does not guarantee the work is human-generated. It shows how much was typed in and how much was pasted in.</p>
       {phase === 'loading' && (
         <section className="status" aria-live="polite">
           <h1>Opening the library…</h1>
@@ -269,7 +326,20 @@ export default function App() {
           <div className="workspace-main">
             {tab === 'export' ? (
               <div className="workspace-panel">
-                <ExportPane doc={doc} />
+                <ExportPane
+                  doc={doc}
+                  bookTitle={activeBook?.title}
+                  seriesLabel={
+                    activeBook
+                      ? seriesMembershipLabel(
+                          activeBook,
+                          activeBook.seriesId
+                            ? library.series.find((series) => series.id === activeBook.seriesId)?.name
+                            : undefined,
+                        )
+                      : null
+                  }
+                />
               </div>
             ) : (
               <>
