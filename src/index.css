@@ -793,14 +793,9 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 4px;
   align-items: center;
 }
-[data-tooltip] { position: relative; }
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  z-index: 40;
-  left: 50%;
-  top: calc(100% + 6px);
-  transform: translateX(-50%);
+.hover-label {
+  position: fixed;
+  z-index: 80;
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--text);
@@ -814,23 +809,8 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   text-transform: none;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
   transition: none;
   transition-delay: 0s;
-}
-[data-tooltip]:hover::after,
-[data-tooltip]:focus-visible::after {
-  opacity: 1;
-  visibility: visible;
-  transition: none;
-  transition-delay: 0s;
-}
-.toolbar-group--end .toolbar-icon-btn[data-tooltip]::after,
-.toolbar-group--end .focus-enter[data-tooltip]::after {
-  left: auto;
-  right: 0;
-  transform: none;
 }
 .manuscript { font-family: var(--serif); counter-reset: ms-list; }
 .ms-insert-gap { height: 10px; border-radius: 6px; }
