@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { offsetsFromDomRange, setDomCaretFromOffset } from '../core/domCaret.ts';
 import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/certification.ts';
 import { classifyInsertion } from '../core/certification.ts';
+import { passageCardId } from '../core/passageCard.ts';
 import { describePasteSource } from '../core/pasteHint.ts';
 import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
 import { FieldContextMenu, type ContextMenuState } from './FieldContextMenu.tsx';
@@ -19,6 +20,7 @@ export interface FieldCommit {
 interface Piece {
   text: string;
   origin: ProvenanceSpan['origin'];
+  spanId?: string;
   certificationId?: string;
   pasteHint?: string;
   marks: InlineMarkKind[];
@@ -55,6 +57,7 @@ function pieces(
     out.push({
       text: text.slice(start, end),
       origin: span?.origin ?? 'other',
+      spanId: span?.id,
       certificationId: span?.certificationId,
       pasteHint: span?.pasteHint,
       marks: marks.filter((mark) => mark.start <= start && mark.end >= end).map((mark) => mark.kind),
@@ -64,7 +67,7 @@ function pieces(
   return out;
 }
 
-function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean) {
+function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean, blockId: string) {
   root.replaceChildren();
   const order: InlineMarkKind[] = ['bold', 'italic', 'underline', 'strike'];
   for (const piece of rendered) {
@@ -73,6 +76,14 @@ function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean) {
       span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
       span.dataset.origin = piece.origin;
       if (piece.certificationId) span.dataset.cert = piece.certificationId;
+      if (piece.spanId) {
+        const cardId = passageCardId(blockId, {
+          id: piece.spanId,
+          origin: piece.origin,
+          certificationId: piece.certificationId,
+        });
+        if (cardId) span.dataset.card = cardId;
+      }
       if (piece.pasteHint) span.title = piece.pasteHint;
     } else {
       span.className = piece.hit ? 'find-hit' : 'prov-plain';
@@ -122,6 +133,8 @@ export function ProvenanceField({
   onInternalDrop,
   renderToken = 0,
   showProvenance = true,
+  blockId = '',
+  onCertificationHover,
   listStyle = null,
   indentLevel = 0,
   onParagraphMeta,
@@ -150,6 +163,10 @@ export function ProvenanceField({
   renderToken?: number;
   /** When false, show prose only (no origin underlines). */
   showProvenance?: boolean;
+  /** Block that owns this field, used to link unsealed spans to pane cards. */
+  blockId?: string;
+  /** Highlight view only: the pane card for the span under the pointer, or null. */
+  onCertificationHover?: (cardId: string | null) => void;
   listStyle?: ListStyle;
   indentLevel?: number;
   onParagraphMeta?: (patch: { listStyle?: ListStyle; indentLevel?: number }) => void;
@@ -189,7 +206,7 @@ export function ProvenanceField({
         nextCaret = offsetsFromDomRange(el, sel.getRangeAt(0)).end;
       }
     }
-    paint(el, pieces(text, spans, marks, highlight), showProvenance);
+    paint(el, pieces(text, spans, marks, highlight), showProvenance, blockId);
     if (nextCaret != null && document.activeElement === el) {
       try {
         setDomCaretFromOffset(el, nextCaret);
@@ -198,7 +215,7 @@ export function ProvenanceField({
       }
     }
     caret.current = null;
-  }, [signature, text, spans, marks, highlight, renderToken, showProvenance]);
+  }, [signature, text, spans, marks, highlight, renderToken, showProvenance, blockId]);
 
   const selection = () => {
     const el = ref.current;
@@ -413,6 +430,18 @@ export function ProvenanceField({
       }}
       onKeyUp={report}
       onMouseUp={report}
+      onMouseOver={(e) => {
+        if (!showProvenance || !onCertificationHover) return;
+        const el = e.target instanceof Element ? e.target : null;
+        const node = el?.closest('.prov');
+        onCertificationHover(node instanceof HTMLElement ? node.dataset.card || null : null);
+      }}
+      onMouseLeave={(e) => {
+        if (!showProvenance || !onCertificationHover) return;
+        const next = e.relatedTarget;
+        if (next instanceof Element && next.closest('.prov')) return;
+        onCertificationHover(null);
+      }}
       onFocus={report}
       onContextMenu={(e) => {
         e.preventDefault();

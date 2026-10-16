@@ -946,6 +946,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .pip-uncertified, .pip-mixed { color: var(--warn); }
 .pip-empty { color: var(--text-faint); }
 .prov { border-radius: 2px; }
+.prov:hover { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: 1px; }
 .prov-keyboard { background: color-mix(in srgb, var(--good) 22%, transparent); box-shadow: inset 0 -2px 0 var(--good); }
 .prov-paste { background: color-mix(in srgb, var(--warn) 24%, transparent); box-shadow: inset 0 -2px 0 var(--warn); }
 .prov-drop { background: color-mix(in srgb, var(--drop) 22%, transparent); box-shadow: inset 0 -2px 0 var(--drop); }
@@ -962,8 +963,50 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 0;
 }
 .canvas-note, .points-empty, .lineage { color: var(--text-dim); font-size: 0.86rem; }
-.point-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
-.point-list li { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--bg); }
+.point-list { list-style: none; padding: 0 0 16px; margin: 0 0 12px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
+.point-list li {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--bg);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.point-list li.is-linked {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 18%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 48%, transparent);
+}
+.point-list li.point-list__divider {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 2px 0;
+  border-radius: 0;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.point-list li.is-uncertified header { color: var(--warn); }
+.point-list li.is-uncertified[data-origin='drop'] header { color: var(--drop); }
+.point-list li.is-uncertified[data-origin='other'] header { color: var(--other); }
+.point-list li.is-uncertified[data-origin='paste'].is-linked,
+.point-list li.is-uncertified[data-origin='keyboard'].is-linked {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 48%, transparent);
+}
+.point-list li.is-uncertified[data-origin='drop'].is-linked {
+  border-color: var(--drop);
+  background: color-mix(in srgb, var(--drop) 18%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--drop) 48%, transparent);
+}
+.point-list li.is-uncertified[data-origin='other'].is-linked {
+  border-color: var(--other);
+  background: color-mix(in srgb, var(--other) 18%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--other) 48%, transparent);
+}
 .point-list header { display: flex; justify-content: space-between; gap: 8px; font-size: 0.75rem; color: var(--good); }
 .point-list blockquote { margin: 8px 0; font-family: var(--serif); }
 .point-list code { font-family: var(--mono); font-size: 0.75rem; }
