@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react';
 import { displayTitle, type ManuscriptDocument } from '../core/document.ts';
+import { manuscriptTypographyStyle, resolveManuscriptTypography } from '../core/typography.ts';
 import type { CertificationPageModel } from '../core/certificationPage.ts';
 import { dividerDisplayText } from '../core/manuscript.ts';
 import { ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
@@ -142,8 +144,14 @@ export function CleanManuscript({ doc }: { doc: ManuscriptDocument }) {
       chapterNumbers.set(block.id, nextChapter);
     }
   }
+  const typography = resolveManuscriptTypography(doc);
   return (
-    <div className="clean-manuscript">
+    <div
+      className="clean-manuscript"
+      style={manuscriptTypographyStyle(doc) as CSSProperties}
+      data-manuscript-font={typography.font.id}
+      data-manuscript-size={typography.sizePt}
+    >
       <h3 className="clean-manuscript__title">{displayTitle(doc)}</h3>
       {doc.blocks.map((block) => {
         switch (block.type) {

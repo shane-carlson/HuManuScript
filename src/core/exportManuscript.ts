@@ -27,6 +27,7 @@ import { displayTitle } from './document.ts';
 import { markedToMarkdown, markedToRtf, styledSpans } from './richText.ts';
 import { dividerDisplayText } from './manuscript.ts';
 import { isProseBlock, type ManuscriptBlock } from './types.ts';
+import { resolveManuscriptTypography, type ManuscriptTypography } from './typography.ts';
 
 export const SCRIVENER_SPLIT_SEPARATOR = '#';
 const SCENE_BREAK = '* * *';
@@ -192,6 +193,9 @@ function bodyPlain(doc: ManuscriptDocument): string {
 }
 
 function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
+  const { sizePt } = resolveManuscriptTypography(doc);
+  const chapterFs = (sizePt + 4) * 2;
+  const sectionFs = (sizePt + 2) * 2;
   const parts: string[] = [];
   let chapterNo = 0;
   for (const block of doc.blocks) {
@@ -199,10 +203,10 @@ function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
       case 'chapter':
         chapterNo += 1;
         if (chapterSplit) parts.push(`\\pard ${rtfEscape(SCRIVENER_SPLIT_SEPARATOR)}\\par`);
-        parts.push(`\\pard{\\b\\fs32 ${rtfEscape(chapterHeading(block, chapterNo))}\\par}\\pard\\par`);
+        parts.push(`\\pard{\\b\\fs${chapterFs} ${rtfEscape(chapterHeading(block, chapterNo))}\\par}\\pard\\par`);
         break;
       case 'section':
-        parts.push(`\\pard{\\b\\fs28 ${rtfEscape(block.title.trim() || 'Section')}\\par}\\pard\\par`);
+        parts.push(`\\pard{\\b\\fs${sectionFs} ${rtfEscape(block.title.trim() || 'Section')}\\par}\\pard\\par`);
         break;
       case 'scene': {
         const label = block.title.trim() ? `${SCENE_BREAK}  ${block.title.trim()}` : SCENE_BREAK;
@@ -242,8 +246,9 @@ function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
   return parts.join('\n');
 }
 
-function wrapRtf(inner: string): string {
-  return `{\\rtf1\\ansi\\ansicpg1252\\deff0\n{\\fonttbl{\\f0 Times New Roman;}}\n\\f0\\fs24\n${inner}\n}`;
+function wrapRtf(inner: string, type: ManuscriptTypography): string {
+  const name = rtfEscape(type.font.exportName);
+  return `{\\rtf1\\ansi\\ansicpg1252\\deff0\n{\\fonttbl{\\f0${type.font.rtfFamily} ${name};}}\n\\f0\\fs${type.sizePt * 2}\n${inner}\n}`;
 }
 
 function certificationMarkdown(model: CertificationPageModel): string {
@@ -257,15 +262,35 @@ function certificationMarkdown(model: CertificationPageModel): string {
     .join('\n');
 }
 
-function certificationDocxParagraphs(model: CertificationPageModel): Paragraph[] {
+function docxRun(type: ManuscriptTypography, text: string, extra?: { bold?: boolean; italics?: boolean; strike?: boolean; underline?: boolean; sizePt?: number }) {
+  return new TextRun({
+    text,
+    font: type.font.exportName,
+    size: (extra?.sizePt ?? type.sizePt) * 2,
+    bold: extra?.bold || undefined,
+    italics: extra?.italics || undefined,
+    strike: extra?.strike || undefined,
+    underline: extra?.underline ? {} : undefined,
+  });
+}
+
+function certificationDocxParagraphs(model: CertificationPageModel, type: ManuscriptTypography): Paragraph[] {
   const headings = new Set(['HuManuScript certification summary', 'Certified versus pasted', 'Statistics']);
   return certificationFactLines(model).map((line) => {
     if (!line) return new Paragraph('');
     if (line === 'HuManuScript certification summary') {
-      return new Paragraph({ text: line, heading: HeadingLevel.HEADING_1 });
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [docxRun(type, line, { bold: true, sizePt: type.sizePt + 4 })],
+      });
     }
-    if (headings.has(line)) return new Paragraph({ text: line, heading: HeadingLevel.HEADING_2 });
-    return new Paragraph({ children: [new TextRun(line)] });
+    if (headings.has(line)) {
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [docxRun(type, line, { bold: true, sizePt: type.sizePt + 2 })],
+      });
+    }
+    return new Paragraph({ children: [docxRun(type, line)] });
   });
 }
 
@@ -280,19 +305,17 @@ function proseToMarkdown(block: ManuscriptBlock): string | null {
   return md;
 }
 
-function proseToDocx(block: ManuscriptBlock): Paragraph | null {
+function proseToDocx(block: ManuscriptBlock, type: ManuscriptTypography): Paragraph | null {
   if (!isProseBlock(block.type)) return null;
   const raw = block.text ?? '';
   if (!raw.trim()) return null;
-  const runs = styledSpans(raw, block.marks).map(
-    (span) =>
-      new TextRun({
-        text: span.text,
-        bold: span.bold || undefined,
-        italics: block.type === 'blockquote' ? true : span.italic || undefined,
-        strike: span.strike || undefined,
-        underline: span.underline ? {} : undefined,
-      }),
+  const runs = styledSpans(raw, block.marks).map((span) =>
+    docxRun(type, span.text, {
+      bold: span.bold,
+      italics: block.type === 'blockquote' ? true : span.italic,
+      strike: span.strike,
+      underline: span.underline,
+    }),
   );
   return new Paragraph({
     indent: block.type === 'blockquote' ? { left: 720 } : undefined,
@@ -300,9 +323,12 @@ function proseToDocx(block: ManuscriptBlock): Paragraph | null {
   });
 }
 
-function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
+function bodyDocxParagraphsFixed(doc: ManuscriptDocument, type: ManuscriptTypography): Paragraph[] {
   const children: Paragraph[] = [
-    new Paragraph({ text: displayTitle(doc), heading: HeadingLevel.TITLE }),
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      children: [docxRun(type, displayTitle(doc), { bold: true, sizePt: type.sizePt + 8 })],
+    }),
   ];
   let chapterNo = 0;
   for (const block of doc.blocks) {
@@ -311,26 +337,31 @@ function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
         chapterNo += 1;
         children.push(
           new Paragraph({
-            text: chapterHeading(block, chapterNo),
             heading: HeadingLevel.HEADING_1,
             pageBreakBefore: chapterNo > 1,
+            children: [docxRun(type, chapterHeading(block, chapterNo), { bold: true, sizePt: type.sizePt + 4 })],
           }),
         );
         break;
       case 'section':
-        children.push(new Paragraph({ text: block.title.trim() || 'Section', heading: HeadingLevel.HEADING_2 }));
+        children.push(
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [docxRun(type, block.title.trim() || 'Section', { bold: true, sizePt: type.sizePt + 2 })],
+          }),
+        );
         break;
       case 'scene':
         children.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            children: [new TextRun(block.title.trim() || SCENE_BREAK)],
+            children: [docxRun(type, block.title.trim() || SCENE_BREAK)],
           }),
         );
         break;
       case 'paragraph':
       case 'blockquote': {
-        const para = proseToDocx(block);
+        const para = proseToDocx(block, type);
         if (para) children.push(para);
         break;
       }
@@ -341,19 +372,19 @@ function bodyDocxParagraphsFixed(doc: ManuscriptDocument): Paragraph[] {
         children.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            children: [new TextRun(dividerDisplayText(block.dividerStyle, block.title))],
+            children: [docxRun(type, dividerDisplayText(block.dividerStyle, block.title))],
           }),
         );
         break;
       case 'table': {
         for (const row of block.tableRows ?? []) {
-          children.push(new Paragraph({ children: row.map((cell) => new TextRun({ text: cell })) }));
+          children.push(new Paragraph({ children: row.map((cell) => docxRun(type, cell)) }));
         }
         break;
       }
       case 'image':
         if (block.imageAlt?.trim()) {
-          children.push(new Paragraph({ children: [new TextRun({ text: `[Image: ${block.imageAlt.trim()}]`, italics: true })] }));
+          children.push(new Paragraph({ children: [docxRun(type, `[Image: ${block.imageAlt.trim()}]`, { italics: true })] }));
         }
         break;
     }
@@ -375,12 +406,12 @@ function certificationOdtBody(model: CertificationPageModel): string {
   const headings = new Set(['Certified versus pasted', 'Statistics']);
   return certificationFactLines(model)
     .map((line) => {
-      if (!line) return '<text:p/>';
+      if (!line) return '<text:p text:style-name="TextBody"/>';
       if (line === 'HuManuScript certification summary') {
         return `<text:h text:style-name="Heading_20_1">${xmlEscape(line)}</text:h>`;
       }
       if (headings.has(line)) return `<text:h text:style-name="Heading_20_2">${xmlEscape(line)}</text:h>`;
-      return `<text:p>${xmlEscape(line)}</text:p>`;
+      return `<text:p text:style-name="TextBody">${xmlEscape(line)}</text:p>`;
     })
     .join('');
 }
@@ -405,7 +436,7 @@ function bodyOdt(doc: ManuscriptDocument): string {
         parts.push(`<text:p text:style-name="Center">${xmlEscape(block.title.trim() || SCENE_BREAK)}</text:p>`);
         break;
       case 'paragraph':
-        if (block.text.trim()) parts.push(`<text:p>${xmlEscape(block.text.trim())}</text:p>`);
+        if (block.text.trim()) parts.push(`<text:p text:style-name="TextBody">${xmlEscape(block.text.trim())}</text:p>`);
         break;
       case 'blockquote':
         if (block.text.trim()) parts.push(`<text:p text:style-name="Quotations">${xmlEscape(block.text.trim())}</text:p>`);
@@ -418,28 +449,54 @@ function bodyOdt(doc: ManuscriptDocument): string {
         break;
       case 'table':
         for (const row of block.tableRows ?? []) {
-          parts.push(`<text:p>${row.map((c) => xmlEscape(c)).join(' — ')}</text:p>`);
+          parts.push(`<text:p text:style-name="TextBody">${row.map((c) => xmlEscape(c)).join(' — ')}</text:p>`);
         }
         break;
       case 'image':
-        if (block.imageAlt?.trim()) parts.push(`<text:p>${xmlEscape(`[Image: ${block.imageAlt.trim()}]`)}</text:p>`);
+        if (block.imageAlt?.trim()) {
+          parts.push(`<text:p text:style-name="TextBody">${xmlEscape(`[Image: ${block.imageAlt.trim()}]`)}</text:p>`);
+        }
         break;
     }
   }
   return parts.join('');
 }
 
-async function buildOdtBlob(innerXml: string): Promise<Blob> {
-  const content = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:fo:1.0" office:version="1.2">
+function odtAutomaticStyles(type: ManuscriptTypography): string {
+  const family = xmlEscape(type.font.exportName);
+  const quoted = xmlEscape(`'${type.font.exportName}'`);
+  const textProps = (pt: number, bold = false) =>
+    `<style:text-properties style:font-name="${family}" fo:font-family="${quoted}" fo:font-size="${pt}pt"${bold ? ' fo:font-weight="bold"' : ''}/>`;
+  return `
+  <office:font-face-decls>
+    <style:font-face style:name="${family}" svg:font-family="${quoted}"/>
+  </office:font-face-decls>
   <office:automatic-styles>
-    <style:style style:name="PageBreak" style:family="paragraph">
-      <style:paragraph-properties fo:break-before="page"/>
+    <style:style style:name="TextBody" style:family="paragraph">
+      ${textProps(type.sizePt)}
+    </style:style>
+    <style:style style:name="Heading_20_1" style:family="paragraph">
+      ${textProps(type.sizePt + 4, true)}
+    </style:style>
+    <style:style style:name="Heading_20_2" style:family="paragraph">
+      ${textProps(type.sizePt + 2, true)}
     </style:style>
     <style:style style:name="Center" style:family="paragraph">
       <style:paragraph-properties fo:text-align="center"/>
+      ${textProps(type.sizePt)}
     </style:style>
-  </office:automatic-styles>
+    <style:style style:name="Quotations" style:family="paragraph">
+      ${textProps(type.sizePt)}
+    </style:style>
+    <style:style style:name="PageBreak" style:family="paragraph">
+      <style:paragraph-properties fo:break-before="page"/>
+    </style:style>
+  </office:automatic-styles>`;
+}
+
+async function buildOdtBlob(innerXml: string, type: ManuscriptTypography): Promise<Blob> {
+  const content = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:fo:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.2">${odtAutomaticStyles(type)}
   <office:body><office:text>${innerXml}</office:text></office:body>
 </office:document-content>`;
   const zip = new JSZip();
@@ -478,15 +535,18 @@ function pdfAddWrapped(
 }
 
 async function buildPdfBlob(model: CertificationPageModel, manuscript: ManuscriptDocument): Promise<Blob> {
+  const type = resolveManuscriptTypography(manuscript);
+  const face = type.font.pdfFont;
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: false });
   const margin = 18;
   const width = 210 - margin * 2;
   let y = 20;
-  doc.setFont('helvetica', 'bold');
+  // The summary stays at a fixed size so it remains one page. The manuscript uses the book size.
+  doc.setFont(face, 'bold');
   doc.setFontSize(16);
   doc.text('HuManuScript certification summary', margin, y);
   y += 9;
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(face, 'normal');
   doc.setFontSize(11);
   for (const line of certificationFactLines(model).slice(1)) {
     if (!line) {
@@ -496,19 +556,20 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
     const heading = line === 'Certified versus pasted' || line === 'Statistics';
     if (heading) {
       y += 1;
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(face, 'bold');
     }
     y = pdfAddWrapped(doc, line, margin, y, width, 5, false);
-    if (heading) doc.setFont('helvetica', 'normal');
+    if (heading) doc.setFont(face, 'normal');
   }
   doc.addPage();
   y = 20;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFont(face, 'bold');
+  doc.setFontSize(type.sizePt + 6);
   doc.text(displayTitle(manuscript), margin, y);
-  y += 10;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
+  y += type.sizePt * 0.45 + 4;
+  doc.setFont(face, 'normal');
+  doc.setFontSize(type.sizePt);
+  const bodyLead = Math.max(5, type.sizePt * 0.45);
   let chapterNo = 0;
   for (const block of manuscript.blocks) {
     if (block.type === 'chapter') {
@@ -517,14 +578,20 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
         doc.addPage();
         y = 20;
       }
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(face, 'bold');
+      doc.setFontSize(type.sizePt + 4);
       y = pdfAddWrapped(doc, chapterHeading(block, chapterNo), margin, y, width, 6, true);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(face, 'normal');
+      doc.setFontSize(type.sizePt);
       y += 2;
     } else if (block.type === 'section') {
-      y = pdfAddWrapped(doc, block.title.trim() || 'Section', margin, y, width, 6, true);
+      doc.setFont(face, 'bold');
+      doc.setFontSize(type.sizePt + 2);
+      y = pdfAddWrapped(doc, block.title.trim() || 'Section', margin, y, width, bodyLead, true);
+      doc.setFont(face, 'normal');
+      doc.setFontSize(type.sizePt);
     } else if (block.type === 'scene') {
-      y = pdfAddWrapped(doc, block.title.trim() || SCENE_BREAK, margin, y, width, 6, true);
+      y = pdfAddWrapped(doc, block.title.trim() || SCENE_BREAK, margin, y, width, bodyLead, true);
     } else if (block.type === 'pageBreak') {
       doc.addPage();
       y = 20;
@@ -535,7 +602,7 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
       const text = block.type === 'blockquote' ? `"${block.text.trim()}"` : block.text.trim();
       const inset = block.type === 'blockquote' ? margin + 8 : margin;
       const w = block.type === 'blockquote' ? width - 8 : width;
-      y = pdfAddWrapped(doc, text, inset, y, w, 5, true);
+      y = pdfAddWrapped(doc, text, inset, y, w, bodyLead, true);
       y += 2;
     }
   }
@@ -550,6 +617,7 @@ export async function exportManuscriptBlob(
 ): Promise<Blob> {
   const liveDevice = await getTypingDeviceLabel();
   const model = buildCertificationPageModel(doc, exportedAt, identity, liveDevice);
+  const type = resolveManuscriptTypography(doc);
   switch (format) {
     case 'plain': {
       const text = joinAfterPageBreak(certificationPagePlain(model), PLAIN_PAGE_BREAK, bodyPlain(doc));
@@ -560,21 +628,30 @@ export async function exportManuscriptBlob(
       return new Blob([text], { type: 'text/markdown;charset=utf-8' });
     }
     case 'rtf': {
-      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, false)}`);
+      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, false)}`, type);
       return new Blob([rtf], { type: 'application/rtf' });
     }
     case 'scrivener-rtf': {
-      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, true)}`);
+      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, true)}`, type);
       return new Blob([rtf], { type: 'application/rtf' });
     }
     case 'docx': {
+      const half = type.sizePt * 2;
       const document = new Document({
+        styles: {
+          default: {
+            document: { run: { font: type.font.exportName, size: half } },
+            title: { run: { font: type.font.exportName, size: (type.sizePt + 8) * 2, bold: true } },
+            heading1: { run: { font: type.font.exportName, size: (type.sizePt + 4) * 2, bold: true } },
+            heading2: { run: { font: type.font.exportName, size: (type.sizePt + 2) * 2, bold: true } },
+          },
+        },
         sections: [
           {
             children: [
-              ...certificationDocxParagraphs(model),
+              ...certificationDocxParagraphs(model, type),
               new Paragraph({ children: [new PageBreak()] }),
-              ...bodyDocxParagraphsFixed(doc),
+              ...bodyDocxParagraphsFixed(doc, type),
             ],
           },
         ],
@@ -583,7 +660,7 @@ export async function exportManuscriptBlob(
     }
     case 'odt': {
       const inner = `${certificationOdtBody(model)}${ODT_PAGE_BREAK}${bodyOdt(doc)}`;
-      return buildOdtBlob(inner);
+      return buildOdtBlob(inner, type);
     }
     case 'pdf':
       return buildPdfBlob(model, doc);

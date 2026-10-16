@@ -9,6 +9,7 @@ import {
   PLAIN_PAGE_BREAK,
   type ExportFormat,
 } from './exportManuscript.ts';
+import { setManuscriptTypography } from './typography.ts';
 import { sequenceIds } from './uid.ts';
 
 const now = '2026-10-14T18:00:00.000Z';
@@ -95,7 +96,8 @@ test('word, odt, and pdf start the manuscript on the next page and keep the auth
   const pdf = pdfBuf.toString('latin1');
   const pageCount = pdf.match(/\/Type\s*\/Page(?!s)/g)?.length ?? 0;
   assert.equal(pageCount, 3, `pdf pages: ${pageCount}`);
-  assert.ok(pdf.includes('on what devices specific parts of the manuscript were introduced'));
+  assert.ok(pdf.includes('on what'));
+  assert.ok(pdf.includes('devices specific parts of the manuscript were introduced'));
   assert.ok(pdf.includes('Browser keystroke'));
   assert.equal(pdf.includes('Trust limit'), false);
   const summaryAt = pdf.indexOf('HuManuScript certification summary');
@@ -103,6 +105,53 @@ test('word, odt, and pdf start the manuscript on the next page and keep the auth
   const sceneAt = pdf.indexOf('* * *');
   const afterAt = pdf.indexOf('After the break');
   assert.ok(summaryAt >= 0 && beforeAt > summaryAt && sceneAt > beforeAt && afterAt > sceneAt);
+});
+
+test('word, rtf, odt, and pdf carry the book font and size; plain exports stay plain', async () => {
+  const doc = setManuscriptTypography(manuscriptWithBreaks(), { fontFamily: 'times', fontSize: 14 });
+
+  const rtf = await (await exportManuscriptBlob(doc, 'rtf', now, identity)).text();
+  assert.match(rtf, /\\fonttbl\{\\f0\\froman Times New Roman;\}/);
+  assert.match(rtf, /\\f0\\fs28/);
+  const scrivener = await (await exportManuscriptBlob(doc, 'scrivener-rtf', now, identity)).text();
+  assert.match(scrivener, /Times New Roman/);
+  assert.match(scrivener, /\\fs28/);
+
+  const docxBuf = Buffer.from(await (await exportManuscriptBlob(doc, 'docx', now, identity)).arrayBuffer());
+  const docxZip = await JSZip.loadAsync(docxBuf);
+  const documentXml = await docxZip.file('word/document.xml')!.async('string');
+  const stylesXml = await docxZip.file('word/styles.xml')!.async('string');
+  assert.match(documentXml, /Times New Roman/);
+  assert.match(`${documentXml}\n${stylesXml}`, /w:sz w:val="28"/);
+
+  const odtBuf = Buffer.from(await (await exportManuscriptBlob(doc, 'odt', now, identity)).arrayBuffer());
+  const odtZip = await JSZip.loadAsync(odtBuf);
+  const contentXml = await odtZip.file('content.xml')!.async('string');
+  assert.match(contentXml, /Times New Roman/);
+  assert.match(contentXml, /fo:font-size="14pt"/);
+
+  const pdfBuf = Buffer.from(await (await exportManuscriptBlob(doc, 'pdf', now, identity)).arrayBuffer());
+  const pdf = pdfBuf.toString('latin1');
+  assert.match(pdf, /Times-Roman/);
+  assert.match(pdf, /\/F\d+ 14 Tf/);
+
+  const courier = setManuscriptTypography(manuscriptWithBreaks(), { fontFamily: 'courier', fontSize: 18 });
+  const courierPdf = Buffer.from(await (await exportManuscriptBlob(courier, 'pdf', now, identity)).arrayBuffer()).toString('latin1');
+  assert.match(courierPdf, /Courier/);
+  assert.match(courierPdf, /\/F\d+ 18 Tf/);
+
+  const arial = setManuscriptTypography(manuscriptWithBreaks(), { fontFamily: 'arial', fontSize: 16 });
+  const arialPdf = Buffer.from(await (await exportManuscriptBlob(arial, 'pdf', now, identity)).arrayBuffer()).toString('latin1');
+  assert.match(arialPdf, /Helvetica/);
+
+  const plain = await (await exportManuscriptBlob(doc, 'plain', now, identity)).text();
+  const markdown = await (await exportManuscriptBlob(doc, 'markdown', now, identity)).text();
+  assert.equal(plain.includes('Times New Roman'), false);
+  assert.equal(markdown.includes('Times New Roman'), false);
+  assert.equal(plain.includes('\\fs28'), false);
+  assert.equal(markdown.includes('font-size'), false);
+  assert.match(plain, /Before the break/);
+  assert.match(markdown, /Before the break/);
 });
 
 test('every exporter is covered by the page-break checks', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   certificationExport,
   chapterOrder,
@@ -68,6 +68,13 @@ import {
 } from './ManuscriptToolbarIcons.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 import { ExportPreview } from './ExportPreview.tsx';
+import {
+  MANUSCRIPT_FONTS,
+  MANUSCRIPT_FONT_SIZES,
+  manuscriptTypographyStyle,
+  resolveManuscriptTypography,
+  setManuscriptTypography,
+} from '../core/typography.ts';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 
@@ -336,6 +343,8 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const typography = resolveManuscriptTypography(doc);
+  const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
   const showReplace = replaceOpen && !showPreview;
   const openCards = useMemo(
     () => (showHighlights ? openPassageCards(doc) : []),
@@ -428,6 +437,38 @@ export function Editor({
               <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
                 <IconBlockQuote />
               </ToolbarIconButton>
+              <label className="toolbar-font toolbar-font--family" data-tooltip="Font">
+                <select
+                  aria-label="Font"
+                  value={typography.font.id}
+                  onChange={(event) => {
+                    const fontFamily = event.target.value;
+                    commit((current) => setManuscriptTypography(current, { fontFamily }));
+                  }}
+                >
+                  {MANUSCRIPT_FONTS.map((font) => (
+                    <option key={font.id} value={font.id}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="toolbar-font toolbar-font--size" data-tooltip="Font size">
+                <select
+                  aria-label="Font size"
+                  value={String(typography.sizePt)}
+                  onChange={(event) => {
+                    const fontSize = Number(event.target.value);
+                    commit((current) => setManuscriptTypography(current, { fontSize }));
+                  }}
+                >
+                  {MANUSCRIPT_FONT_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {size} pt
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
           <div className="toolbar-group">
@@ -624,7 +665,12 @@ export function Editor({
             <button type="button" className="primary" onClick={() => commit((current) => insertStructure(current, 'chapter', 0, ids.current()))}>Start a chapter</button>
           </div>
         ) : (
-          <div className={`manuscript${dragging != null ? ' is-dragging' : ''}`}>
+          <div
+            className={`manuscript${dragging != null ? ' is-dragging' : ''}`}
+            style={manuscriptStyle}
+            data-manuscript-font={typography.font.id}
+            data-manuscript-size={typography.sizePt}
+          >
             {doc.blocks.map((block, index) => {
               const provSpans = isProseBlock(block.type)
                 ? doc.provenance[block.id]?.text ?? []

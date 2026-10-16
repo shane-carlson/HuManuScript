@@ -31,6 +31,7 @@ import {
   type ManuscriptMatch,
 } from './manuscript.ts';
 import { expandCollapsedRange, toggleMark } from './richText.ts';
+import type { ManuscriptFontId } from './typography.ts';
 import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
 
 export interface ManuscriptDocument {
@@ -42,6 +43,13 @@ export interface ManuscriptDocument {
   provenance: Record<string, { title: ProvenanceSpan[]; text: ProvenanceSpan[] }>;
   points: CertificationPoint[];
   moves: MoveRecord[];
+  /**
+   * Typeface for this book. Absent uses the serif default.
+   * Changing it is not an insertion and does not touch certification.
+   */
+  fontFamily?: ManuscriptFontId;
+  /** Body size in points. Absent means 12. Not an insertion. */
+  fontSize?: number;
 }
 
 export interface StoredManuscript extends ManuscriptDocument {

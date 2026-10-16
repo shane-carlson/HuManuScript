@@ -2,6 +2,7 @@ import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from '.
 import type { Book, Library, Series } from './core/library.ts';
 import type { CertificationPoint, MoveRecord, ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
+import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
 
 export const LIBRARY_KEY = 'humanuscript.library.v2';
 export const STORAGE_KEY = 'humanuscript.manuscript.v1';
@@ -174,6 +175,8 @@ function parseDocument(parsed: StoredManuscript): ManuscriptDocument | null {
     provenance,
     points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
     moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
+    ...(isManuscriptFontId(parsed.fontFamily) ? { fontFamily: parsed.fontFamily } : {}),
+    ...(isManuscriptFontSize(parsed.fontSize) ? { fontSize: parsed.fontSize } : {}),
   };
 }
 
