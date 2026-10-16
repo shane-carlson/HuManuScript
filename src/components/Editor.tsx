@@ -487,15 +487,17 @@ export function Editor({
               <div
                 className="find"
                 role="search"
-                aria-label="Find and replace"
+                aria-label={showReplace ? 'Find and replace' : 'Find'}
                 onBlur={(event) => {
                   const next = event.relatedTarget;
                   if (next instanceof Node && event.currentTarget.contains(next)) return;
                   setReplaceOpen(false);
                 }}
               >
+                <label className="toolbar-group__label" htmlFor="find">
+                  {showReplace ? 'Find & replace' : 'Find'}
+                </label>
                 <div className="find-row">
-                  <label htmlFor="find">Find</label>
                   <div className="find-field">
                     <input
                       id="find"
@@ -532,10 +534,10 @@ export function Editor({
                 </div>
                 {showReplace && (
                   <div className="find-row find-row--replace">
-                    <label htmlFor="replace">Replace</label>
                     <div className="find-field">
                       <input
                         id="replace"
+                        aria-label="Replace"
                         value={replacement}
                         onChange={(e) => setReplacement(e.target.value)}
                         onKeyDown={(e) => {

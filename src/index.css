@@ -754,7 +754,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .trust { color: var(--text-dim); font-size: 0.86rem; }
 .toolbar-history-find {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 14px;
   flex-wrap: nowrap;
   min-width: 0;
@@ -764,7 +764,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0;
+  gap: 4px;
   margin: 0;
   min-width: 0;
 }
@@ -773,11 +773,6 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
-}
-.find-row label {
-  flex: 0 0 auto;
-  font-size: 0.75rem;
-  color: var(--text-dim);
 }
 .find-field {
   display: flex;
