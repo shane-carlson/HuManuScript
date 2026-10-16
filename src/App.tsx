@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from './components/Editor.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { ManuscriptStatsBar } from './components/ManuscriptStatsBar.tsx';
+import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import {
   assignSeriesToBook,
+  bookDisplayTitle,
   formatSeriesBookNumber,
   seriesMembershipLabel,
   setBookSeriesNumber,
@@ -316,11 +318,6 @@ export default function App() {
             onTabChange={setTab}
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
-            bookVersions={activeBook ? listBookVersions(versions, activeBook.id) : []}
-            onSaveVersion={handleSaveVersion}
-            onRestoreVersion={(id) => void handleRestoreVersion(id)}
-            versions={versions}
-            onImportBackup={(lib, v) => void handleImportBackup(lib, v)}
           />
           <div className="workspace-main">
             {tab === 'export' ? (
@@ -338,6 +335,18 @@ export default function App() {
                         )
                       : null
                   }
+                />
+              </div>
+            ) : tab === 'history' ? (
+              <div className="workspace-panel">
+                <VersionHistoryPane
+                  bookTitle={activeBook ? bookDisplayTitle(activeBook) : displayTitle(doc)}
+                  versions={activeBook ? listBookVersions(versions, activeBook.id) : []}
+                  onSaveVersion={handleSaveVersion}
+                  onRestoreVersion={(id) => void handleRestoreVersion(id)}
+                  library={library}
+                  ledger={versions}
+                  onImportBackup={(lib, v) => void handleImportBackup(lib, v)}
                 />
               </div>
             ) : (

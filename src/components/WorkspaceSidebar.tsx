@@ -6,9 +6,6 @@ import {
   type Book,
   type Library,
 } from '../core/library.ts';
-import { LibraryBackup } from './LibraryBackup.tsx';
-import { VersionHistory } from './VersionHistory.tsx';
-import type { BookVersion, VersionLedger } from '../core/versions.ts';
 import type { WorkspaceTab } from '../storage.ts';
 
 export function WorkspaceSidebar({
@@ -19,11 +16,6 @@ export function WorkspaceSidebar({
   onTabChange,
   onLibraryChange,
   newId,
-  bookVersions,
-  onSaveVersion,
-  onRestoreVersion,
-  versions,
-  onImportBackup,
 }: {
   library: Library;
   tab: WorkspaceTab;
@@ -32,11 +24,6 @@ export function WorkspaceSidebar({
   onTabChange: (tab: WorkspaceTab) => void;
   onLibraryChange: (library: Library) => void;
   newId: () => string;
-  bookVersions: BookVersion[];
-  onSaveVersion: (label: string) => void;
-  onRestoreVersion: (versionId: string) => void;
-  versions: VersionLedger;
-  onImportBackup: (library: Library, versions: VersionLedger) => void;
 }) {
   const active = library.books.find((b) => b.id === library.activeBookId) ?? library.books[0];
 
@@ -80,6 +67,15 @@ export function WorkspaceSidebar({
           <span className="ico" aria-hidden="true">🔗</span>
           <span className="workspace-nav__label">Export</span>
         </button>
+        <button
+          type="button"
+          className={`workspace-nav__item${tab === 'history' ? ' is-active' : ''}`}
+          onClick={() => onTabChange('history')}
+          data-tooltip="Version history"
+        >
+          <span className="ico" aria-hidden="true">🕘</span>
+          <span className="workspace-nav__label">Version history</span>
+        </button>
       </nav>
 
       <div className="workspace-sidebar__body">
@@ -122,15 +118,6 @@ export function WorkspaceSidebar({
           ))}
         </div>
       </section>
-
-      <VersionHistory
-        bookTitle={bookDisplayTitle(active)}
-        versions={bookVersions}
-        onSave={onSaveVersion}
-        onRestore={onRestoreVersion}
-      />
-
-      <LibraryBackup library={library} versions={versions} onImport={onImportBackup} />
       </div>
     </aside>
   );

@@ -12,7 +12,7 @@ export const CERTIFICATION_COLLAPSED_KEY = 'humanuscript.certificationCollapsed'
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
 export type EditorViewMode = 'manuscript' | 'highlights' | 'preview';
-export type WorkspaceTab = 'manuscript' | 'export';
+export type WorkspaceTab = 'manuscript' | 'export' | 'history';
 
 export function loadEditorView(): EditorViewMode {
   try {
@@ -35,7 +35,8 @@ export function saveEditorView(mode: EditorViewMode): void {
 export function loadWorkspaceTab(): WorkspaceTab {
   try {
     const value = sessionStorage.getItem('humanuscript.workspaceTab');
-    return value === 'export' ? 'export' : 'manuscript';
+    if (value === 'export' || value === 'history') return value;
+    return 'manuscript';
   } catch {
     return 'manuscript';
   }

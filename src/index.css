@@ -295,9 +295,9 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .book-row__meta { font-size: 0.72rem; color: var(--text-dim); }
 .workspace-versions,
 .workspace-backup {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 .workspace-versions h3,
 .workspace-backup h3 { margin: 0 0 6px; font-size: 0.95rem; }
@@ -310,7 +310,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   margin: 0;
   display: grid;
   gap: 6px;
-  max-height: 200px;
+  max-height: min(52vh, 480px);
   overflow: auto;
 }
 .version-list li {
@@ -339,7 +339,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   list-style: none;
   padding: 0;
   margin: 0 0 10px;
-  max-height: 140px;
+  max-height: min(40vh, 320px);
   overflow: auto;
   font-size: 0.85rem;
 }
@@ -369,9 +369,27 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   min-height: 0;
   overflow: auto;
 }
-.export-pane__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.export-pane__head h2 { margin: 0; }
-.export-pane__head p { margin: 4px 0 0; color: var(--text-dim); max-width: 52ch; }
+.export-pane__head,
+.version-history-pane__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.export-pane__head h2,
+.version-history-pane__head h2 { margin: 0; }
+.export-pane__head p,
+.version-history-pane__head p { margin: 4px 0 0; color: var(--text-dim); max-width: 52ch; }
+.version-history-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.version-history-tabs [role="tab"] {
+  border-radius: 10px;
+  background: transparent;
+  border-color: transparent;
+}
+.version-history-tabs [role="tab"].is-active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  border-color: var(--border-strong);
+}
 .book-pill {
   display: flex;
   flex-wrap: wrap;
