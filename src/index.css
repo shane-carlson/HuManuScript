@@ -922,9 +922,9 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   position: fixed;
   z-index: 2000;
   min-width: 200px;
-  max-width: min(280px, 92vw);
-  max-height: min(70vh, 480px);
+  max-width: min(280px, calc(100vw - 16px));
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--border-strong);
@@ -943,15 +943,11 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   font-size: 0.88rem;
 }
 .field-context-menu button:hover { background: var(--bg-elev-2); }
+.field-context-menu__suggestion { font-weight: 650; }
 .field-context-menu__sep {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
-}
-.field-context-menu__hint {
-  margin: 4px 10px 2px;
-  font-size: 0.75rem;
-  color: var(--text-dim);
 }
 
 .ms-field.ms-list-bullet,

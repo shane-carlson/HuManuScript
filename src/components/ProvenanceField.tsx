@@ -4,7 +4,8 @@ import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/cer
 import { classifyInsertion } from '../core/certification.ts';
 import { describePasteSource } from '../core/pasteHint.ts';
 import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
-import { FieldContextMenu, type ContextMenuState } from './FieldContextMenu.tsx';
+import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
+import { collectSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
 
 export interface FieldCommit {
   start: number;
@@ -160,6 +161,8 @@ export function ProvenanceField({
   onInsertBlockquote?: () => void;
 }) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const anchorRef = useRef<MenuAnchor | null>(null);
+  const replaceRef = useRef<{ start: number; end: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const caret = useRef<number | null>(null);
@@ -417,12 +420,37 @@ export function ProvenanceField({
       onContextMenu={(e) => {
         e.preventDefault();
         const sel = selection();
-        const word = wordAtCaret(textRef.current, sel.start);
+        const point = rangeFromPoint(e.clientX, e.clientY);
+        const el = ref.current;
+        const at =
+          point && el && el.contains(point.startContainer)
+            ? offsetsFromDomRange(el, point).start
+            : sel.start;
+        if (point && el && el.contains(point.startContainer)) {
+          const rect = point.getBoundingClientRect();
+          anchorRef.current = {
+            range: point,
+            dx: e.clientX - rect.left,
+            dy: e.clientY - rect.top,
+          };
+        } else {
+          anchorRef.current = null;
+        }
+        const word = wordAroundOffset(textRef.current, at);
+        const suggestions = word
+          ? collectSpellSuggestions({
+              word: word.word,
+              event: e.nativeEvent,
+              platform: window.humanuscript?.getSpellSuggestions,
+            })
+          : [];
+        replaceRef.current = word && suggestions.length ? { start: word.start, end: word.end } : null;
         setMenu({
           x: e.clientX,
           y: e.clientY,
           hasSelection: sel.end > sel.start,
-          misspelledWord: word.length > 2 ? word : null,
+          suggestions,
+          misspelledWord: suggestions.length && word ? word.word : null,
         });
       }}
       style={{
@@ -431,7 +459,12 @@ export function ProvenanceField({
     />
     <FieldContextMenu
       state={menu}
-      onClose={() => setMenu(null)}
+      anchorRef={anchorRef}
+      onClose={() => {
+        anchorRef.current = null;
+        replaceRef.current = null;
+        setMenu(null);
+      }}
       onCut={() => document.execCommand('cut')}
       onCopy={() => document.execCommand('copy')}
       onPaste={async () => {
@@ -474,32 +507,38 @@ export function ProvenanceField({
       onInsertDivider={() => onInsertDivider?.()}
       onInsertBlockquote={() => onInsertBlockquote?.()}
       onReplaceWord={(replacement) => {
-        const sel = selection();
-        const word = wordAtCaret(textRef.current, sel.start);
-        if (!word) return;
-        const start = textRef.current.slice(0, sel.start).search(new RegExp(`${word}\\s*$`));
-        const at = start >= 0 ? start : sel.start;
-        onCommit({
-          start: at,
-          end: at + word.length,
+        const range = replaceRef.current;
+        if (!range) return;
+        const change = spellcheckReplacement({
+          start: range.start,
+          end: range.end,
           insert: replacement,
-          origin: 'keyboard',
-          event: {
-            at: new Date().toISOString(),
-            inputType: 'insertReplacementText',
-            data: replacement,
-            trusted: true,
-          },
-          caret: at + replacement.length,
+          at: new Date().toISOString(),
         });
+        caret.current = change.caret;
+        onCommit(change);
       }}
     />
     </>
   );
 }
 
-function wordAtCaret(text: string, at: number): string {
-  const left = text.slice(0, at);
-  const m = left.match(/[\p{L}\p{N}'’-]+$/u);
-  return m?.[0] ?? '';
+function rangeFromPoint(x: number, y: number): Range | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const pos = doc.caretPositionFromPoint?.(x, y);
+  if (pos?.offsetNode) {
+    try {
+      const range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+      return range;
+    } catch {
+      return null;
+    }
+  }
+  const legacy = doc.caretRangeFromPoint?.(x, y);
+  return legacy ? legacy.cloneRange() : null;
 }
