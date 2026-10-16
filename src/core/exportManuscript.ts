@@ -77,7 +77,6 @@ function certificationRtf(model: CertificationPageModel): string {
       if (!line.trim()) return '\\par';
       const heading =
         line === 'HuManuScript certification summary' ||
-        line === 'Trust limit' ||
         line === 'Certified versus pasted' ||
         line === 'Statistics';
       if (heading) return `\\pard{\\b ${rtfEscape(line)}\\par}`;
@@ -247,7 +246,7 @@ function wrapRtf(inner: string): string {
 }
 
 function certificationMarkdown(model: CertificationPageModel): string {
-  const headings = new Set(['Trust limit', 'Certified versus pasted', 'Statistics']);
+  const headings = new Set(['Certified versus pasted', 'Statistics']);
   return certificationFactLines(model)
     .map((line) => {
       if (line === 'HuManuScript certification summary') return '# HuManuScript certification summary';
@@ -258,7 +257,7 @@ function certificationMarkdown(model: CertificationPageModel): string {
 }
 
 function certificationDocxParagraphs(model: CertificationPageModel): Paragraph[] {
-  const headings = new Set(['HuManuScript certification summary', 'Trust limit', 'Certified versus pasted', 'Statistics']);
+  const headings = new Set(['HuManuScript certification summary', 'Certified versus pasted', 'Statistics']);
   return certificationFactLines(model).map((line) => {
     if (!line) return new Paragraph('');
     if (line === 'HuManuScript certification summary') {
@@ -372,7 +371,7 @@ function xmlEscape(text: string): string {
 const ODT_PAGE_BREAK = '<text:p text:style-name="PageBreak"/>';
 
 function certificationOdtBody(model: CertificationPageModel): string {
-  const headings = new Set(['Trust limit', 'Certified versus pasted', 'Statistics']);
+  const headings = new Set(['Certified versus pasted', 'Statistics']);
   return certificationFactLines(model)
     .map((line) => {
       if (!line) return '<text:p/>';
@@ -493,7 +492,7 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
       y += 3;
       continue;
     }
-    const heading = line === 'Trust limit' || line === 'Certified versus pasted' || line === 'Statistics';
+    const heading = line === 'Certified versus pasted' || line === 'Statistics';
     if (heading) {
       y += 1;
       doc.setFont('helvetica', 'bold');

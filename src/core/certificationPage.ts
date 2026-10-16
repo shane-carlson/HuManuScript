@@ -28,6 +28,11 @@ export interface CertificationPageIdentity {
 export const CERTIFICATION_PURPOSE =
   'HuManuScript tracks and certifies how a manuscript is written — typed versus pasted — as evidence of human-written content. It does not guarantee the work is human-generated. It shows how, when, and on what devices specific parts of the manuscript were introduced, and by what means: keyboard versus pasted. Certifications are timestamped and include a SHA key tied to the manuscript ID and device.';
 
+/** Purpose first, then the trust limit, as the one summary banner. */
+export function certificationBannerText(): string {
+  return `${CERTIFICATION_PURPOSE} ${TRUST_STATEMENT}`;
+}
+
 export interface CertificationPageModel {
   product: 'HuManuScript';
   bookTitle: string;
@@ -36,9 +41,8 @@ export interface CertificationPageModel {
   manuscriptId: string;
   exportedAt: string;
   exportedAtLabel: string;
-  /** Purpose banner on the summary page. Separate from the trust-limit paragraph. */
-  purpose: string;
-  trust: string;
+  /** Purpose and trust limit in one block. */
+  banner: string;
   totals: OriginWordTotals;
   chapters: number;
   scenes: number;
@@ -124,8 +128,7 @@ export function buildCertificationPageModel(
     manuscriptId: doc.manuscriptId,
     exportedAt,
     exportedAtLabel: formatExportDateTime(exportedAt),
-    purpose: CERTIFICATION_PURPOSE,
-    trust: TRUST_STATEMENT,
+    banner: certificationBannerText(),
     totals,
     chapters: stats.chapters,
     scenes: stats.scenes,
@@ -140,7 +143,7 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
   const lines = [
     'HuManuScript certification summary',
     '',
-    model.purpose,
+    model.banner,
     '',
     `Book: ${model.bookTitle}`,
   ];
@@ -148,9 +151,6 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
   lines.push(
     `Manuscript: ${model.manuscriptTitle}`,
     `Manuscript id: ${model.manuscriptId}`,
-    '',
-    'Trust limit',
-    model.trust,
     '',
     'Certified versus pasted',
     `Keyboard-certified words: ${model.totals.keyboardSealed}`,
