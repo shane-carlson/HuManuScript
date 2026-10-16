@@ -118,14 +118,12 @@ export function ProvenanceField({
   onMergeBackward,
   onSelect,
   onFormat,
-  onClearFormat,
   onInternalDrag,
   onInternalDrop,
   renderToken = 0,
   showProvenance = true,
   listStyle = null,
   indentLevel = 0,
-  onParagraphMeta,
   onInsertTable,
   onInsertImage,
   onInsertPageBreak,
@@ -144,7 +142,6 @@ export function ProvenanceField({
   onMergeBackward?: () => void;
   onSelect?: (start: number, end: number) => void;
   onFormat?: (kind: InlineMarkKind) => void;
-  onClearFormat?: () => void;
   onInternalDrag?: (start: number, end: number) => void;
   onInternalDrop?: (offset: number) => void;
   /** Bumped for undo, redo, and other edits that did not originate in this field. */
@@ -153,7 +150,6 @@ export function ProvenanceField({
   showProvenance?: boolean;
   listStyle?: ListStyle;
   indentLevel?: number;
-  onParagraphMeta?: (patch: { listStyle?: ListStyle; indentLevel?: number }) => void;
   onInsertTable?: () => void;
   onInsertImage?: () => void;
   onInsertPageBreak?: () => void;
@@ -495,12 +491,6 @@ export function ProvenanceField({
         sel?.removeAllRanges();
         sel?.addRange(range);
       }}
-      onFormat={(kind) => onFormat?.(kind)}
-      onClearFormat={() => onClearFormat?.()}
-      onBullet={() => onParagraphMeta?.({ listStyle: 'bullet' })}
-      onNumber={() => onParagraphMeta?.({ listStyle: 'number' })}
-      onIndent={() => onParagraphMeta?.({ indentLevel: Math.min(8, indentLevel + 1) })}
-      onOutdent={() => onParagraphMeta?.({ indentLevel: Math.max(0, indentLevel - 1) })}
       onInsertTable={() => onInsertTable?.()}
       onInsertImage={() => onInsertImage?.()}
       onInsertPageBreak={() => onInsertPageBreak?.()}

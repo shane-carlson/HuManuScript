@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { InlineMarkKind } from '../core/types.ts';
 import { placeContextMenu } from '../core/contextMenu.ts';
 
 export interface ContextMenuState {
@@ -27,12 +26,6 @@ export function FieldContextMenu({
   onCopy,
   onPaste,
   onSelectAll,
-  onFormat,
-  onClearFormat,
-  onBullet,
-  onNumber,
-  onIndent,
-  onOutdent,
   onInsertTable,
   onInsertImage,
   onInsertPageBreak,
@@ -47,12 +40,6 @@ export function FieldContextMenu({
   onCopy: () => void;
   onPaste: () => void;
   onSelectAll: () => void;
-  onFormat: (kind: InlineMarkKind) => void;
-  onClearFormat: () => void;
-  onBullet: () => void;
-  onNumber: () => void;
-  onIndent: () => void;
-  onOutdent: () => void;
   onInsertTable: () => void;
   onInsertImage: () => void;
   onInsertPageBreak: () => void;
@@ -163,17 +150,6 @@ export function FieldContextMenu({
       )}
       <button type="button" role="menuitem" onClick={() => { onPaste(); onClose(); }}>Paste</button>
       <button type="button" role="menuitem" onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
-      <div className="field-context-menu__sep" />
-      <button type="button" role="menuitem" onClick={() => { onFormat('bold'); onClose(); }}>Bold</button>
-      <button type="button" role="menuitem" onClick={() => { onFormat('italic'); onClose(); }}>Italic</button>
-      <button type="button" role="menuitem" onClick={() => { onFormat('underline'); onClose(); }}>Underline</button>
-      <button type="button" role="menuitem" onClick={() => { onFormat('strike'); onClose(); }}>Strikethrough</button>
-      <button type="button" role="menuitem" onClick={() => { onClearFormat(); onClose(); }}>Clear formatting</button>
-      <div className="field-context-menu__sep" />
-      <button type="button" role="menuitem" onClick={() => { onBullet(); onClose(); }}>Bullet list</button>
-      <button type="button" role="menuitem" onClick={() => { onNumber(); onClose(); }}>Numbered list</button>
-      <button type="button" role="menuitem" onClick={() => { onIndent(); onClose(); }}>Increase indent</button>
-      <button type="button" role="menuitem" onClick={() => { onOutdent(); onClose(); }}>Decrease indent</button>
       <div className="field-context-menu__sep" />
       <button type="button" role="menuitem" onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
       <button type="button" role="menuitem" onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
