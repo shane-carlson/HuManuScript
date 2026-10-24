@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   collectSpellSuggestions,
+  contextMenuLabels,
+  menuSpellSuggestions,
   placeContextMenu,
   spellcheckReplacement,
   suggestionsFromPlatformEvent,
   wordAroundOffset,
 } from './contextMenu.ts';
+import { suggestSpellings } from './spellSuggest.ts';
 import { countOriginWords } from './certification.ts';
 import { editField, emptyDocument, insertStructure } from './document.ts';
 import { sequenceIds } from './uid.ts';
@@ -39,6 +42,58 @@ test('platform suggestions are used and a missing platform does not invent any',
       word: 'teh',
       event: { dictionarySuggestions: [] },
       platform: () => ['the'],
+    }),
+    [],
+  );
+});
+
+test('the editor menu is suggestions, then clipboard, then inserts', () => {
+  assert.deepEqual(contextMenuLabels([]), [
+    'Cut',
+    'Copy',
+    'Paste',
+    'Select all',
+    'Insert page break',
+    'Insert scene break',
+    'Insert block quote',
+    'Insert table…',
+    'Insert image…',
+  ]);
+  assert.deepEqual(contextMenuLabels(['received']), [
+    'received',
+    'Cut',
+    'Copy',
+    'Paste',
+    'Select all',
+    'Insert page break',
+    'Insert scene break',
+    'Insert block quote',
+    'Insert table…',
+    'Insert image…',
+  ]);
+});
+
+test('browser spelling falls back only when the system list cannot be read', () => {
+  assert.equal(suggestSpellings('recieved')[0], 'received');
+  assert.equal(suggestSpellings('Recieved')[0], 'Received');
+  assert.deepEqual(suggestSpellings('the'), []);
+  assert.deepEqual(
+    menuSpellSuggestions({ word: 'recieved', fallback: suggestSpellings }),
+    suggestSpellings('recieved'),
+  );
+  assert.deepEqual(
+    menuSpellSuggestions({
+      word: 'recieved',
+      platform: () => ['receive'],
+      fallback: () => ['should-not-run'],
+    }),
+    ['receive'],
+  );
+  assert.deepEqual(
+    menuSpellSuggestions({
+      word: 'recieved',
+      event: { dictionarySuggestions: [] },
+      fallback: () => ['should-not-run'],
     }),
     [],
   );

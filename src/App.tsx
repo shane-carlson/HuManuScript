@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { appVersion } from 'virtual:app-version';
+import { AppVersionLabel } from './components/AppVersionLabel.tsx';
 import { Editor } from './components/Editor.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
-import { ManuscriptStatsBar } from './components/ManuscriptStatsBar.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import {
@@ -13,6 +14,7 @@ import {
   updateActiveBookDocument,
   type Library,
 } from './core/library.ts';
+import { formatAppVersion } from './core/appVersion.ts';
 import { displayTitle, reconcileLoadedDocument } from './core/document.ts';
 import {
   listBookVersions,
@@ -67,6 +69,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadSidebarCollapsed());
   const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
@@ -106,6 +109,10 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    document.title = `HuManuScript ${formatAppVersion(appVersion)}`;
+  }, []);
+
+  useEffect(() => {
     saveWorkspaceTab(tab);
   }, [tab]);
 
@@ -123,7 +130,14 @@ export default function App() {
 
   useEffect(() => {
     if (phase !== 'ready' || !library) return;
-    const timer = window.setTimeout(() => saveLibrary(library), 200);
+    const timer = window.setTimeout(() => {
+      try {
+        saveLibrary(library);
+        setSaveError('');
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'The book could not be saved in this browser.');
+      }
+    }, 200);
     return () => window.clearTimeout(timer);
   }, [library, phase]);
 
@@ -232,6 +246,7 @@ export default function App() {
           <div>
             <p className="wordmark">HuManuScript</p>
             <p className="tag">Helping authors document the humanity of their prose.</p>
+            <AppVersionLabel />
           </div>
         </div>
         {phase === 'ready' && doc && library && activeBook && (
@@ -352,10 +367,11 @@ export default function App() {
             ) : (
               <>
                 <p className="sr-only">Editing {displayTitle(doc)}</p>
-                <ManuscriptStatsBar doc={doc} compact={focusActive} />
                 <Editor
                   key={library.activeBookId}
                   doc={doc}
+                  bookId={library.activeBookId}
+                  saveError={saveError}
                   onChange={setDoc}
                   focusMode={focusActive}
                   onFocusModeChange={setManuscriptFocus}

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { AppVersionLabel } from './AppVersionLabel.tsx';
 import {
   certificationExport,
   chapterOrder,
   displayTitle,
   dragPreviewLabel,
   editField,
+  insertHeadingWithParagraph,
   insertStructure,
   movePassage,
   replaceAllManuscriptMatches,
@@ -23,8 +25,7 @@ import {
   type ManuscriptDocument,
 } from '../core/document.ts';
 import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
-import { findMatches, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
-import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
+import { findMatches, firstProseAfter, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
@@ -36,8 +37,13 @@ import {
   saveEditorView,
   type EditorViewMode,
 } from '../storage.ts';
+import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
+import { typewriterScrollDelta } from '../core/typewriter.ts';
+import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { CertificationMark } from './CertificationMark.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
+import { ManuscriptStatsBar } from './ManuscriptStatsBar.tsx';
+import { NotesRail } from './NotesRail.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
 import {
@@ -103,6 +109,8 @@ function slug(title: string): string {
 
 export function Editor({
   doc,
+  bookId,
+  saveError = null,
   onChange,
   focusMode = false,
   onFocusModeChange,
@@ -110,6 +118,8 @@ export function Editor({
   seriesLabel = null,
 }: {
   doc: ManuscriptDocument;
+  bookId: string;
+  saveError?: string | null;
   onChange: (doc: ManuscriptDocument) => void;
   focusMode?: boolean;
   onFocusModeChange?: (focus: boolean) => void;
@@ -135,6 +145,9 @@ export function Editor({
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
   const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
   const [viewPercent, setViewPercent] = useState(100);
+  const [caretRequest, setCaretRequest] = useState<{ blockId: string; offset: number; nonce: number } | null>(null);
+  const caretNonce = useRef(0);
+  const aidsRef = useRef<WritingAids>(readWritingAids(doc));
   const [trackedFocus, setTrackedFocus] = useState(focusMode);
   if (focusMode !== trackedFocus) {
     setTrackedFocus(focusMode);
@@ -164,7 +177,19 @@ export function Editor({
 
   useEffect(() => {
     docRef.current = doc;
+    aidsRef.current = readWritingAids(doc);
   }, [doc]);
+
+  const requestCaret = (blockId: string, offset: number) => {
+    caretNonce.current += 1;
+    setCaretRequest({ blockId, offset, nonce: caretNonce.current });
+  };
+
+  const publish = (next: ManuscriptDocument) => {
+    docRef.current = next;
+    aidsRef.current = readWritingAids(next);
+    onChange(next);
+  };
 
   const undoRef = useRef(undo);
   const redoRef = useRef(redo);
@@ -174,9 +199,11 @@ export function Editor({
   }, [undo, redo]);
 
   const replace = useCallback((next: ManuscriptDocument) => {
-    docRef.current = next;
+    const withAids = applyWritingAids(next, aidsRef.current);
+    docRef.current = withAids;
+    aidsRef.current = readWritingAids(withAids);
     setRenderToken((token) => token + 1);
-    onChange(next);
+    onChange(withAids);
   }, [onChange]);
 
   useEffect(() => {
@@ -205,6 +232,20 @@ export function Editor({
   }, [replace]);
 
   useEffect(() => {
+    if (!replaceOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setReplaceOpen(false);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.closest('.find')) active.blur();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [replaceOpen]);
+
+  useEffect(() => {
     if (!focusMode) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -217,6 +258,43 @@ export function Editor({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [focusMode, onFocusModeChange]);
 
+  useEffect(() => {
+    if (!focusMode) return;
+    const scroller = canvasRef.current;
+    if (!scroller) return;
+    let frame = 0;
+    const follow = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const node = sel.anchorNode;
+        if (!node || !scroller.contains(node)) return;
+        const range = sel.getRangeAt(0).cloneRange();
+        range.collapse(false);
+        const rect = range.getClientRects()[0] ?? range.getBoundingClientRect();
+        if (rect.height === 0 && rect.width === 0) return;
+        const bounds = scroller.getBoundingClientRect();
+        const delta = typewriterScrollDelta({
+          caretTop: rect.top,
+          caretBottom: rect.bottom || rect.top + 1,
+          viewTop: bounds.top,
+          viewBottom: bounds.bottom,
+        });
+        if (Math.abs(delta) < 8) return;
+        scroller.scrollTop += delta;
+      });
+    };
+    document.addEventListener('selectionchange', follow);
+    window.addEventListener('resize', follow);
+    follow();
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('selectionchange', follow);
+      window.removeEventListener('resize', follow);
+    };
+  }, [focusMode, viewPercent, doc, renderToken]);
+
   const commit = (
     recipe: (current: ManuscriptDocument) => Promise<ManuscriptDocument> | ManuscriptDocument,
     options?: { external?: boolean },
@@ -226,15 +304,58 @@ export function Editor({
       try {
         const next = await recipe(docRef.current);
         if (next === docRef.current) return;
-        docRef.current = next;
+        const withAids = applyWritingAids(next, aidsRef.current);
+        docRef.current = withAids;
+        aidsRef.current = readWritingAids(withAids);
         setUndo((stack) => [...stack, snapshot].slice(-40));
         setRedo([]);
         if (options?.external) setRenderToken((token) => token + 1);
-        onChange(next);
+        onChange(withAids);
       } catch (error) {
         console.error(error);
       }
     });
+  };
+
+  const openChapter = (index: number) => {
+    const headingId = ids.current();
+    const paragraphId = ids.current();
+    requestCaret(paragraphId, 0);
+    commit((current) => insertHeadingWithParagraph(current, 'chapter', index, headingId, paragraphId));
+  };
+
+  const focusProseAt = (clientY: number) => {
+    const current = docRef.current;
+    const root = canvasRef.current;
+    if (!root) return;
+    const articles = [...root.querySelectorAll<HTMLElement>('article.ms-block')];
+    let headingIndex = -1;
+    for (const article of articles) {
+      const id = article.id.slice('block-'.length);
+      const index = current.blocks.findIndex((block) => block.id === id);
+      const block = current.blocks[index];
+      if (!block || index < 0) continue;
+      const rect = article.getBoundingClientRect();
+      const heading = block.type === 'chapter' || block.type === 'scene' || block.type === 'section';
+      if (clientY >= rect.top && clientY <= rect.bottom) {
+        if (isProseBlock(block.type)) {
+          requestCaret(block.id, block.text.length);
+          return;
+        }
+        if (heading) headingIndex = index;
+      } else if (rect.bottom <= clientY && heading) {
+        headingIndex = index;
+      }
+    }
+    const target = firstProseAfter(current.blocks, headingIndex);
+    if ('id' in target) {
+      const block = current.blocks.find((item) => item.id === target.id);
+      requestCaret(target.id, block && isProseBlock(block.type) ? block.text.length : 0);
+      return;
+    }
+    const paragraphId = ids.current();
+    requestCaret(paragraphId, 0);
+    commit((live) => insertStructure(live, 'paragraph', target.insertAt, paragraphId));
   };
 
   const applyCommit = (blockId: string, field: 'title' | 'text', change: FieldCommit) => {
@@ -353,6 +474,11 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const certHashes = useMemo(() => {
+    const hashes: Record<string, string> = {};
+    for (const point of doc.points) hashes[point.id] = point.contentHash;
+    return hashes;
+  }, [doc.points]);
   const typography = resolveManuscriptTypography(doc);
   const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
   const showReplace = replaceOpen && !showPreview;
@@ -367,7 +493,9 @@ export function Editor({
     const card = pointListRef.current?.querySelector<HTMLElement>(
       `[data-card-id="${CSS.escape(linkedCardId)}"]`,
     );
-    if (card) scrollCardIntoCertificationPane(card);
+    const hash = card?.querySelector<HTMLElement>('[data-sha256]');
+    if (hash) scrollCardIntoCertificationPane(hash);
+    else if (card) scrollCardIntoCertificationPane(card);
   }, [showHighlights, linkedCardId, doc.points.length, openCards.length]);
   const [previewExportedAt, setPreviewExportedAt] = useState(() => new Date().toISOString());
   const previewModel = useMemo(
@@ -383,12 +511,22 @@ export function Editor({
   };
 
   return (
+    <>
+    <ManuscriptStatsBar
+      doc={doc}
+      bookId={bookId}
+      compact={focusMode}
+      activeBlockId={selection?.blockId ?? null}
+      saveError={saveError}
+      onChange={publish}
+    />
     <div
-      className={`editor-layout${focusMode ? ' is-focus' : ''}${certCollapsed ? ' is-cert-collapsed' : ''}`}
+      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}`}
     >
       {focusMode && (
         <div className="focus-exit-bar">
           <p>Full screen — writing only</p>
+          <AppVersionLabel className="app-version app-version--focus" />
           <div className="focus-zoom" role="group" aria-label="Page zoom">
             <button
               type="button"
@@ -431,7 +569,7 @@ export function Editor({
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
-              <ToolbarIconButton label="Chapter" onClick={() => commit((current) => insertStructure(current, 'chapter', current.blocks.length, ids.current()))}>
+              <ToolbarIconButton label="Chapter" onClick={() => openChapter(docRef.current.blocks.length)}>
                 <IconChapter />
               </ToolbarIconButton>
               <ToolbarIconButton label="Scene" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>
@@ -572,6 +710,7 @@ export function Editor({
               <div
                 className="find"
                 role="search"
+                data-replace-open={showReplace ? 'true' : 'false'}
                 aria-label={showReplace ? 'Find and replace' : 'Find'}
                 onBlur={(event) => {
                   const next = event.relatedTarget;
@@ -579,8 +718,8 @@ export function Editor({
                   setReplaceOpen(false);
                 }}
               >
-                <label className="toolbar-group__label" htmlFor="find">
-                  {showReplace ? 'Find & replace' : 'Find'}
+                <label className="toolbar-group__label" htmlFor="find" data-find-label={showReplace ? 'FIND & REPLACE' : 'FIND'}>
+                  {showReplace ? 'FIND & REPLACE' : 'FIND'}
                 </label>
                 <div className="find-row">
                   <div className="find-field">
@@ -707,7 +846,7 @@ export function Editor({
           <div className="empty">
             <h2>The page is blank.</h2>
             <p>Start a chapter and write into it. Letters from the keyboard and from dictation are sealed. A paste from a chat window stays marked, and it is never certified.</p>
-            <button type="button" className="primary" onClick={() => commit((current) => insertStructure(current, 'chapter', 0, ids.current()))}>Start a chapter</button>
+            <button type="button" className="primary" onClick={() => openChapter(0)}>Start a chapter</button>
           </div>
         ) : (
           <div
@@ -715,6 +854,14 @@ export function Editor({
             style={manuscriptStyle}
             data-manuscript-font={typography.font.id}
             data-manuscript-size={typography.sizePt}
+            onMouseDown={(event) => {
+              if (event.button !== 0) return;
+              const target = event.target;
+              if (!(target instanceof Element)) return;
+              if (target.closest('.ms-field, button, input, textarea, a, select, label, .ms-gutter, .ms-table-wrap, .ms-image-wrap, .ms-divider-block, .ms-page-break')) return;
+              event.preventDefault();
+              focusProseAt(event.clientY);
+            }}
           >
             {doc.blocks.map((block, index) => {
               const provSpans = isProseBlock(block.type)
@@ -891,6 +1038,9 @@ export function Editor({
                         onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
                         onInsertDivider={() => insertAfter(block.id, 'divider')}
                         onInsertBlockquote={() => insertAfter(block.id, 'blockquote')}
+                        certHashes={certHashes}
+                        focusNonce={caretRequest?.blockId === block.id ? caretRequest.nonce : 0}
+                        focusOffset={caretRequest?.blockId === block.id ? caretRequest.offset : null}
                         onCommit={(change) => applyCommit(block.id, isProseBlock(block.type) ? 'text' : 'title', change)}
                         onSplit={(offset) => commit((current) => splitParagraph({ doc: current, blockId: block.id, offset, now: new Date().toISOString(), newId: ids.current }))}
                         onMergeBackward={() => commit((current) => isProseBlock(block.type)
@@ -972,6 +1122,7 @@ export function Editor({
                 commit((current) => reorderBlocks(current, from, current.blocks.length, new Date().toISOString(), ids.current()));
               }}
             />
+            <div className="ms-page-tail" data-page-tail="true" />
           </div>
         )}
         {!focusMode && !showPreview && (
@@ -981,6 +1132,14 @@ export function Editor({
         </div>
       </main>
 
+      {!focusMode && (
+        <NotesRail
+          doc={doc}
+          activeBlockId={selection?.blockId ?? null}
+          saveError={saveError}
+          onChange={publish}
+        />
+      )}
       {!focusMode && (
       <aside className={`points${certCollapsed ? ' is-collapsed' : ''}`}>
         <button
@@ -1020,7 +1179,7 @@ export function Editor({
                     <time dateTime={point.updatedAt}>{new Date(point.updatedAt).toLocaleString()}</time>
                   </header>
                   <blockquote>{point.text}</blockquote>
-                  <code title={point.contentHash}>{point.contentHash.slice(0, 16)}…</code>
+                  <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
@@ -1060,6 +1219,7 @@ export function Editor({
       </aside>
       )}
     </div>
+    </>
   );
 }
 

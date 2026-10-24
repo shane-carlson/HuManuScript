@@ -102,3 +102,19 @@ export function setDomCaretFromOffset(root: HTMLElement, offset: number): void {
   sel?.removeAllRanges();
   sel?.addRange(range);
 }
+
+export function selectDomOffsets(root: HTMLElement, start: number, end: number): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  setDomCaretFromOffset(root, start);
+  if (sel.rangeCount === 0) return;
+  const startRange = sel.getRangeAt(0).cloneRange();
+  setDomCaretFromOffset(root, end);
+  if (sel.rangeCount === 0) return;
+  const endRange = sel.getRangeAt(0).cloneRange();
+  const range = document.createRange();
+  range.setStart(startRange.startContainer, startRange.startOffset);
+  range.setEnd(endRange.startContainer, endRange.startOffset);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}

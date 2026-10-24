@@ -5,6 +5,7 @@
  */
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { writeAppVersion } = require('./write-app-version.cjs');
 
 const root = path.join(__dirname, '..');
 
@@ -41,6 +42,9 @@ function run(command, args, extraEnv = {}) {
   });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+
+const appVersion = writeAppVersion();
+console.log(`Baking app version ${appVersion.version} (${appVersion.build}) into the DMG.`);
 
 run('npm', ['run', 'build:electron']);
 

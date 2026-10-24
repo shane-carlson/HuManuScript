@@ -14,6 +14,10 @@ function labelText(el: HTMLElement): string {
   return el.getAttribute('data-tooltip')?.trim() ?? '';
 }
 
+function wraps(el: HTMLElement): boolean {
+  return el.getAttribute('data-tooltip-wrap') === 'true';
+}
+
 function canUse(el: HTMLElement): boolean {
   if (!labelText(el)) return false;
   if (el instanceof HTMLButtonElement && el.disabled) return false;
@@ -115,7 +119,7 @@ export function HoverLabel() {
   return createPortal(
     <div
       ref={labelRef}
-      className="hover-label"
+      className={`hover-label${wraps(anchor) ? ' is-wrap' : ''}`}
       role="tooltip"
       style={{ top: 0, left: 0, visibility: 'hidden' }}
     >

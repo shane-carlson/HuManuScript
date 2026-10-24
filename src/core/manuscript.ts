@@ -4,7 +4,7 @@
  * Dragging a heading moves the heading plus the body under it.
  */
 
-import type { BlockType, DividerStyle, ManuscriptBlock } from './types.ts';
+import { isProseBlock, type BlockType, type DividerStyle, type ManuscriptBlock } from './types.ts';
 
 const STRUCTURE_RANK: Record<BlockType, number> = {
   chapter: 0,
@@ -176,6 +176,13 @@ export function countWords(text: string): number {
   return trimmed.split(/\s+/).length;
 }
 
+/** Prose plus heading and scene-break titles. The same strings certification counts. */
+export function wordsInBlock(block: ManuscriptBlock): number {
+  if (isProseBlock(block.type)) return countWords(block.text);
+  if (block.title.trim()) return countWords(block.title);
+  return 0;
+}
+
 export function manuscriptStats(blocks: ManuscriptBlock[]): {
   words: number;
   chapters: number;
@@ -188,12 +195,45 @@ export function manuscriptStats(blocks: ManuscriptBlock[]): {
     if (block.type === 'chapter') stats.chapters += 1;
     else if (block.type === 'scene') stats.scenes += 1;
     else if (block.type === 'section') stats.sections += 1;
-    else if (block.type === 'paragraph' || block.type === 'blockquote') {
-      stats.paragraphs += 1;
-      stats.words += countWords(block.text);
-    }
+    else if (block.type === 'paragraph' || block.type === 'blockquote') stats.paragraphs += 1;
+    stats.words += wordsInBlock(block);
   }
   return stats;
+}
+
+/** Words from a chapter title through the block before the next chapter. */
+export function chapterWordCount(blocks: ManuscriptBlock[], chapterId: string): number {
+  const start = blocks.findIndex((block) => block.id === chapterId && block.type === 'chapter');
+  if (start < 0) return 0;
+  let words = 0;
+  for (let i = start; i < blocks.length; i++) {
+    if (i > start && blocks[i]!.type === 'chapter') break;
+    words += wordsInBlock(blocks[i]!);
+  }
+  return words;
+}
+
+/**
+ * The paragraph that should take a click under a heading.
+ * An existing prose block in that section wins. Otherwise the caller inserts one.
+ */
+export function firstProseAfter(
+  blocks: ManuscriptBlock[],
+  headingIndex: number,
+): { id: string } | { insertAt: number } {
+  if (headingIndex < 0 || headingIndex >= blocks.length) {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      if (isProseBlock(blocks[i]!.type)) return { id: blocks[i]!.id };
+    }
+    return { insertAt: Math.max(0, blocks.length) };
+  }
+  const rank = STRUCTURE_RANK[blocks[headingIndex]!.type];
+  for (let i = headingIndex + 1; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    if (HEADING_TYPES.has(block.type) && STRUCTURE_RANK[block.type] <= rank) return { insertAt: i };
+    if (isProseBlock(block.type)) return { id: block.id };
+  }
+  return { insertAt: blocks.length };
 }
 
 export interface ManuscriptMatch {

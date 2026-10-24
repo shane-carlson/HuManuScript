@@ -31,6 +31,7 @@ import {
   type ManuscriptMatch,
 } from './manuscript.ts';
 import { expandCollapsedRange, toggleMark } from './richText.ts';
+import type { BookNotes } from './notes.ts';
 import type { ManuscriptFontId } from './typography.ts';
 import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
 
@@ -50,6 +51,8 @@ export interface ManuscriptDocument {
   fontFamily?: ManuscriptFontId;
   /** Body size in points. Absent means 12. Not an insertion. */
   fontSize?: number;
+  /** Character and scene notes kept with this book. Not an insertion. */
+  notes?: BookNotes;
 }
 
 export interface StoredManuscript extends ManuscriptDocument {
@@ -418,6 +421,19 @@ export async function mergeParagraphBackward(args: {
   delete provenance[block.id];
   provenance[prev.id] = { ...(provenance[prev.id] ?? { title: [], text: [] }), text: sealed.spans };
   return { ...args.doc, blocks, provenance, points: sealed.points };
+}
+
+export function insertHeadingWithParagraph(
+  doc: ManuscriptDocument,
+  kind: 'chapter' | 'scene' | 'section',
+  index: number,
+  headingId: string,
+  paragraphId: string,
+): ManuscriptDocument {
+  const withHeading = insertStructure(doc, kind, index, headingId);
+  const headingIndex = withHeading.blocks.findIndex((block) => block.id === headingId);
+  const at = headingIndex < 0 ? withHeading.blocks.length : headingIndex + 1;
+  return insertStructure(withHeading, 'paragraph', at, paragraphId);
 }
 
 export function insertStructure(

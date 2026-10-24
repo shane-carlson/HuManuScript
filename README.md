@@ -51,6 +51,8 @@ The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` 
 
 The workflow uploads `HuManuScript-*-arm64-signed` from the Actions **Artifacts** tab. Local `pack:mac` still works unsigned when those env vars are unset.
 
+Each signed pack writes `build/app-version.json` from `package.json` `version` plus `HM_BUILD_NUMBER` (the workflow run number). The header shows `0.1.0 (dev)` when that number is absent, and `0.1.0 (<run number>)` in a production pack. electron-builder sets `CFBundleShortVersionString` / `CFBundleVersion` from the same values.
+
 #### Cloud agent: trigger the workflow
 
 Same pattern as Speak Fiction / StoryBind: add a **fine-grained PAT** to your **Cloud Agent environment secrets** as **`GH_TOKEN`** (Actions read/write on this repo). Then:

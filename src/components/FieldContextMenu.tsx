@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { placeContextMenu } from '../core/contextMenu.ts';
+import { CLIPBOARD_MENU, INSERT_MENU, placeContextMenu } from '../core/contextMenu.ts';
 
 export interface ContextMenuState {
   x: number;
   y: number;
   hasSelection: boolean;
+  /** Cut and Copy stay in the menu either way. They work when this is true. */
+  canCutCopy: boolean;
   suggestions: string[];
   /** Plain word the suggestions would replace, for the button name only. */
   misspelledWord: string | null;
@@ -142,20 +144,16 @@ export function FieldContextMenu({
           <div className="field-context-menu__sep" />
         </>
       )}
-      {state.hasSelection && (
-        <>
-          <button type="button" role="menuitem" onClick={() => { onCut(); onClose(); }}>Cut</button>
-          <button type="button" role="menuitem" onClick={() => { onCopy(); onClose(); }}>Copy</button>
-        </>
-      )}
-      <button type="button" role="menuitem" onClick={() => { onPaste(); onClose(); }}>Paste</button>
-      <button type="button" role="menuitem" onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
+      <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[0]} disabled={!state.canCutCopy} onClick={() => { onCut(); onClose(); }}>Cut</button>
+      <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[1]} disabled={!state.canCutCopy} onClick={() => { onCopy(); onClose(); }}>Copy</button>
+      <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[2]} onClick={() => { onPaste(); onClose(); }}>Paste</button>
+      <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[3]} onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
       <div className="field-context-menu__sep" />
-      <button type="button" role="menuitem" onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
-      <button type="button" role="menuitem" onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
-      <button type="button" role="menuitem" onClick={() => { onInsertBlockquote(); onClose(); }}>Insert block quote</button>
-      <button type="button" role="menuitem" onClick={() => { onInsertTable(); onClose(); }}>Insert table…</button>
-      <button type="button" role="menuitem" onClick={() => { onInsertImage(); onClose(); }}>Insert image…</button>
+      <button type="button" role="menuitem" data-menu-item={INSERT_MENU[0]} onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
+      <button type="button" role="menuitem" data-menu-item={INSERT_MENU[1]} onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
+      <button type="button" role="menuitem" data-menu-item={INSERT_MENU[2]} onClick={() => { onInsertBlockquote(); onClose(); }}>Insert block quote</button>
+      <button type="button" role="menuitem" data-menu-item={INSERT_MENU[3]} onClick={() => { onInsertTable(); onClose(); }}>Insert table…</button>
+      <button type="button" role="menuitem" data-menu-item={INSERT_MENU[4]} onClick={() => { onInsertImage(); onClose(); }}>Insert image…</button>
     </div>,
     document.body,
   );

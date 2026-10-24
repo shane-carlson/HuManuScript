@@ -15,6 +15,9 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     env:
+      # Increments on every run of this workflow, including a cancelled one.
+      # pack-mac writes it into the app and into CFBundleVersion.
+      HM_BUILD_NUMBER: ${{ github.run_number }}
       # Developer ID Application (.p12), base64-encoded — electron-builder accepts this form.
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
