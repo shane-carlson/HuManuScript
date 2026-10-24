@@ -2,6 +2,7 @@ import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from '.
 import type { Book, Library, Series } from './core/library.ts';
 import type { CertificationPoint, MoveRecord, ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
+import { readBookNotes } from './core/notes.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
 
 export const LIBRARY_KEY = 'humanuscript.library.v2';
@@ -164,19 +165,27 @@ function parseDocument(parsed: StoredManuscript): ManuscriptDocument | null {
     if (!Array.isArray(entry.title) || !Array.isArray(entry.text)) return null;
     if (!entry.title.every(isSpan) || !entry.text.every(isSpan)) return null;
   }
+  const notes = readBookNotes(parsed.notes);
   return {
     version: 1,
     manuscriptId: parsed.manuscriptId,
     title: typeof parsed.title === 'string' ? parsed.title : '',
-    blocks: parsed.blocks.map((block) => ({
-      ...block,
-      marks: (block.marks ?? []).filter(isMark),
-    })),
+    blocks: parsed.blocks.map((block) => {
+      const next = {
+        ...block,
+        marks: (block.marks ?? []).filter(isMark),
+      };
+      const goal = block.wordGoal;
+      if (typeof goal === 'number' && Number.isInteger(goal) && goal > 0 && goal <= 1_000_000) next.wordGoal = goal;
+      else delete next.wordGoal;
+      return next;
+    }),
     provenance,
     points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
     moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
     ...(isManuscriptFontId(parsed.fontFamily) ? { fontFamily: parsed.fontFamily } : {}),
     ...(isManuscriptFontSize(parsed.fontSize) ? { fontSize: parsed.fontSize } : {}),
+    ...(notes ? { notes } : {}),
   };
 }
 
@@ -261,8 +270,13 @@ export function saveLibrary(library: Library): void {
       document: { ...b.document, savedAt: new Date().toISOString() } as StoredManuscript,
     })),
   };
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify(payload));
-  localStorage.removeItem(STORAGE_KEY);
+  try {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(payload));
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    throw new Error(message ? `The book could not be saved in this browser. ${message}` : 'The book could not be saved in this browser.');
+  }
 }
 
 export function clearLibrary(): void {

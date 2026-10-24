@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 release
+build/app-version.json
 dist-ssr
 *.local
 

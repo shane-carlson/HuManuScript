@@ -44,6 +44,8 @@ export interface ManuscriptBlock {
   imageAlt?: string;
   /** Divider appearance when type is `divider`. */
   dividerStyle?: DividerStyle;
+  /** Chapter word-count goal. Not an insertion and not part of a seal. */
+  wordGoal?: number;
 }
 
 export function isProseBlock(type: BlockType): boolean {

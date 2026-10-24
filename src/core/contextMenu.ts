@@ -60,6 +60,38 @@ export function suggestionsFromPlatformEvent(event: object | null | undefined, w
  * Electron passes the built-in dictionary via `platform`. A browser event contributes
  * only when it actually carries a suggestion list. An empty result stays empty.
  */
+/** Clipboard commands, then the inserts the editor adds. Suggestions, when any, come first. */
+export const CLIPBOARD_MENU = ['Cut', 'Copy', 'Paste', 'Select all'] as const;
+export const INSERT_MENU = [
+  'Insert page break',
+  'Insert scene break',
+  'Insert block quote',
+  'Insert table…',
+  'Insert image…',
+] as const;
+
+export function contextMenuLabels(suggestions: readonly string[]): string[] {
+  return [...suggestions, ...CLIPBOARD_MENU, ...INSERT_MENU];
+}
+
+/**
+ * System suggestions win. A browser that cannot read them may pass a fallback.
+ * An explicit empty list from the platform stays empty.
+ */
+export function menuSpellSuggestions(args: {
+  word: string;
+  event?: object | null;
+  platform?: ((word: string) => readonly unknown[] | null | undefined) | null;
+  fallback?: (word: string) => string[];
+}): string[] {
+  const fromEvent = suggestionsFromPlatformEvent(args.event, args.word);
+  if (fromEvent) return fromEvent;
+  if (typeof args.platform === 'function') {
+    return collectSpellSuggestions({ word: args.word, event: args.event, platform: args.platform });
+  }
+  return args.fallback ? args.fallback(args.word) : [];
+}
+
 export function collectSpellSuggestions(args: {
   word: string;
   event?: object | null;

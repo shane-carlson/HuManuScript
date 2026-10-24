@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { offsetsFromDomRange, setDomCaretFromOffset } from '../core/domCaret.ts';
+import { offsetsFromDomRange, selectDomOffsets, setDomCaretFromOffset } from '../core/domCaret.ts';
 import type { InputEvidence, InsertionOrigin, ProvenanceSpan } from '../core/certification.ts';
 import { classifyInsertion, MAX_KEYBOARD_INSERT_CHARS } from '../core/certification.ts';
 import { passageCardId } from '../core/passageCard.ts';
 import { describePasteSource } from '../core/pasteHint.ts';
 import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
 import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
-import { collectSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
+import { menuSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
+import { suggestSpellings } from '../core/spellSuggest.ts';
 
 export interface FieldCommit {
   start: number;
@@ -68,7 +69,13 @@ function pieces(
   return out;
 }
 
-function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean, blockId: string) {
+function paint(
+  root: HTMLElement,
+  rendered: Piece[],
+  showProvenance: boolean,
+  blockId: string,
+  certHashes: Readonly<Record<string, string>>,
+) {
   root.replaceChildren();
   const order: InlineMarkKind[] = ['bold', 'italic', 'underline', 'strike'];
   for (const piece of rendered) {
@@ -77,6 +84,12 @@ function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean, bl
       span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
       span.dataset.origin = piece.origin;
       if (piece.certificationId) span.dataset.cert = piece.certificationId;
+      const hash = piece.certificationId ? certHashes[piece.certificationId] : undefined;
+      if (hash) {
+        span.dataset.tooltip = hash;
+        span.dataset.tooltipWrap = 'true';
+        span.dataset.sha256 = hash;
+      }
       if (piece.spanId) {
         const cardId = passageCardId(blockId, {
           id: piece.spanId,
@@ -85,7 +98,7 @@ function paint(root: HTMLElement, rendered: Piece[], showProvenance: boolean, bl
         });
         if (cardId) span.dataset.card = cardId;
       }
-      if (piece.pasteHint) span.title = piece.pasteHint;
+      if (piece.pasteHint && !hash) span.title = piece.pasteHint;
     } else {
       span.className = piece.hit ? 'find-hit' : 'prov-plain';
     }
@@ -142,6 +155,9 @@ export function ProvenanceField({
   onInsertPageBreak,
   onInsertDivider,
   onInsertBlockquote,
+  certHashes = {},
+  focusNonce = 0,
+  focusOffset = null,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -172,10 +188,16 @@ export function ProvenanceField({
   onInsertPageBreak?: () => void;
   onInsertDivider?: () => void;
   onInsertBlockquote?: () => void;
+  /** Certification id → SHA-256 shown on the highlight and on its card. */
+  certHashes?: Readonly<Record<string, string>>;
+  /** Changes when this field should take the caret. */
+  focusNonce?: number;
+  focusOffset?: number | null;
 }) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const anchorRef = useRef<MenuAnchor | null>(null);
   const replaceRef = useRef<{ start: number; end: number } | null>(null);
+  const clipRef = useRef<{ start: number; end: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const caret = useRef<number | null>(null);
@@ -205,7 +227,7 @@ export function ProvenanceField({
         nextCaret = offsetsFromDomRange(el, sel.getRangeAt(0)).end;
       }
     }
-    paint(el, pieces(text, spans, marks, highlight), showProvenance, blockId);
+    paint(el, pieces(text, spans, marks, highlight), showProvenance, blockId, certHashes);
     if (nextCaret != null && document.activeElement === el) {
       try {
         setDomCaretFromOffset(el, nextCaret);
@@ -214,7 +236,20 @@ export function ProvenanceField({
       }
     }
     caret.current = null;
-  }, [signature, text, spans, marks, highlight, renderToken, showProvenance, blockId]);
+  }, [signature, text, spans, marks, highlight, renderToken, showProvenance, blockId, certHashes]);
+
+  useLayoutEffect(() => {
+    if (focusOffset == null || !focusNonce) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const offset = Math.max(0, Math.min(focusOffset, textRef.current.length));
+    try {
+      setDomCaretFromOffset(el, offset);
+    } catch {
+      /* The field can mount before its text nodes exist. */
+    }
+  }, [focusNonce, focusOffset]);
 
   const selection = () => {
     const el = ref.current;
@@ -227,6 +262,14 @@ export function ProvenanceField({
   };
 
   const report = () => onSelect?.(selection().start, selection().end);
+
+  const clipThen = (command: 'cut' | 'copy') => {
+    const el = ref.current;
+    const range = clipRef.current;
+    if (!el || !range || range.end <= range.start) return;
+    selectDomOffsets(el, range.start, range.end);
+    document.execCommand(command);
+  };
 
   return (
     <>
@@ -474,19 +517,23 @@ export function ProvenanceField({
         }
         const word = wordAroundOffset(textRef.current, at);
         const suggestions = word
-          ? collectSpellSuggestions({
+          ? menuSpellSuggestions({
               word: word.word,
               event: e.nativeEvent,
               platform: window.humanuscript?.getSpellSuggestions,
+              fallback: suggestSpellings,
             })
           : [];
-        replaceRef.current = word && suggestions.length ? { start: word.start, end: word.end } : null;
+        const selected = sel.end > sel.start;
+        replaceRef.current = word ? { start: word.start, end: word.end } : null;
+        clipRef.current = selected ? { start: sel.start, end: sel.end } : word ? { start: word.start, end: word.end } : null;
         setMenu({
           x: e.clientX,
           y: e.clientY,
-          hasSelection: sel.end > sel.start,
+          hasSelection: selected,
+          canCutCopy: Boolean(clipRef.current),
           suggestions,
-          misspelledWord: suggestions.length && word ? word.word : null,
+          misspelledWord: word ? word.word : null,
         });
       }}
       style={{
@@ -499,10 +546,11 @@ export function ProvenanceField({
       onClose={() => {
         anchorRef.current = null;
         replaceRef.current = null;
+        clipRef.current = null;
         setMenu(null);
       }}
-      onCut={() => document.execCommand('cut')}
-      onCopy={() => document.execCommand('copy')}
+      onCut={() => clipThen('cut')}
+      onCopy={() => clipThen('copy')}
       onPaste={async () => {
         const text = await navigator.clipboard.readText().catch(() => '');
         if (!text) return;

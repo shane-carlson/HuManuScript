@@ -1,10 +1,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { writeAppVersion } = require('./scripts/write-app-version.cjs');
 
 const intel = process.env.HM_MAC_ARCH === 'x64';
 const macArch = intel ? 'x64' : 'arm64';
 const roundedPng = path.join(__dirname, 'build', 'icon.png');
 const icns = path.join(__dirname, 'build', 'icon.icns');
+
+// Same file the renderer reads: marketing version from package.json, build from the pack.
+const appVersion = writeAppVersion();
+const releaseBuild = /^[0-9]+$/.test(appVersion.build) ? appVersion.build : null;
 
 module.exports = {
   appId: 'net.humanuscript.app',
@@ -13,6 +18,8 @@ module.exports = {
   asar: true,
   npmRebuild: false,
   electronLanguages: ['en'],
+  // CFBundleVersion. Unset locally so electron-builder keeps the marketing version.
+  buildVersion: releaseBuild || undefined,
   directories: {
     output: 'release',
     buildResources: 'build',
@@ -31,6 +38,9 @@ module.exports = {
     minimumSystemVersion: '12.0',
     artifactName: 'HuManuScript-${version}-${arch}.${ext}',
     target: [{ target: 'dmg', arch: [macArch] }],
+    // CFBundleShortVersionString / CFBundleVersion, same values as the in-app label.
+    bundleShortVersion: appVersion.version,
+    bundleVersion: releaseBuild || undefined,
     extendInfo: {
       CFBundleDisplayName: 'HuManuScript',
       CFBundleName: 'HuManuScript',
