@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { CLIPBOARD_MENU, INSERT_MENU, placeContextMenu } from '../core/contextMenu.ts';
+import { GRAMMAR_SCOPE_LABELS, GRAMMAR_SCOPES, type GrammarScope } from '../core/grammar.ts';
 
 export interface ContextMenuState {
   x: number;
@@ -34,6 +35,7 @@ export function FieldContextMenu({
   onInsertDivider,
   onInsertBlockquote,
   onReplaceWord,
+  onGrammarCheck,
 }: {
   state: ContextMenuState | null;
   anchorRef: RefObject<MenuAnchor | null>;
@@ -48,6 +50,7 @@ export function FieldContextMenu({
   onInsertDivider: () => void;
   onInsertBlockquote: () => void;
   onReplaceWord?: (word: string) => void;
+  onGrammarCheck?: (scope: GrammarScope) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -148,6 +151,26 @@ export function FieldContextMenu({
       <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[1]} disabled={!state.canCutCopy} onClick={() => { onCopy(); onClose(); }}>Copy</button>
       <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[2]} onClick={() => { onPaste(); onClose(); }}>Paste</button>
       <button type="button" role="menuitem" data-menu-item={CLIPBOARD_MENU[3]} onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
+      {onGrammarCheck && (
+        <>
+          <div className="field-context-menu__sep" />
+          <p className="field-context-menu__label">Grammar</p>
+          {GRAMMAR_SCOPES.map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              role="menuitem"
+              data-grammar-scope={scope}
+              onClick={() => {
+                onGrammarCheck(scope);
+                onClose();
+              }}
+            >
+              {GRAMMAR_SCOPE_LABELS[scope]}
+            </button>
+          ))}
+        </>
+      )}
       <div className="field-context-menu__sep" />
       <button type="button" role="menuitem" data-menu-item={INSERT_MENU[0]} onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
       <button type="button" role="menuitem" data-menu-item={INSERT_MENU[1]} onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>

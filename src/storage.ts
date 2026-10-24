@@ -1,6 +1,6 @@
 import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from './core/document.ts';
 import type { Book, Library, Series } from './core/library.ts';
-import type { CertificationPoint, MoveRecord, ProvenanceSpan } from './core/certification.ts';
+import { readGrammarUsage, type CertificationPoint, type MoveRecord, type ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 import { readBookNotes } from './core/notes.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
@@ -147,6 +147,16 @@ function isPoint(value: unknown): value is CertificationPoint {
   );
 }
 
+function sanitizePoint(point: CertificationPoint): CertificationPoint {
+  if (point.grammar == null) return point;
+  const grammar = readGrammarUsage(point.grammar);
+  if (!grammar) {
+    const { grammar: _removed, ...rest } = point;
+    return rest;
+  }
+  return { ...point, grammar };
+}
+
 function isMove(value: unknown): value is MoveRecord {
   if (!value || typeof value !== 'object') return false;
   const move = value as MoveRecord;
@@ -181,7 +191,7 @@ function parseDocument(parsed: StoredManuscript): ManuscriptDocument | null {
       return next;
     }),
     provenance,
-    points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
+    points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint).map(sanitizePoint) : [],
     moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
     ...(isManuscriptFontId(parsed.fontFamily) ? { fontFamily: parsed.fontFamily } : {}),
     ...(isManuscriptFontSize(parsed.fontSize) ? { fontSize: parsed.fontSize } : {}),

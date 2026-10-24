@@ -7,6 +7,7 @@ import { describePasteSource } from '../core/pasteHint.ts';
 import type { InlineMark, InlineMarkKind, ListStyle } from '../core/types.ts';
 import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
 import { menuSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
+import type { GrammarScope } from '../core/grammar.ts';
 import { suggestSpellings } from '../core/spellSuggest.ts';
 
 export interface FieldCommit {
@@ -75,20 +76,23 @@ function paint(
   showProvenance: boolean,
   blockId: string,
   certHashes: Readonly<Record<string, string>>,
+  grammarSeals: Readonly<Record<string, string>>,
 ) {
   root.replaceChildren();
   const order: InlineMarkKind[] = ['bold', 'italic', 'underline', 'strike'];
   for (const piece of rendered) {
     const span = document.createElement('span');
     if (showProvenance) {
-      span.className = `prov prov-${piece.origin}${piece.hit ? ' find-hit' : ''}`;
+      const grammar = piece.certificationId ? grammarSeals[piece.certificationId] : undefined;
+      span.className = `prov prov-${piece.origin}${grammar ? ' prov-grammar' : ''}${piece.hit ? ' find-hit' : ''}`;
       span.dataset.origin = piece.origin;
+      if (grammar) span.dataset.grammar = 'harper';
       if (piece.certificationId) span.dataset.cert = piece.certificationId;
       const hash = piece.certificationId ? certHashes[piece.certificationId] : undefined;
-      if (hash) {
-        span.dataset.tooltip = hash;
+      if (hash || grammar) {
+        span.dataset.tooltip = grammar ? `${grammar} · ${hash ?? ''}`.trim() : hash ?? '';
         span.dataset.tooltipWrap = 'true';
-        span.dataset.sha256 = hash;
+        if (hash) span.dataset.sha256 = hash;
       }
       if (piece.spanId) {
         const cardId = passageCardId(blockId, {
@@ -156,8 +160,10 @@ export function ProvenanceField({
   onInsertDivider,
   onInsertBlockquote,
   certHashes = {},
+  grammarSeals = {},
   focusNonce = 0,
   focusOffset = null,
+  onGrammarCheck,
 }: {
   text: string;
   spans: ProvenanceSpan[];
@@ -190,9 +196,12 @@ export function ProvenanceField({
   onInsertBlockquote?: () => void;
   /** Certification id → SHA-256 shown on the highlight and on its card. */
   certHashes?: Readonly<Record<string, string>>;
+  /** Certification ids that carry an accepted Harper check, mapped to the fixed comment. */
+  grammarSeals?: Readonly<Record<string, string>>;
   /** Changes when this field should take the caret. */
   focusNonce?: number;
   focusOffset?: number | null;
+  onGrammarCheck?: (scope: GrammarScope) => void;
 }) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const anchorRef = useRef<MenuAnchor | null>(null);
@@ -227,7 +236,7 @@ export function ProvenanceField({
         nextCaret = offsetsFromDomRange(el, sel.getRangeAt(0)).end;
       }
     }
-    paint(el, pieces(text, spans, marks, highlight), showProvenance, blockId, certHashes);
+    paint(el, pieces(text, spans, marks, highlight), showProvenance, blockId, certHashes, grammarSeals);
     if (nextCaret != null && document.activeElement === el) {
       try {
         setDomCaretFromOffset(el, nextCaret);
@@ -236,7 +245,7 @@ export function ProvenanceField({
       }
     }
     caret.current = null;
-  }, [signature, text, spans, marks, highlight, renderToken, showProvenance, blockId, certHashes]);
+  }, [signature, text, spans, marks, highlight, renderToken, showProvenance, blockId, certHashes, grammarSeals]);
 
   useLayoutEffect(() => {
     if (focusOffset == null || !focusNonce) return;
@@ -596,6 +605,7 @@ export function ProvenanceField({
         caret.current = change.caret;
         onCommit(change);
       }}
+      onGrammarCheck={onGrammarCheck}
     />
     </>
   );
