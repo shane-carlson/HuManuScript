@@ -42,6 +42,8 @@ export interface ManuscriptBlock {
   /** Data URL or object URL when type is `image`. */
   imageSrc?: string;
   imageAlt?: string;
+  /** Visible caption, separate from alt text. */
+  imageCaption?: string;
   /** Divider appearance when type is `divider`. */
   dividerStyle?: DividerStyle;
   /** Chapter word-count goal. Not an insertion and not part of a seal. */
