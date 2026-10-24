@@ -51,7 +51,7 @@ The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` 
 
 The workflow uploads `HuManuScript-*-arm64-signed` from the Actions **Artifacts** tab. Local `pack:mac` still works unsigned when those env vars are unset.
 
-Each signed pack writes `build/app-version.json` from `package.json` `version` plus `HM_BUILD_NUMBER` (the workflow run number). The header shows `0.1.0 (dev)` when that number is absent, and `0.1.0 (<run number>)` in a production pack. electron-builder sets `CFBundleShortVersionString` / `CFBundleVersion` from the same values.
+Each signed pack writes `build/app-version.json` from `package.json` `version` (`0.1.0`) plus `HM_BUILD_NUMBER` (the workflow run number). A numeric run number becomes the marketing version `0.1.<run number>` in the header, the window title, the DMG filename, and `CFBundleShortVersionString` / `CFBundleVersion`. `package.json` stays at `0.1.0`. Local and unsigned packs with no numeric build number stay `0.1.0 (dev)`. The same signed workflow publishes a GitHub Release (`latest-mac.yml`) so an installed copy can download and install a newer pack.
 
 #### Cloud agent: trigger the workflow
 
