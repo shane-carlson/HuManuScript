@@ -196,6 +196,17 @@ export function IconRedo() {
   );
 }
 
+export function IconRawWrite() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z" />
+      <path d="M14 3.5V8h4.5" />
+      <path d="M8 12h8" />
+      <path d="M8 16h6" />
+    </svg>
+  );
+}
+
 export function IconManuscriptView() {
   return (
     <svg {...iconProps} aria-hidden="true">

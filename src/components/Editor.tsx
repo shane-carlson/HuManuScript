@@ -66,7 +66,7 @@ import { HeadingRemoveControl } from './HeadingRemoveControl.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptSelectBanner } from './ManuscriptSelectBanner.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
-import { ManuscriptToolRail } from './ManuscriptToolRail.tsx';
+import { RawWriteView, type RawEdit } from './RawWriteView.tsx';
 import { TableGridPicker } from './TableGridPicker.tsx';
 import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
 import {
@@ -84,6 +84,7 @@ import {
   IconNumberList,
   IconPageBreak,
   IconParagraph,
+  IconRawWrite,
   IconRedo,
   IconReplace,
   IconReplaceAll,
@@ -105,6 +106,7 @@ import {
   resolveManuscriptTypography,
   setManuscriptTypography,
 } from '../core/typography.ts';
+import { applyRawFormat, assignRawKind, clearRawFormat, rawKindAt, replaceRawRange, type RawKind } from '../core/rawWrite.ts';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 /** Full-screen view scale only. It does not change the book’s font size. */
@@ -185,6 +187,7 @@ export function Editor({
   dictationTargetRef.current = onDictationTarget;
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
+  const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
@@ -494,12 +497,52 @@ export function Editor({
     }, { external: true });
   };
 
+  const editRaw = (edit: RawEdit) => {
+    commit((current) => replaceRawRange({
+      doc: current,
+      start: edit.start,
+      end: edit.end,
+      insert: edit.insert,
+      origin: edit.origin,
+      event: edit.origin
+        ? { at: new Date().toISOString(), inputType: edit.inputType, data: edit.insert.slice(0, 200), trusted: true }
+        : null,
+      now: new Date().toISOString(),
+      newId: ids.current,
+    }));
+  };
+
+  const assignHighlighted = (kind: RawKind) => {
+    if (!rawRange || rawRange.end <= rawRange.start) return;
+    const range = rawRange;
+    commit((current) => assignRawKind({
+      doc: current,
+      start: range.start,
+      end: range.end,
+      kind,
+      now: new Date().toISOString(),
+      newId: ids.current,
+    }));
+  };
+
   const onFormat = (kind: InlineMarkKind) => {
+    if (viewMode === 'raw') {
+      if (!rawRange) return;
+      const range = rawRange;
+      commit((current) => applyRawFormat(current, range.start, range.end, kind));
+      return;
+    }
     if (!selection) return;
     commit((current) => toggleFormat(current, selection.blockId, selection, kind));
   };
 
   const onClearFormat = () => {
+    if (viewMode === 'raw') {
+      if (!rawRange || rawRange.end <= rawRange.start) return;
+      const range = rawRange;
+      commit((current) => clearRawFormat(current, range.start, range.end));
+      return;
+    }
     if (!selection) return;
     commit((current) => clearBlockFormatting(current, selection.blockId, selection));
   };
@@ -575,11 +618,6 @@ export function Editor({
     commit((current) => setBlockKind(current, focusedBlock.id, kind));
   };
 
-  const insertStructureKind = (kind: 'chapter' | 'scene' | 'section' | 'paragraph') => {
-    if (kind === 'chapter') openChapter(docRef.current.blocks.length);
-    else commit((current) => insertStructure(current, kind, current.blocks.length, ids.current()));
-  };
-
   const insertAfter = (afterBlockId: string, kind: BlockType) => {
     commit((current) => {
       const index = current.blocks.findIndex((b) => b.id === afterBlockId);
@@ -653,23 +691,6 @@ export function Editor({
     <div
       className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}`}
     >
-      <ManuscriptToolRail
-        heading={headingValue}
-        kindEnabled={kindEnabled}
-        onInsert={insertStructureKind}
-        onSetKind={applyKind}
-        onClear={onClearFormat}
-        clearEnabled={clearEnabled}
-        pickingInsert={pickingInsert}
-        onTogglePicking={() => setPickingInsert((value) => !value)}
-        selecting={selecting}
-        onToggleSelecting={() => {
-          setSelecting((value) => {
-            if (value) setSelectedIds(new Set());
-            return !value;
-          });
-        }}
-      />
       {focusMode && (
         <div className="focus-exit-bar">
           <p>Full screen — writing only</p>
@@ -712,10 +733,39 @@ export function Editor({
       )}
       <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
-        <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
+        <div
+          className="toolbar"
+          role="toolbar"
+          aria-label="Manuscript tools"
+          onMouseDown={(event) => {
+            const target = event.target;
+            if (!(target instanceof Element) || target.closest('input, textarea, select, option')) return;
+            event.preventDefault();
+          }}
+        >
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
+              {viewMode === 'raw' ? (
+                ([
+                  ['chapter', 'Chapter'],
+                  ['scene', 'Scene'],
+                  ['section', 'Section'],
+                  ['paragraph', 'Paragraph'],
+                  ['blockquote', 'Block quote'],
+                ] as const).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`toolbar-text-btn${rawRange && rawKindAt(doc, rawRange.start, rawRange.end) === kind ? ' is-active' : ''}`}
+                    disabled={!rawRange || rawRange.end <= rawRange.start}
+                    onClick={() => assignHighlighted(kind)}
+                  >
+                    {label}
+                  </button>
+                ))
+              ) : (
+                <>
               <ToolbarIconButton label="Chapter" onClick={() => openChapter(docRef.current.blocks.length)}>
                 <IconChapter />
               </ToolbarIconButton>
@@ -740,6 +790,8 @@ export function Editor({
               <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
                 <IconImage />
               </ToolbarIconButton>
+                </>
+              )}
             </div>
           </div>
           <div className="toolbar-group">
@@ -768,12 +820,14 @@ export function Editor({
               <ToolbarIconButton label="Strikethrough" onClick={() => onFormat('strike')}>
                 <IconStrikethrough />
               </ToolbarIconButton>
-              <button type="button" className="toolbar-text-btn" disabled={!clearEnabled} onClick={onClearFormat}>
+              <button type="button" className="toolbar-text-btn" disabled={viewMode === 'raw' ? !rawRange || rawRange.end <= rawRange.start : !clearEnabled} onClick={onClearFormat}>
                 Clear format
               </button>
-              <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
-                <IconBlockQuote />
-              </ToolbarIconButton>
+              {viewMode !== 'raw' && (
+                <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
+                  <IconBlockQuote />
+                </ToolbarIconButton>
+              )}
               <label className="toolbar-font toolbar-font--family" data-tooltip="Font">
                 <select
                   aria-label="Font"
@@ -808,6 +862,7 @@ export function Editor({
               </label>
             </div>
           </div>
+          {viewMode !== 'raw' && (
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-heading">Heading</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-heading">
@@ -830,6 +885,7 @@ export function Editor({
               ))}
             </div>
           </div>
+          )}
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-arrange">Arrange</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-arrange">
@@ -1013,6 +1069,13 @@ export function Editor({
                   <IconManuscriptView />
                 </ToolbarIconButton>
                 <ToolbarIconButton
+                  label="Raw write"
+                  active={viewMode === 'raw'}
+                  onClick={() => setViewMode('raw')}
+                >
+                  <IconRawWrite />
+                </ToolbarIconButton>
+                <ToolbarIconButton
                   label="Certification highlights"
                   active={viewMode === 'highlights'}
                   onClick={() => setViewMode('highlights')}
@@ -1036,6 +1099,9 @@ export function Editor({
           </div>
         </div>
 
+        {viewMode === 'raw' && (
+          <p className="raw-write-hint">Type on the blank page. Highlight a passage, then choose chapter, section, paragraph, block quote, or a format above.</p>
+        )}
         {showHighlights && (
           <ul className="legend legend--inline" aria-label="Passage origins">
             <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
@@ -1055,6 +1121,8 @@ export function Editor({
         >
         {showPreview ? (
           <ExportPreview model={previewModel} doc={doc} />
+        ) : viewMode === 'raw' ? (
+          <RawWriteView doc={doc} style={manuscriptStyle} onEdit={editRaw} onSelection={setRawRange} />
         ) : doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>

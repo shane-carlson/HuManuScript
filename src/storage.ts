@@ -13,13 +13,13 @@ export const SIDEBAR_COLLAPSED_KEY = 'humanuscript.sidebarCollapsed';
 export const CERTIFICATION_COLLAPSED_KEY = 'humanuscript.certificationCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
-export type EditorViewMode = 'manuscript' | 'highlights' | 'preview';
+export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview';
 export type WorkspaceTab = 'manuscript' | 'export' | 'history';
 
 export function loadEditorView(): EditorViewMode {
   try {
     const value = sessionStorage.getItem(EDITOR_VIEW_KEY);
-    if (value === 'highlights' || value === 'preview') return value;
+    if (value === 'highlights' || value === 'preview' || value === 'raw') return value;
     return 'manuscript';
   } catch {
     return 'manuscript';
