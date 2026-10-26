@@ -11,6 +11,7 @@ export const THEME_KEY = 'humanuscript.theme';
 export const EDITOR_VIEW_KEY = 'humanuscript.editorView';
 export const SIDEBAR_COLLAPSED_KEY = 'humanuscript.sidebarCollapsed';
 export const CERTIFICATION_COLLAPSED_KEY = 'humanuscript.certificationCollapsed';
+export const NOTES_COLLAPSED_KEY = 'humanuscript.notesCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
 export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview';
@@ -83,6 +84,22 @@ export function loadCertificationCollapsed(): boolean {
 export function saveCertificationCollapsed(collapsed: boolean): void {
   try {
     sessionStorage.setItem(CERTIFICATION_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadNotesCollapsed(): boolean {
+  try {
+    return sessionStorage.getItem(NOTES_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveNotesCollapsed(collapsed: boolean): void {
+  try {
+    sessionStorage.setItem(NOTES_COLLAPSED_KEY, collapsed ? '1' : '0');
   } catch {
     /* ignore */
   }

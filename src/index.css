@@ -350,9 +350,51 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   flex-direction: column;
   padding: 12px;
 }
+.notes-rail__title { min-width: 0; }
+.notes-rail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notes-rail__toggle {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.notes-rail__chevron { font-size: 1.15rem; line-height: 1; }
+.notes-rail.is-collapsed {
+  padding: 8px 4px;
+  align-items: center;
+}
+.notes-rail.is-collapsed .notes-rail__title,
+.notes-rail.is-collapsed .notes-rail__tabs,
+.notes-rail.is-collapsed [hidden] { display: none; }
+.notes-rail.is-collapsed .notes-rail__head { justify-content: center; }
+.notes-rail.is-collapsed .notes-rail__toggle {
+  width: 44px;
+  min-height: 88px;
+  height: auto;
+  margin: 0;
+  padding: 10px 4px;
+}
+.notes-rail__mark {
+  writing-mode: vertical-rl;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
 .notes-rail h2 { margin: 0 0 8px; font-size: 1.2rem; }
 .notes-rail__tabs {
   display: inline-flex;
+  flex-basis: 100%;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   overflow: hidden;
@@ -765,6 +807,12 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .editor-layout.has-notes.is-cert-collapsed:not(.is-focus) {
   grid-template-columns: minmax(0, 1fr) minmax(210px, 250px) 52px;
+}
+.editor-layout.has-notes.is-notes-collapsed:not(.is-focus) {
+  grid-template-columns: minmax(0, 1fr) 52px minmax(220px, 280px);
+}
+.editor-layout.has-notes.is-notes-collapsed.is-cert-collapsed:not(.is-focus) {
+  grid-template-columns: minmax(0, 1fr) 52px 52px;
 }
 .points, .canvas, .status {
   background: var(--bg-elev);
@@ -1783,6 +1831,21 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 
 @media (max-width: 980px) {
+  .notes-rail.is-collapsed {
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+  }
+  .notes-rail.is-collapsed .notes-rail__toggle {
+    min-height: 0;
+    width: auto;
+    height: 36px;
+    padding: 4px 12px;
+  }
+  .notes-rail__mark {
+    writing-mode: horizontal-tb;
+    letter-spacing: 0.04em;
+  }
   html, body, #root {
     height: auto;
     overflow: visible;

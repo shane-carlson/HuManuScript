@@ -65,8 +65,10 @@ import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
   loadEditorView,
+  loadNotesCollapsed,
   saveCertificationCollapsed,
   saveEditorView,
+  saveNotesCollapsed,
   type EditorViewMode,
 } from '../storage.ts';
 import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
@@ -207,6 +209,7 @@ export function Editor({
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
+  const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
   const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
@@ -230,6 +233,10 @@ export function Editor({
   useEffect(() => {
     saveCertificationCollapsed(certCollapsed);
   }, [certCollapsed]);
+
+  useEffect(() => {
+    saveNotesCollapsed(notesCollapsed);
+  }, [notesCollapsed]);
 
   useEffect(() => {
     let cancel = false;
@@ -808,7 +815,7 @@ export function Editor({
       onChange={publish}
     />
     <div
-      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}`}
+      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}${notesCollapsed ? ' is-notes-collapsed' : ''}`}
     >
       {focusMode && (
         <div className="focus-exit-bar">
@@ -1724,6 +1731,8 @@ export function Editor({
           doc={doc}
           activeBlockId={selection?.blockId ?? null}
           saveError={saveError}
+          collapsed={notesCollapsed}
+          onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
           onChange={publish}
         />
       )}
