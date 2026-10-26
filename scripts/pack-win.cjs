@@ -51,6 +51,10 @@ function run(command, args, extraEnv = {}) {
     stdio: 'inherit',
     env: { ...env, ...extraEnv },
   });
+  if (result.error) {
+    console.error(`Could not start ${command}: ${result.error.message}`);
+    process.exit(1);
+  }
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
@@ -68,7 +72,12 @@ if (publish === 'always') {
   );
 }
 
-run('npm', ['run', 'build:electron']);
+// npm on Windows is npm.cmd. spawn cannot run that without a shell, so the
+// electron build is the same three steps as the npm script, started with node.
+const electronEnv = { ELECTRON: '1' };
+run(process.execPath, [path.join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-b'], electronEnv);
+run(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build'], electronEnv);
+run(process.execPath, [path.join(root, 'scripts', 'bundle-updater.cjs')]);
 
 const builderArgs = [
   path.join(root, 'node_modules', 'electron-builder', 'cli.js'),
