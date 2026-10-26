@@ -1,9 +1,14 @@
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { InsertionOrigin } from '../core/certification.ts';
-import { flattenRaw, type RawSegment } from '../core/rawWrite.ts';
+import { menuSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
+import type { GrammarScope } from '../core/grammar.ts';
+import { isHeadingType } from '../core/manuscript.ts';
+import { flattenRaw, rawSegmentAt, type RawSegment } from '../core/rawWrite.ts';
 import type { ManuscriptDocument } from '../core/document.ts';
 import { styledSpans } from '../core/richText.ts';
+import { suggestSpellings } from '../core/spellSuggest.ts';
 import { isProseBlock, type InlineMark } from '../core/types.ts';
+import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
 
 export type RawEdit = {
   start: number;
@@ -18,15 +23,46 @@ export function RawWriteView({
   style,
   onEdit,
   onSelection,
+  canInsertDictation = false,
+  onInsertDictation,
+  canUnselectInsert = false,
+  onUnselectInsert,
+  onInsertPageBreak,
+  onInsertDivider,
+  onInsertBlockquote,
+  onInsertImage,
+  onInsertTable,
+  onGrammarCheck,
+  onUnwrapHeading,
+  onDeleteHeading,
 }: {
   doc: ManuscriptDocument;
   style?: CSSProperties;
   onEdit: (edit: RawEdit) => void;
   onSelection: (range: { start: number; end: number }) => void;
+  canInsertDictation?: boolean;
+  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
+  canUnselectInsert?: boolean;
+  onUnselectInsert?: () => void;
+  onInsertPageBreak?: (blockId: string | null) => void;
+  onInsertDivider?: (blockId: string | null) => void;
+  onInsertBlockquote?: (blockId: string | null) => void;
+  onInsertImage?: (blockId: string | null) => void;
+  onInsertTable?: (x: number, y: number, blockId: string | null) => void;
+  onGrammarCheck?: (scope: GrammarScope, anchorId?: string) => void;
+  onUnwrapHeading?: (blockId: string) => void;
+  onDeleteHeading?: (blockId: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const caretRef = useRef<{ start: number; end: number } | null>(null);
   const ownEdit = useRef(false);
+  const anchorRef = useRef<MenuAnchor | null>(null);
+  const replaceRef = useRef<{ start: number; end: number } | null>(null);
+  const clipRef = useRef<{ start: number; end: number } | null>(null);
+  const menuBlockRef = useRef<string | null>(null);
+  const menuAtRef = useRef(0);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [headingKind, setHeadingKind] = useState<'chapter' | 'scene' | 'section' | null>(null);
   const flat = flattenRaw(doc);
   const modelText = useRef(flat.text);
   const seenDoc = useRef(doc);
@@ -89,7 +125,23 @@ export function RawWriteView({
     edit(prefix, current.length - suffix, text.slice(prefix, text.length - suffix), origin, inputType);
   };
 
+  const closeMenu = () => {
+    anchorRef.current = null;
+    replaceRef.current = null;
+    clipRef.current = null;
+    menuBlockRef.current = null;
+    setHeadingKind(null);
+    setMenu(null);
+  };
+
+  const writeClipboard = async (start: number, end: number) => {
+    const text = modelText.current.slice(start, end);
+    if (!text) return;
+    await navigator.clipboard.writeText(text).catch(() => undefined);
+  };
+
   return (
+    <>
     <div
       ref={rootRef}
       className={`raw-page${blank ? ' is-blank' : ''}`}
@@ -168,6 +220,49 @@ export function RawWriteView({
       onKeyUp={report}
       onMouseUp={report}
       onSelect={report}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        const root = rootRef.current;
+        if (!root) return;
+        const point = rangeFromPoint(event.clientX, event.clientY);
+        const at =
+          point && root.contains(point.startContainer)
+            ? pointAt(root, point.startContainer, point.startOffset)
+            : readRange(root)?.start ?? caretRef.current?.start ?? 0;
+        if (point && root.contains(point.startContainer)) {
+          const rect = point.getBoundingClientRect();
+          anchorRef.current = { range: point, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+        } else {
+          anchorRef.current = null;
+        }
+        const text = modelText.current;
+        const word = wordAroundOffset(text, at);
+        const sel = readRange(root) ?? { start: at, end: at };
+        const selected = sel.end > sel.start;
+        const segment = rawSegmentAt(flattenRaw(doc), selected ? sel.start : at);
+        const suggestions = word
+          ? menuSpellSuggestions({
+              word: word.word,
+              event: event.nativeEvent,
+              platform: window.humanuscript?.getSpellSuggestions,
+              fallback: suggestSpellings,
+            })
+          : [];
+        replaceRef.current = word ? { start: word.start, end: word.end } : null;
+        clipRef.current = selected ? { start: sel.start, end: sel.end } : word ? { start: word.start, end: word.end } : null;
+        menuAtRef.current = at;
+        menuBlockRef.current = segment?.blockId ?? null;
+        setHeadingKind(segment && isHeadingType(segment.kind) ? segment.kind : null);
+        onSelection(selected ? sel : { start: at, end: at });
+        setMenu({
+          x: event.clientX,
+          y: event.clientY,
+          hasSelection: selected,
+          canCutCopy: Boolean(clipRef.current),
+          suggestions,
+          misspelledWord: word ? word.word : null,
+        });
+      }}
     >
       {blank ? (
         <div data-raw-block="blank" className="raw-block raw-block--paragraph">
@@ -181,7 +276,103 @@ export function RawWriteView({
         ))
       )}
     </div>
+    <FieldContextMenu
+      state={menu}
+      anchorRef={anchorRef}
+      headingKind={headingKind}
+      canInsertDictation={canInsertDictation}
+      canUnselectInsert={canUnselectInsert}
+      onClose={closeMenu}
+      onUnselectInsert={onUnselectInsert}
+      onInsertDictation={() => {
+        const blockId = menuBlockRef.current;
+        const segment = blockId ? rawSegmentAt(flattenRaw(doc), menuAtRef.current) : null;
+        if (segment && (segment.kind === 'paragraph' || segment.kind === 'blockquote')) {
+          const offset = Math.max(0, Math.min(menuAtRef.current - segment.start, segment.text.length));
+          onInsertDictation?.({ blockId: segment.blockId, splitOffset: offset });
+          return;
+        }
+        if (!segment) {
+          onInsertDictation?.({ atIndex: 0 });
+          return;
+        }
+        const index = doc.blocks.findIndex((block) => block.id === segment.blockId);
+        onInsertDictation?.({ atIndex: index < 0 ? doc.blocks.length : index + 1 });
+      }}
+      onCut={() => {
+        const clip = clipRef.current;
+        if (!clip) return;
+        void writeClipboard(clip.start, clip.end);
+        edit(clip.start, clip.end, '', null, 'deleteByCut');
+      }}
+      onCopy={() => {
+        const clip = clipRef.current;
+        if (!clip) return;
+        void writeClipboard(clip.start, clip.end);
+      }}
+      onPaste={async () => {
+        const text = await navigator.clipboard.readText().catch(() => '');
+        if (!text) return;
+        const root = rootRef.current;
+        const range = (root ? readRange(root) : null) ?? caretRef.current ?? { start: modelText.current.length, end: modelText.current.length };
+        edit(range.start, range.end, text.replace(/\r\n/g, '\n'), 'paste', 'insertFromPaste');
+      }}
+      onSelectAll={() => {
+        const root = rootRef.current;
+        if (!root) return;
+        const end = modelText.current.length;
+        placeRange(root, 0, end);
+        caretRef.current = { start: 0, end };
+        onSelection({ start: 0, end });
+      }}
+      onReplaceWord={(replacement) => {
+        const range = replaceRef.current;
+        if (!range) return;
+        const change = spellcheckReplacement({
+          start: range.start,
+          end: range.end,
+          insert: replacement,
+          at: new Date().toISOString(),
+        });
+        edit(change.start, change.end, change.insert, change.origin, change.event.inputType);
+      }}
+      onGrammarCheck={(scope) => onGrammarCheck?.(scope, menuBlockRef.current ?? undefined)}
+      onUnwrapHeading={() => {
+        const blockId = menuBlockRef.current;
+        if (blockId) onUnwrapHeading?.(blockId);
+      }}
+      onDeleteHeading={() => {
+        const blockId = menuBlockRef.current;
+        if (blockId) onDeleteHeading?.(blockId);
+      }}
+      onInsertPageBreak={() => onInsertPageBreak?.(menuBlockRef.current)}
+      onInsertDivider={() => onInsertDivider?.(menuBlockRef.current)}
+      onInsertBlockquote={() => onInsertBlockquote?.(menuBlockRef.current)}
+      onInsertImage={() => onInsertImage?.(menuBlockRef.current)}
+      onInsertTable={(x, y) => onInsertTable?.(x, y, menuBlockRef.current)}
+    />
+    </>
   );
+}
+
+function rangeFromPoint(x: number, y: number): Range | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const pos = doc.caretPositionFromPoint?.(x, y);
+  if (pos?.offsetNode) {
+    try {
+      const range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+      return range;
+    } catch {
+      return null;
+    }
+  }
+  const legacy = doc.caretRangeFromPoint?.(x, y);
+  return legacy ? legacy.cloneRange() : null;
 }
 
 function marksFor(doc: ManuscriptDocument, segment: RawSegment): InlineMark[] {

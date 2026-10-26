@@ -1,8 +1,27 @@
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
+const {
+  chooseCloudRoot,
+  discoverCloudRoots,
+  isCloudBackupFilename,
+  isCloudProviderId,
+  listBackupFiles,
+  readBackupFile,
+  writeBackupFile,
+} = require('./cloudFolders.cjs');
+
+const CLOUD_LABELS = {
+  'google-drive': 'Google Drive',
+  onedrive: 'OneDrive',
+  box: 'Box',
+  dropbox: 'Dropbox',
+  icloud: 'iCloud Drive',
+  mega: 'MEGA',
+  pcloud: 'pCloud',
+};
 
 const isDev = process.env.ELECTRON === '1' || !app.isPackaged;
 
@@ -57,6 +76,73 @@ function createWindow(baked) {
 ipcMain.handle('humanuscript:device-name', () => {
   const name = os.hostname();
   return typeof name === 'string' ? name.trim() : '';
+});
+
+function cloudChoicesPath() {
+  return path.join(app.getPath('userData'), 'cloud-folders.json');
+}
+
+function readCloudChoices() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cloudChoicesPath(), 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCloudChoice(provider, folder) {
+  const choices = readCloudChoices();
+  choices[provider] = folder;
+  fs.mkdirSync(path.dirname(cloudChoicesPath()), { recursive: true });
+  fs.writeFileSync(cloudChoicesPath(), JSON.stringify(choices));
+}
+
+async function cloudRootFor(provider) {
+  if (!isCloudProviderId(provider)) throw new Error('Unknown cloud drive.');
+  const label = CLOUD_LABELS[provider] || 'cloud drive';
+  const saved = readCloudChoices()[provider];
+  const discovered = discoverCloudRoots({
+    home: app.getPath('home'),
+    platform: process.platform,
+    env: process.env,
+    fs,
+  });
+  const chosen = chooseCloudRoot(discovered[provider], typeof saved === 'string' ? saved : '', saved && fs.existsSync(saved));
+  if (chosen) return chosen;
+  const parent = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(parent ?? undefined, {
+    title: `Choose your ${label} folder`,
+    message: `HuManuScript keeps backups in a HuManuScript folder inside ${label}.`,
+    buttonLabel: 'Use this folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  const folder = result.filePaths[0];
+  if (result.canceled || !folder) throw new Error(`${label} folder was not chosen.`);
+  writeCloudChoice(provider, folder);
+  return folder;
+}
+
+function cloudFilename(filename) {
+  if (!isCloudBackupFilename(filename)) throw new Error('Unexpected backup name.');
+  return filename;
+}
+
+ipcMain.handle('humanuscript:cloud-save', async (_event, provider, filename, contents) => {
+  if (typeof contents !== 'string' || contents.length > 80_000_000) throw new Error('Backup could not be written.');
+  const root = await cloudRootFor(provider);
+  writeBackupFile({ fs, root, filename: cloudFilename(filename), contents });
+  return CLOUD_LABELS[provider] || 'cloud drive';
+});
+
+ipcMain.handle('humanuscript:cloud-list', async (_event, provider) => {
+  const root = await cloudRootFor(provider);
+  return listBackupFiles({ fs, root });
+});
+
+ipcMain.handle('humanuscript:cloud-read', async (_event, provider, filename) => {
+  const root = await cloudRootFor(provider);
+  return readBackupFile({ fs, root, filename: cloudFilename(filename) });
 });
 
 function startAutoUpdate(baked) {

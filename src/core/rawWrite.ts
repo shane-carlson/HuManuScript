@@ -75,6 +75,40 @@ export function flattenRaw(doc: ManuscriptDocument): RawFlat {
   return { text, segments };
 }
 
+/** Segment that owns a caret, including the caret sitting on that segment's end. */
+export function rawSegmentAt(flat: RawFlat, offset: number): RawSegment | null {
+  if (!flat.segments.length) return null;
+  const at = Math.max(0, Math.min(offset, flat.text.length));
+  for (const segment of flat.segments) {
+    if (at >= segment.start && at <= segment.end) return segment;
+  }
+  return flat.segments[flat.segments.length - 1] ?? null;
+}
+
+/** Block-local slices covered by a raw-page highlight. Newlines between blocks are not text. */
+export function rawHighlightFields(
+  doc: ManuscriptDocument,
+  start: number,
+  end: number,
+): Array<{ blockId: string; field: 'title' | 'text'; start: number; end: number }> {
+  const flat = flattenRaw(doc);
+  const from = Math.max(0, Math.min(start, end, flat.text.length));
+  const to = Math.min(flat.text.length, Math.max(start, end));
+  const fields: Array<{ blockId: string; field: 'title' | 'text'; start: number; end: number }> = [];
+  for (const segment of flat.segments) {
+    const overlapStart = Math.max(from, segment.start);
+    const overlapEnd = Math.min(to, segment.end);
+    if (overlapEnd <= overlapStart) continue;
+    fields.push({
+      blockId: segment.blockId,
+      field: isHeadingType(segment.kind) ? 'title' : 'text',
+      start: overlapStart - segment.start,
+      end: overlapEnd - segment.start,
+    });
+  }
+  return fields;
+}
+
 export function rawKindAt(doc: ManuscriptDocument, start: number, end: number): RawKind | null {
   const flat = flattenRaw(doc);
   const trimmed = trimToText(flat.text, start, end);

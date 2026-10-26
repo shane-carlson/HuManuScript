@@ -491,6 +491,38 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .backup-book-pick li { margin-bottom: 4px; }
 .backup-book-pick label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .backup-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-menu { position: relative; }
+.backup-menu__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 190px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 2px;
+}
+.backup-menu__list button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+}
+.backup-menu__list button:hover { background: var(--bg-hover); }
+.backup-cloud-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.backup-cloud-list button { font-size: 0.78rem; text-align: left; }
 .backup-message { font-size: 0.8rem; color: var(--text-dim); margin: 8px 0 0; }
 
 .workspace-series { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -1561,6 +1593,8 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   padding: 8px 10px;
 }
 .grammar-menu__list button:hover { background: var(--bg-hover); }
+.grammar-prompt { width: 240px; }
+.grammar-prompt p { margin: 2px 8px 8px; font-size: 0.82rem; color: var(--text); }
 .grammar-results {
   margin: 0 0 12px;
   padding: 10px 12px;

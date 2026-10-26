@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { GRAMMAR_CHECK_COMMENT, sealedSpanCovering } from '../core/certification.ts';
 import type { ManuscriptDocument } from '../core/document.ts';
 import {
-  GRAMMAR_SCOPE_LABELS,
-  GRAMMAR_SCOPES,
   grammarEditForSuggestion,
   type GrammarLint,
   type GrammarScope,
@@ -14,22 +12,26 @@ import { isProseBlock } from '../core/types.ts';
 export function GrammarMenu({
   disabled,
   busy,
-  onCheck,
+  hasSelection,
+  onCheckSelection,
+  onCheckScope,
 }: {
   disabled: boolean;
   busy: boolean;
-  onCheck: (scope: GrammarScope) => void;
+  hasSelection: boolean;
+  onCheckSelection: () => void;
+  onCheckScope: (scope: Extract<GrammarScope, 'block' | 'manuscript'>) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!prompt) return;
     const onDoc = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(event.target as Node)) setPrompt(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') setPrompt(false);
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
@@ -37,35 +39,39 @@ export function GrammarMenu({
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [prompt]);
+
+  const choose = (scope: 'block' | 'manuscript') => {
+    setPrompt(false);
+    onCheckScope(scope);
+  };
 
   return (
     <div className="grammar-menu" ref={ref}>
       <button
         type="button"
         className="grammar-menu__button"
-        aria-haspopup="menu"
-        aria-expanded={open}
+        aria-haspopup={hasSelection ? undefined : 'dialog'}
+        aria-expanded={hasSelection ? undefined : prompt}
         disabled={disabled || busy}
-        onClick={() => setOpen((value) => !value)}
+        title={hasSelection ? 'Check the highlighted text' : 'Check the current paragraph or the entire manuscript'}
+        onClick={() => {
+          if (hasSelection) {
+            setPrompt(false);
+            onCheckSelection();
+            return;
+          }
+          setPrompt((open) => !open);
+        }}
       >
-        {busy ? 'Checking…' : 'Grammar'}
+        {busy ? 'Checking…' : 'Grammar check'}
       </button>
-      {open && (
-        <div className="grammar-menu__list" role="menu" aria-label="Grammar check">
-          {GRAMMAR_SCOPES.map((scope) => (
-            <button
-              key={scope}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onCheck(scope);
-              }}
-            >
-              {GRAMMAR_SCOPE_LABELS[scope]}
-            </button>
-          ))}
+      {prompt && !hasSelection && (
+        <div className="grammar-menu__list grammar-prompt" role="dialog" aria-label="Grammar check">
+          <p>Nothing is highlighted. What should be checked?</p>
+          <button type="button" onClick={() => choose('block')}>Current paragraph</button>
+          <button type="button" onClick={() => choose('manuscript')}>Entire manuscript</button>
+          <button type="button" className="ghost" onClick={() => setPrompt(false)}>Cancel</button>
         </div>
       )}
     </div>

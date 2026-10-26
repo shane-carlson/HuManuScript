@@ -129,6 +129,26 @@ export function blocksForGrammarScope(
   return blocks.slice(start, headingEnd(blocks, start, stop));
 }
 
+export interface GrammarFieldRange {
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+}
+
+/** Keep findings that touch a highlighted range. A lint outside every range is dropped. */
+export function filterLintsToFields(lints: GrammarLint[], ranges: readonly GrammarFieldRange[]): GrammarLint[] {
+  return lints.filter((lint) =>
+    ranges.some(
+      (range) =>
+        lint.blockId === range.blockId &&
+        lint.field === range.field &&
+        lint.start < range.end &&
+        lint.end > range.start,
+    ),
+  );
+}
+
 export function grammarFields(block: ManuscriptBlock): Array<{ field: 'title' | 'text'; text: string }> {
   if (block.type === 'paragraph' || block.type === 'blockquote') {
     return block.text ? [{ field: 'text', text: block.text }] : [];

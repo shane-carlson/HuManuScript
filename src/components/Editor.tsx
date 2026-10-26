@@ -52,8 +52,10 @@ import { buildCertificationPageModel } from '../core/certificationPage.ts';
 import {
   GRAMMAR_SCOPE_LABELS,
   blocksForGrammarScope,
+  filterLintsToFields,
   grammarEditForSuggestion,
   shiftGrammarLints,
+  type GrammarFieldRange,
   type GrammarLint,
   type GrammarScope,
   type GrammarSuggestionChoice,
@@ -119,7 +121,7 @@ import {
   resolveManuscriptTypography,
   setManuscriptTypography,
 } from '../core/typography.ts';
-import { applyRawFormat, assignRawKind, clearRawFormat, rawKindAt, replaceRawRange, type RawKind } from '../core/rawWrite.ts';
+import { applyRawFormat, assignRawKind, clearRawFormat, flattenRaw, rawHighlightFields, rawKindAt, rawSegmentAt, replaceRawRange, type RawKind } from '../core/rawWrite.ts';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 /** Full-screen view scale only. It does not change the book’s font size. */
@@ -650,22 +652,68 @@ export function Editor({
     void prepareHarper();
   }, []);
 
-  const checkGrammar = (scope: GrammarScope) => {
+  const grammarAnchor = (anchorId?: string) => {
+    if (anchorId) return anchorId;
     const current = docRef.current;
-    const anchor = selection?.blockId ?? current.blocks[0]?.id ?? null;
-    const blocks = blocksForGrammarScope(current.blocks, anchor, scope);
+    if (viewMode === 'raw' && rawRange) {
+      return rawSegmentAt(flattenRaw(current), rawRange.start)?.blockId ?? null;
+    }
+    return selection?.blockId ?? current.blocks[0]?.id ?? null;
+  };
+
+  const runGrammar = (blocks: ManuscriptDocument['blocks'], ranges: GrammarFieldRange[] | null, emptyNote: string) => {
     setGrammarBusy(true);
     setGrammarNote('');
     void lintManuscriptBlocks(blocks)
       .then((found) => {
-        setGrammarLints(found);
-        setGrammarNote(found.length ? '' : `No grammar issues in ${GRAMMAR_SCOPE_LABELS[scope].toLowerCase()}.`);
+        const kept = ranges ? filterLintsToFields(found, ranges) : found;
+        setGrammarLints(kept);
+        setGrammarNote(kept.length ? '' : emptyNote);
       })
       .catch((error: unknown) => {
         setGrammarLints([]);
         setGrammarNote(error instanceof Error ? error.message : 'Grammar check failed.');
       })
       .finally(() => setGrammarBusy(false));
+  };
+
+  const checkGrammar = (scope: GrammarScope, anchorId?: string) => {
+    const current = docRef.current;
+    const anchor = grammarAnchor(anchorId);
+    if (scope === 'block' && !anchor) {
+      setGrammarLints([]);
+      setGrammarNote('There is no paragraph to check yet.');
+      return;
+    }
+    const blocks = blocksForGrammarScope(current.blocks, anchor, scope);
+    runGrammar(blocks, null, `No grammar issues in ${GRAMMAR_SCOPE_LABELS[scope].toLowerCase()}.`);
+  };
+
+  const checkHighlighted = () => {
+    const current = docRef.current;
+    const ranges: GrammarFieldRange[] = viewMode === 'raw'
+      ? rawRange && rawRange.end > rawRange.start
+        ? rawHighlightFields(current, rawRange.start, rawRange.end)
+        : []
+      : selection && selection.end > selection.start
+        ? (() => {
+            const block = current.blocks.find((item) => item.id === selection.blockId);
+            if (!block) return [];
+            const field = isProseBlock(block.type) ? 'text' as const : 'title' as const;
+            return [{ blockId: block.id, field, start: selection.start, end: selection.end }];
+          })()
+        : [];
+    if (!ranges.length) {
+      setGrammarLints([]);
+      setGrammarNote('Highlight the text to check, or choose a paragraph or the whole manuscript.');
+      return;
+    }
+    const ids = new Set(ranges.map((range) => range.blockId));
+    runGrammar(
+      current.blocks.filter((block) => ids.has(block.id)),
+      ranges,
+      'No grammar issues in the highlighted text.',
+    );
   };
 
   const acceptGrammar = (lint: GrammarLint, suggestion: GrammarSuggestionChoice) => {
@@ -992,7 +1040,13 @@ export function Editor({
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-grammar">Grammar</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-grammar">
-              <GrammarMenu disabled={doc.blocks.length === 0 || showPreview} busy={grammarBusy} onCheck={checkGrammar} />
+              <GrammarMenu
+                disabled={showPreview}
+                busy={grammarBusy}
+                hasSelection={viewMode === 'raw' ? Boolean(rawRange && rawRange.end > rawRange.start) : Boolean(selection && selection.end > selection.start)}
+                onCheckSelection={checkHighlighted}
+                onCheckScope={checkGrammar}
+              />
             </div>
           </div>
           <div className="toolbar-group">
@@ -1139,18 +1193,18 @@ export function Editor({
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-view">
               <div className="view-toggle" role="group" aria-label="Editor view">
                 <ToolbarIconButton
-                  label="Manuscript view"
-                  active={viewMode === 'manuscript'}
-                  onClick={() => setViewMode('manuscript')}
-                >
-                  <IconManuscriptView />
-                </ToolbarIconButton>
-                <ToolbarIconButton
                   label="Raw write"
                   active={viewMode === 'raw'}
                   onClick={() => setViewMode('raw')}
                 >
                   <IconRawWrite />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Manuscript view"
+                  active={viewMode === 'manuscript'}
+                  onClick={() => setViewMode('manuscript')}
+                >
+                  <IconManuscriptView />
                 </ToolbarIconButton>
                 <ToolbarIconButton
                   label="Certification highlights"
@@ -1212,7 +1266,32 @@ export function Editor({
         {showPreview ? (
           <ExportPreview model={previewModel} doc={doc} />
         ) : viewMode === 'raw' ? (
-          <RawWriteView doc={doc} style={manuscriptStyle} onEdit={editRaw} onSelection={setRawRange} />
+          <RawWriteView
+            doc={doc}
+            style={manuscriptStyle}
+            onEdit={editRaw}
+            onSelection={setRawRange}
+            canInsertDictation={canInsertDictation}
+            canUnselectInsert={markedGap != null}
+            onUnselectInsert={clearGap}
+            onInsertDictation={onInsertDictation}
+            onGrammarCheck={checkGrammar}
+            onUnwrapHeading={(blockId) => commit((current) => removeBlock(current, blockId))}
+            onDeleteHeading={(blockId) => {
+              const block = docRef.current.blocks.find((item) => item.id === blockId);
+              if (!block || !isHeadingType(block.type)) return;
+              if (!window.confirm(headingLabels(block.type).confirm)) return;
+              commit((current) => deleteHeadingRange(current, blockId));
+            }}
+            onInsertPageBreak={(blockId) => (blockId ? insertAfter(blockId, 'pageBreak') : insertAfterIndex(0, 'pageBreak'))}
+            onInsertDivider={(blockId) => (blockId ? insertAfter(blockId, 'divider') : insertAfterIndex(0, 'divider'))}
+            onInsertBlockquote={(blockId) => (blockId ? insertAfter(blockId, 'blockquote') : insertAfterIndex(0, 'blockquote'))}
+            onInsertImage={(blockId) => (blockId ? insertAfter(blockId, 'image') : insertAfterIndex(0, 'image'))}
+            onInsertTable={(x, y, blockId) => {
+              const index = blockId ? docRef.current.blocks.findIndex((item) => item.id === blockId) + 1 : 0;
+              openTablePicker(x, y, index < 0 ? docRef.current.blocks.length : index);
+            }}
+          />
         ) : doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>

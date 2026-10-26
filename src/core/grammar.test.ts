@@ -11,6 +11,7 @@ import { buildCertificationPageModel, certificationPagePlain } from './certifica
 import {
   blocksForGrammarScope,
   chooseHarperSource,
+  filterLintsToFields,
   grammarEditForSuggestion,
   isNewerVersion,
   parseHarperManifest,
@@ -269,4 +270,31 @@ test('accepting one finding shifts the next finding in that paragraph', () => {
   assert.equal(shifted.length, 1);
   assert.equal(shifted[0]!.start, 20);
   assert.equal(shifted[0]!.end, 21);
+});
+
+test('a highlight keeps only the findings inside it', () => {
+  const inside: GrammarLint = {
+    id: 'in',
+    blockId: 'b1',
+    field: 'text',
+    start: 2,
+    end: 6,
+    message: 'spelling',
+    lintKind: 'Spelling',
+    problem: 'word',
+    suggestions: [],
+  };
+  const outside: GrammarLint = {
+    id: 'out',
+    blockId: 'b1',
+    field: 'text',
+    start: 10,
+    end: 14,
+    message: 'spelling',
+    lintKind: 'Spelling',
+    problem: 'else',
+    suggestions: [],
+  };
+  const kept = filterLintsToFields([inside, outside], [{ blockId: 'b1', field: 'text', start: 0, end: 8 }]);
+  assert.deepEqual(kept.map((lint) => lint.id), ['in']);
 });

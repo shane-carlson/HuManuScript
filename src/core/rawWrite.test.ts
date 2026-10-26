@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { emptyDocument, insertStructure } from './document.ts';
 import { sequenceIds } from './uid.ts';
-import { applyRawFormat, assignRawKind, flattenRaw, replaceRawRange } from './rawWrite.ts';
+import { applyRawFormat, assignRawKind, flattenRaw, rawHighlightFields, rawSegmentAt, replaceRawRange } from './rawWrite.ts';
 
 const now = '2026-10-25T12:00:00.000Z';
 
@@ -218,4 +218,37 @@ test('an image stays beside the paragraph that precedes it', async () => {
   const types = doc.blocks.map((block) => block.type);
   assert.deepEqual(types, ['paragraph', 'image', 'paragraph']);
   assert.equal(doc.blocks[2]?.text, 'After');
+});
+
+test('a raw highlight maps back to the blocks it covers', async () => {
+  const ids = sequenceIds('id');
+  const typed = await replaceRawRange({
+    doc: emptyDocument('ms'),
+    start: 0,
+    end: 0,
+    insert: 'Dawn\nThe road was empty.',
+    origin: 'keyboard',
+    now,
+    newId: ids,
+  });
+  const flat = flattenRaw(typed);
+  const dawn = flat.text.indexOf('Dawn');
+  const chaptered = await assignRawKind({
+    doc: typed,
+    start: dawn,
+    end: dawn + 'Dawn'.length,
+    kind: 'chapter',
+    now,
+    newId: ids,
+  });
+  const page = flattenRaw(chaptered);
+  const caret = rawSegmentAt(page, page.text.indexOf('road'));
+  assert.equal(caret?.kind, 'paragraph');
+  const fields = rawHighlightFields(chaptered, 0, page.text.length);
+  assert.deepEqual(
+    fields.map((field) => field.field),
+    ['title', 'text'],
+  );
+  assert.equal(fields[0]?.end, 'Dawn'.length);
+  assert.equal(fields[1]?.start, 0);
 });

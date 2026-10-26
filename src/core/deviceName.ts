@@ -1,9 +1,17 @@
 /** Label for the device that produced keyboard certification (display only; not part of the seal hash). */
 
+export type CloudBackupEntry = { name: string; modified: string };
+
 export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
   /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
   getSpellSuggestions?: (word: string) => string[];
+  /** Desktop cloud folders. Absent in a browser, which uses the directory picker instead. */
+  cloudBackup?: {
+    save: (provider: string, filename: string, contents: string) => Promise<string>;
+    list: (provider: string) => Promise<CloudBackupEntry[]>;
+    read: (provider: string, filename: string) => Promise<string>;
+  };
 };
 
 declare global {
