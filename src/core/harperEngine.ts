@@ -6,6 +6,7 @@
 
 import { Dialect, LocalLinter, WorkerLinter, createBinaryModuleFromUrl, type BinaryModule, type Linter } from 'harper.js';
 import type { GrammarDialect, GrammarSuggestionKind } from './certification.ts';
+import { windowsPathFromFileUrlPathname } from './harperWindowsPath.ts';
 import {
   HARPER_ENGINE_VERSION,
   HARPER_UPDATE_MANIFEST_URL,
@@ -50,7 +51,24 @@ function inBrowser(): boolean {
   return typeof window !== 'undefined' && typeof Worker !== 'undefined';
 }
 
+let harperFsPatched = false;
+
+/** Node on Windows: rewrite Harper's `/C:/...` pathname before it reads the wasm file. */
+async function patchHarperWindowsPaths(): Promise<void> {
+  if (harperFsPatched || inBrowser()) return;
+  if (typeof process === 'undefined' || process.platform !== 'win32') return;
+  harperFsPatched = true;
+  const fs = (await import(/* @vite-ignore */ 'node:fs')) as typeof import('node:fs');
+  const readFile = fs.readFile;
+  const patched = ((path: import('node:fs').PathLike, ...rest: unknown[]) => {
+    const fixed = typeof path === 'string' ? (windowsPathFromFileUrlPathname(path) ?? path) : path;
+    return (readFile as (path: import('node:fs').PathLike, ...rest: unknown[]) => unknown).call(fs, fixed, ...rest);
+  }) as typeof fs.readFile;
+  fs.readFile = patched;
+}
+
 async function bundledBinary(): Promise<BinaryModule> {
+  await patchHarperWindowsPaths();
   const mod = await import('harper.js/binary');
   return mod.binary;
 }
