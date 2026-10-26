@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import { emptyDocument, insertStructure } from './document.ts';
 import { loadLibrary, saveLibrary } from '../storage.ts';
 import {
+  BUNDLED_TRUETYPE_FONTS,
   resolveManuscriptTypography,
   setManuscriptTypography,
 } from './typography.ts';
@@ -19,6 +22,58 @@ test('a font change keeps certification and is not an insertion', () => {
   assert.equal(next.blocks, doc.blocks);
   assert.equal(next.moves, doc.moves);
   assert.equal(next.blocks[0]!.text, doc.blocks[0]!.text);
+});
+
+test('twenty-five bundled TrueType faces ship as font files', () => {
+  assert.equal(BUNDLED_TRUETYPE_FONTS.length, 25);
+  const root = path.join(import.meta.dirname, '..', '..');
+  const css = readFileSync(path.join(root, 'src/fonts/faces.css'), 'utf8');
+  const ids = new Set<string>();
+  for (const font of BUNDLED_TRUETYPE_FONTS) {
+    assert.equal(ids.has(font.id), false, font.id);
+    ids.add(font.id);
+    const bytes = readFileSync(path.join(root, 'src/fonts', font.file));
+    assert.equal(bytes.subarray(0, 4).toString('hex'), '00010000', font.file);
+    assert.match(css, new RegExp(`font-family: "${font.label}"`));
+    assert.match(css, new RegExp(font.file.replace('.', '\\.')));
+  }
+});
+
+test('an added font id is saved and a name that is not a font is dropped', () => {
+  const doc = emptyDocument('ms-added');
+  const next = setManuscriptTypography(doc, { fontFamily: 'custom-0123abcd4567', fontSize: 14 });
+  assert.equal(next.fontFamily, 'custom-0123abcd4567');
+  assert.equal(next.fontSize, 14);
+  assert.equal(next.points, doc.points);
+  const memory = new Map<string, string>();
+  const previous = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+      removeItem: (key: string) => {
+        memory.delete(key);
+      },
+    },
+  });
+  try {
+    saveLibrary({
+      version: 2,
+      activeBookId: 'book-added',
+      series: [],
+      books: [{ id: 'book-added', title: 'Added font', document: next }],
+    });
+    const loaded = loadLibrary();
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok || !loaded.library) return;
+    assert.equal(loaded.library.books[0]!.document.fontFamily, 'custom-0123abcd4567');
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: previous });
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
 });
 
 test('unknown face and size fall back to Palatino at 12pt', () => {

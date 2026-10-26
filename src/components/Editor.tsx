@@ -116,12 +116,13 @@ import {
 import { GrammarMenu, GrammarResults } from './GrammarControls.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 import { ExportPreview } from './ExportPreview.tsx';
+import { FontFamilyControl } from './FontFamilyControl.tsx';
 import {
-  MANUSCRIPT_FONTS,
   MANUSCRIPT_FONT_SIZES,
   manuscriptTypographyStyle,
   resolveManuscriptTypography,
   setManuscriptTypography,
+  subscribeExtraFaces,
 } from '../core/typography.ts';
 import { applyRawFormat, assignRawKind, clearRawFormat, flattenRaw, rawHighlightFields, rawKindAt, rawSegmentAt, replaceRawRange, type RawKind } from '../core/rawWrite.ts';
 
@@ -773,7 +774,9 @@ export function Editor({
     }
     return seals;
   }, [doc.points]);
-  const typography = resolveManuscriptTypography(doc);
+  const [fontEpoch, setFontEpoch] = useState(0);
+  useEffect(() => subscribeExtraFaces(() => setFontEpoch((epoch) => epoch + 1)), []);
+  const typography = useMemo(() => resolveManuscriptTypography(doc), [doc, fontEpoch]);
   const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
   const showReplace = replaceOpen && !showPreview;
   const openCards = useMemo(
@@ -954,22 +957,12 @@ export function Editor({
                   <IconBlockQuote />
                 </ToolbarIconButton>
               )}
-              <label className="toolbar-font toolbar-font--family" data-tooltip="Font">
-                <select
-                  aria-label="Font"
-                  value={typography.font.id}
-                  onChange={(event) => {
-                    const fontFamily = event.target.value;
-                    commit((current) => setManuscriptTypography(current, { fontFamily }));
-                  }}
-                >
-                  {MANUSCRIPT_FONTS.map((font) => (
-                    <option key={font.id} value={font.id}>
-                      {font.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <FontFamilyControl
+                fontId={typography.font.id}
+                onChange={(fontFamily) => {
+                  commit((current) => setManuscriptTypography(current, { fontFamily }));
+                }}
+              />
               <label className="toolbar-font toolbar-font--size" data-tooltip="Font size">
                 <select
                   aria-label="Font size"
