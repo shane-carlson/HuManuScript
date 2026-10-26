@@ -1249,13 +1249,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   cursor: pointer;
 }
 .toolbar-font--family select { width: 12.5rem; }
-.toolbar-font-add { position: relative; overflow: hidden; }
 .toolbar-font-file {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  font-size: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .toolbar-font-note {
   flex-basis: 100%;
