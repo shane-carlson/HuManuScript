@@ -10,7 +10,7 @@ const { writeAppVersion, readAppVersion } = require('./scripts/write-app-version
 
 const electron = process.env.ELECTRON === '1';
 
-/** Serves the version file the pack writes (package.json version + HM_BUILD_NUMBER). */
+/** Serves the version file the pack writes (0.1.<build>, or 0.1.0 for local dev). */
 function appVersionPlugin(): Plugin {
   const virtualId = 'virtual:app-version';
   const resolvedId = `\0${virtualId}`;

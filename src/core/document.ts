@@ -5,13 +5,20 @@
 
 import {
   applyTextChange,
+  contentHash,
   countOriginWords,
+  GRAMMAR_CHECK_COMMENT,
+  MAX_PRIOR_HASHES,
   relocateRange,
+  reviseSealedPassage,
   splitSpans,
   stripInvalidKeyboardSeals,
   syncBlockPoints,
   TRUST_STATEMENT,
   type CertificationPoint,
+  type GrammarDialect,
+  type GrammarSuggestionKind,
+  type GrammarUsage,
   type InputEvidence,
   type InsertionOrigin,
   type MoveRecord,
@@ -19,18 +26,25 @@ import {
 } from './certification.ts';
 import {
   chapterOrder,
+  combineParagraphs as combineParagraphBlocks,
+  deleteMovableRange,
+  deleteParagraphs as deleteParagraphBlocks,
   dragPreviewLabel,
   emptyBlock,
+  emptyTableRows,
   findMatches,
+  isHeadingType,
   manuscriptStats,
   moveBlockBy,
   moveBlockRange,
   movableRange,
+  setBlockKind as setBlockKindBlocks,
   unwrapHeading,
   type BlockRange,
   type ManuscriptMatch,
+  type StructureHeadingKind,
 } from './manuscript.ts';
-import { expandCollapsedRange, toggleMark } from './richText.ts';
+import { clearFormatting, expandCollapsedRange, normalizeMarks, toggleMark } from './richText.ts';
 import type { BookNotes } from './notes.ts';
 import type { ManuscriptFontId } from './typography.ts';
 import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
@@ -151,13 +165,15 @@ export async function editField(args: {
   if (args.field === 'text' && insert.includes('\n')) {
     return pasteMultiline({ ...args, insert });
   }
+  const start = Math.max(0, Math.min(args.start, current.length));
+  const end = Math.max(start, Math.min(args.end, current.length));
 
   const changed = applyTextChange({
     text: current,
     spans: fieldSpans(args.doc, block, args.field),
     marks: args.field === 'text' ? block.marks : [],
-    start: args.start,
-    end: args.end,
+    start,
+    end,
     insert,
     origin: args.origin,
     pasteHint: args.pasteHint,
@@ -174,6 +190,7 @@ export async function editField(args: {
         : null,
     now: args.now,
     newId: args.newId,
+    textEdit: { start, end, insertLength: insert.length },
   });
   const blocks = args.doc.blocks.map((b) => {
     if (b.id !== block.id) return b;
@@ -441,8 +458,10 @@ export function insertStructure(
   kind: BlockType,
   index: number,
   id: string,
+  table?: { rows: number; cols: number },
 ): ManuscriptDocument {
   const block = emptyBlock(kind, id);
+  if (kind === 'table' && table) block.tableRows = emptyTableRows(table.rows, table.cols);
   const at = Math.max(0, Math.min(index, doc.blocks.length));
   const blocks = [...doc.blocks.slice(0, at), block, ...doc.blocks.slice(at)];
   return { ...doc, blocks, provenance: { ...doc.provenance, [id]: { title: [], text: [] } } };
@@ -684,7 +703,7 @@ export function updateTableRows(doc: ManuscriptDocument, blockId: string, tableR
 export function updateImageBlock(
   doc: ManuscriptDocument,
   blockId: string,
-  patch: { imageSrc?: string; imageAlt?: string },
+  patch: { imageSrc?: string; imageAlt?: string; imageCaption?: string },
 ): ManuscriptDocument {
   return {
     ...doc,
@@ -701,6 +720,117 @@ export function updateDividerBlock(
     ...doc,
     blocks: doc.blocks.map((b) => (b.id === blockId && b.type === 'divider' ? { ...b, ...patch } : b)),
   };
+}
+
+/** Strip inline marks on the selection, or on the whole paragraph when the caret is collapsed. */
+export function clearBlockFormatting(
+  doc: ManuscriptDocument,
+  blockId: string,
+  range: { start: number; end: number },
+): ManuscriptDocument {
+  return {
+    ...doc,
+    blocks: doc.blocks.map((block) => {
+      if (block.id !== blockId || !isProseBlock(block.type)) return block;
+      const whole = range.end <= range.start;
+      const start = whole ? 0 : range.start;
+      const end = whole ? block.text.length : range.end;
+      return { ...block, marks: clearFormatting(block.marks, start, end, block.text.length) };
+    }),
+  };
+}
+
+export function setBlockKind(
+  doc: ManuscriptDocument,
+  blockId: string,
+  kind: StructureHeadingKind,
+): ManuscriptDocument {
+  const block = doc.blocks.find((item) => item.id === blockId);
+  if (!block || block.type === 'image' || block.type === 'table' || block.type === kind) return doc;
+  const prov = doc.provenance[blockId] ?? { title: [], text: [] };
+  const fromHeading = isHeadingType(block.type);
+  const toHeading = kind !== 'paragraph';
+  const spans = fromHeading ? prov.title : prov.text;
+  const blocks = setBlockKindBlocks(doc.blocks, blockId, kind);
+  return {
+    ...doc,
+    blocks,
+    provenance: {
+      ...doc.provenance,
+      [blockId]: toHeading ? { title: spans, text: [] } : { title: [], text: fromHeading ? spans : prov.text },
+    },
+  };
+}
+
+/** Delete a chapter, scene, or section and every block under it. */
+export function deleteHeadingRange(doc: ManuscriptDocument, blockId: string): ManuscriptDocument {
+  const nextBlocks = deleteMovableRange(doc.blocks, blockId);
+  if (nextBlocks === doc.blocks) return doc;
+  const kept = new Set(nextBlocks.map((block) => block.id));
+  const provenance = { ...doc.provenance };
+  for (const id of Object.keys(provenance)) {
+    if (!kept.has(id)) delete provenance[id];
+  }
+  return prunePoints({ ...doc, blocks: nextBlocks, provenance });
+}
+
+export function deleteParagraphs(doc: ManuscriptDocument, ids: Iterable<string>): ManuscriptDocument {
+  const nextBlocks = deleteParagraphBlocks(doc.blocks, ids);
+  if (nextBlocks === doc.blocks) return doc;
+  const kept = new Set(nextBlocks.map((block) => block.id));
+  const provenance = { ...doc.provenance };
+  for (const id of Object.keys(provenance)) {
+    if (!kept.has(id)) delete provenance[id];
+  }
+  return prunePoints({ ...doc, blocks: nextBlocks, provenance });
+}
+
+export async function combineParagraphs(args: {
+  doc: ManuscriptDocument;
+  ids: Iterable<string>;
+  now: string;
+  newId: () => string;
+}): Promise<ManuscriptDocument> {
+  const wanted = new Set(args.ids);
+  const selected = args.doc.blocks.filter((block) => block.type === 'paragraph' && wanted.has(block.id));
+  if (selected.length < 2) return args.doc;
+  const keep = selected[0]!;
+  let text = '';
+  const spans: ProvenanceSpan[] = [];
+  for (const part of selected) {
+    const piece = part.text ?? '';
+    const joiner = text && piece ? ' ' : '';
+    const offset = text.length + joiner.length;
+    if (joiner) text += joiner;
+    for (const span of args.doc.provenance[part.id]?.text ?? []) {
+      spans.push({ ...span, start: span.start + offset, end: span.end + offset });
+    }
+    text += piece;
+  }
+  const mergedBlocks = combineParagraphBlocks(args.doc.blocks, args.ids);
+  const sealed = await syncBlockPoints({
+    blockId: keep.id,
+    text,
+    spans,
+    points: args.doc.points,
+    evidence: null,
+    now: args.now,
+    newId: args.newId,
+  });
+  const marks = normalizeMarks(mergedBlocks.find((block) => block.id === keep.id)?.marks, text.length);
+  const blocks = mergedBlocks.map((block) => (block.id === keep.id ? { ...block, text, marks } : block));
+  const kept = new Set(blocks.map((block) => block.id));
+  const provenance = { ...args.doc.provenance };
+  for (const id of Object.keys(provenance)) {
+    if (!kept.has(id)) delete provenance[id];
+  }
+  provenance[keep.id] = { title: [], text: sealed.spans };
+  return prunePoints({
+    ...args.doc,
+    blocks,
+    provenance,
+    points: sealed.points,
+  });
 }
 
 export function toggleFormat(
@@ -750,6 +880,108 @@ export function passageState(spans: ProvenanceSpan[], text: string): 'empty' | '
   if (sealed) return 'certified';
   if (!spans.length) return 'uncertified';
   return 'uncertified';
+}
+
+/**
+ * Apply one Harper suggestion inside an existing keyboard or dictation seal.
+ * The seal's origin stays. The content hash moves to the new span text, and
+ * the previous hash is kept on the point. Unsealed text is left unchanged.
+ */
+export async function acceptGrammarSuggestion(args: {
+  doc: ManuscriptDocument;
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+  insert: string;
+  suggestion: GrammarSuggestionKind;
+  lintKind: string;
+  message: string;
+  dialect: GrammarDialect;
+  engineVersion: string;
+  now: string;
+  newId: () => string;
+}): Promise<ManuscriptDocument> {
+  const block = args.doc.blocks.find((item) => item.id === args.blockId);
+  if (!block) return args.doc;
+  if (args.field === 'title' && isProseBlock(block.type)) return args.doc;
+  if (args.field === 'text' && !isProseBlock(block.type)) return args.doc;
+  const current = args.field === 'title' ? block.title : block.text;
+  const start = Math.max(0, Math.min(args.start, current.length));
+  const end = Math.max(start, Math.min(args.end, current.length));
+  const insert = args.insert ?? '';
+  const changed = reviseSealedPassage({
+    text: current,
+    spans: fieldSpans(args.doc, block, args.field),
+    marks: args.field === 'text' ? block.marks : [],
+    start,
+    end,
+    insert,
+  });
+  if (!changed) return args.doc;
+
+  const previous = args.doc.points.find((point) => point.id === changed.certificationId);
+  const previousHash = previous?.contentHash;
+  const before = current.slice(start, end);
+  const sealed = await syncBlockPoints({
+    blockId: block.id,
+    text: changed.text,
+    spans: changed.spans,
+    points: args.doc.points,
+    evidence: null,
+    now: args.now,
+    newId: args.newId,
+    textEdit: { start, end, insertLength: insert.length },
+  });
+  const span = sealed.spans.find((item) => item.certificationId === changed.certificationId);
+  const relativeStart = span ? start - span.start : 0;
+  const points = await Promise.all(
+    sealed.points.map(async (point) => {
+      if (point.id !== changed.certificationId) return point;
+      const priorHashes =
+        previousHash && previousHash !== point.contentHash && !point.priorHashes.includes(previousHash)
+          ? [...point.priorHashes, previousHash].slice(-MAX_PRIOR_HASHES)
+          : point.priorHashes;
+      const usage: GrammarUsage = {
+        schema: 1,
+        used: true,
+        engine: 'harper',
+        generative: false,
+        comment: GRAMMAR_CHECK_COMMENT,
+        checks: [
+          ...(point.grammar?.checks ?? []),
+          {
+            id: args.newId(),
+            at: args.now,
+            engine: 'harper',
+            engineVersion: args.engineVersion,
+            generative: false,
+            dialect: args.dialect,
+            lintKind: args.lintKind,
+            message: args.message,
+            suggestion: args.suggestion,
+            before,
+            after: insert,
+            beforeHash: await contentHash(before),
+            afterHash: await contentHash(insert),
+            range: { start: relativeStart, end: relativeStart + insert.length },
+          },
+        ],
+      };
+      return { ...point, priorHashes, grammar: usage, updatedAt: args.now };
+    }),
+  );
+  const blocks = args.doc.blocks.map((item) => {
+    if (item.id !== block.id) return item;
+    if (args.field === 'title') return { ...item, title: changed.text };
+    return { ...item, text: changed.text, marks: changed.marks };
+  });
+  return {
+    ...args.doc,
+    blocks,
+    provenance: putSpans(args.doc, block.id, args.field, sealed.spans),
+    points,
+  };
 }
 
 export function certificationExport(doc: ManuscriptDocument, exportedAt: string) {
@@ -850,6 +1082,7 @@ export function manuscriptExport(doc: ManuscriptDocument, exportedAt: string) {
       tableRows: block.type === 'table' ? block.tableRows : undefined,
       imageSrc: block.type === 'image' ? block.imageSrc : undefined,
       imageAlt: block.type === 'image' ? block.imageAlt : undefined,
+      imageCaption: block.type === 'image' ? block.imageCaption : undefined,
     })),
   };
 }

@@ -3,11 +3,17 @@ import { AppVersionLabel } from './AppVersionLabel.tsx';
 import {
   certificationExport,
   chapterOrder,
+  clearBlockFormatting,
+  combineParagraphs,
+  deleteHeadingRange,
+  deleteParagraphs,
   displayTitle,
   dragPreviewLabel,
+  acceptGrammarSuggestion,
   editField,
   insertHeadingWithParagraph,
   insertStructure,
+  setBlockKind,
   movePassage,
   replaceAllManuscriptMatches,
   replaceManuscriptMatch,
@@ -25,16 +31,44 @@ import {
   type ManuscriptDocument,
 } from '../core/document.ts';
 import { formatMixLabel, provenanceMix } from '../core/provenanceMix.ts';
-import { findMatches, firstProseAfter, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../core/manuscript.ts';
+import {
+  dropPlaceLabel,
+  findMatches,
+  firstProseAfter,
+  headingLabels,
+  insertGapHoverLabel,
+  insertGapSelectedLabel,
+  isHeadingType,
+  matchIndexAtOrAfter,
+  nearestValidDropIndex,
+  paragraphRangeIds,
+  validDropIndices,
+  type StructureHeadingKind,
+} from '../core/manuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
+import { GRAMMAR_CHECK_COMMENT } from '../core/certification.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
+import {
+  GRAMMAR_SCOPE_LABELS,
+  blocksForGrammarScope,
+  filterLintsToFields,
+  grammarEditForSuggestion,
+  shiftGrammarLints,
+  type GrammarFieldRange,
+  type GrammarLint,
+  type GrammarScope,
+  type GrammarSuggestionChoice,
+} from '../core/grammar.ts';
+import { harperEngineVersion, lintManuscriptBlocks, prepareHarper } from '../core/harperEngine.ts';
 import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
   loadEditorView,
+  loadNotesCollapsed,
   saveCertificationCollapsed,
   saveEditorView,
+  saveNotesCollapsed,
   type EditorViewMode,
 } from '../storage.ts';
 import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
@@ -44,8 +78,13 @@ import { CertificationMark } from './CertificationMark.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptStatsBar } from './ManuscriptStatsBar.tsx';
 import { NotesRail } from './NotesRail.tsx';
+import { HeadingRemoveControl } from './HeadingRemoveControl.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
+import { ManuscriptSelectBanner } from './ManuscriptSelectBanner.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
+import { RawWriteView, type RawEdit } from './RawWriteView.tsx';
+import { TableGridPicker } from './TableGridPicker.tsx';
+import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
 import {
   IconBlockQuote,
   IconBold,
@@ -61,17 +100,20 @@ import {
   IconNumberList,
   IconPageBreak,
   IconParagraph,
+  IconRawWrite,
   IconRedo,
   IconReplace,
   IconReplaceAll,
   IconScene,
   IconSceneBreak,
   IconSection,
+  IconStrikethrough,
   IconTable,
   IconUnderline,
   IconUndo,
   ToolbarIconButton,
 } from './ManuscriptToolbarIcons.tsx';
+import { GrammarMenu, GrammarResults } from './GrammarControls.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 import { ExportPreview } from './ExportPreview.tsx';
 import {
@@ -81,6 +123,7 @@ import {
   resolveManuscriptTypography,
   setManuscriptTypography,
 } from '../core/typography.ts';
+import { applyRawFormat, assignRawKind, clearRawFormat, flattenRaw, rawHighlightFields, rawKindAt, rawSegmentAt, replaceRawRange, type RawKind } from '../core/rawWrite.ts';
 
 const BLOCK_MIME = 'application/x-humanuscript-block';
 /** Full-screen view scale only. It does not change the book’s font size. */
@@ -116,6 +159,10 @@ export function Editor({
   onFocusModeChange,
   bookTitle,
   seriesLabel = null,
+  canInsertDictation = false,
+  onDictationTarget,
+  onInsertDictation,
+  insertAt,
 }: {
   doc: ManuscriptDocument;
   bookId: string;
@@ -125,6 +172,13 @@ export function Editor({
   onFocusModeChange?: (focus: boolean) => void;
   bookTitle?: string;
   seriesLabel?: string | null;
+  /** True when a dictation take is waiting to land in the manuscript. */
+  canInsertDictation?: boolean;
+  /** Gap index, or a caret split inside a paragraph or block quote. */
+  onDictationTarget?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
+  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
+  /** When set, the parent owns the marked insertion gap. `null` means none. */
+  insertAt?: number | null;
 }) {
   const ids = useRef(createIdFactory('hm'));
   const docRef = useRef(doc);
@@ -134,13 +188,28 @@ export function Editor({
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [replaceNote, setReplaceNote] = useState('');
+  const [grammarLints, setGrammarLints] = useState<GrammarLint[]>([]);
+  const [grammarNote, setGrammarNote] = useState('');
+  const [grammarBusy, setGrammarBusy] = useState(false);
   const [hit, setHit] = useState(0);
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
   const [renderToken, setRenderToken] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
+  const [pickingInsert, setPickingInsert] = useState(false);
+  const [selectedGap, setSelectedGap] = useState<number | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [tablePicker, setTablePicker] = useState<{ x: number; y: number; at: number } | null>(null);
+  const [gapMenu, setGapMenu] = useState<(ContextMenuState & { atIndex: number }) | null>(null);
+  const gapAnchorRef = useRef<MenuAnchor | null>(null);
+  const lastSelectedRef = useRef<string | null>(null);
+  const dictationTargetRef = useRef(onDictationTarget);
+  dictationTargetRef.current = onDictationTarget;
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
+  const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
+  const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
   const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
@@ -164,6 +233,10 @@ export function Editor({
   useEffect(() => {
     saveCertificationCollapsed(certCollapsed);
   }, [certCollapsed]);
+
+  useEffect(() => {
+    saveNotesCollapsed(notesCollapsed);
+  }, [notesCollapsed]);
 
   useEffect(() => {
     let cancel = false;
@@ -449,9 +522,125 @@ export function Editor({
     }, { external: true });
   };
 
+  const editRaw = (edit: RawEdit) => {
+    commit((current) => replaceRawRange({
+      doc: current,
+      start: edit.start,
+      end: edit.end,
+      insert: edit.insert,
+      origin: edit.origin,
+      event: edit.origin
+        ? { at: new Date().toISOString(), inputType: edit.inputType, data: edit.insert.slice(0, 200), trusted: true }
+        : null,
+      now: new Date().toISOString(),
+      newId: ids.current,
+    }));
+  };
+
+  const assignHighlighted = (kind: RawKind) => {
+    if (!rawRange || rawRange.end <= rawRange.start) return;
+    const range = rawRange;
+    commit((current) => assignRawKind({
+      doc: current,
+      start: range.start,
+      end: range.end,
+      kind,
+      now: new Date().toISOString(),
+      newId: ids.current,
+    }));
+  };
+
   const onFormat = (kind: InlineMarkKind) => {
+    if (viewMode === 'raw') {
+      if (!rawRange) return;
+      const range = rawRange;
+      commit((current) => applyRawFormat(current, range.start, range.end, kind));
+      return;
+    }
     if (!selection) return;
     commit((current) => toggleFormat(current, selection.blockId, selection, kind));
+  };
+
+  const onClearFormat = () => {
+    if (viewMode === 'raw') {
+      if (!rawRange || rawRange.end <= rawRange.start) return;
+      const range = rawRange;
+      commit((current) => clearRawFormat(current, range.start, range.end));
+      return;
+    }
+    if (!selection) return;
+    commit((current) => clearBlockFormatting(current, selection.blockId, selection));
+  };
+
+  const markedGap = insertAt !== undefined ? insertAt : selectedGap;
+
+  useEffect(() => {
+    const report = dictationTargetRef.current;
+    if (!report) return;
+    if (markedGap != null) {
+      if (insertAt === undefined) report({ atIndex: Math.min(markedGap, doc.blocks.length) });
+      return;
+    }
+    if (!selection) return;
+    const block = doc.blocks.find((item) => item.id === selection.blockId);
+    if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
+      report({ blockId: block.id, splitOffset: selection.start });
+    }
+  }, [markedGap, insertAt, selection, doc.blocks]);
+
+  const selectGap = (atIndex: number) => {
+    const next = Math.max(0, Math.min(atIndex, docRef.current.blocks.length));
+    setSelectedGap(next);
+    setPickingInsert(false);
+    dictationTargetRef.current?.({ atIndex: next });
+  };
+
+  const clearGap = () => {
+    setSelectedGap(null);
+    setPickingInsert(false);
+    if (!selection) return;
+    const block = docRef.current.blocks.find((item) => item.id === selection.blockId);
+    if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
+      dictationTargetRef.current?.({ blockId: block.id, splitOffset: selection.start });
+    }
+  };
+
+  const paragraphIds = doc.blocks.filter((block) => block.type === 'paragraph').map((block) => block.id);
+  const selectedCount = paragraphIds.filter((id) => selectedIds.has(id)).length;
+  const toggleParagraph = (id: string) => {
+    lastSelectedRef.current = id;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const selectParagraphRange = (id: string) => {
+    const ids = paragraphRangeIds(paragraphIds, lastSelectedRef.current, id);
+    lastSelectedRef.current = id;
+    setSelectedIds(new Set(ids));
+  };
+
+  const openTablePicker = (x: number, y: number, at: number) => {
+    setTablePicker({ x, y, at });
+  };
+
+  const focusedBlock = selection ? doc.blocks.find((block) => block.id === selection.blockId) : undefined;
+  const kindEnabled = Boolean(
+    focusedBlock && focusedBlock.type !== 'image' && focusedBlock.type !== 'table',
+  );
+  const headingValue: StructureHeadingKind | null =
+    focusedBlock?.type === 'chapter' || focusedBlock?.type === 'scene' || focusedBlock?.type === 'section'
+      ? focusedBlock.type
+      : focusedBlock?.type === 'paragraph'
+        ? 'paragraph'
+        : null;
+  const clearEnabled = Boolean(focusedBlock && isProseBlock(focusedBlock.type));
+
+  const applyKind = (kind: StructureHeadingKind) => {
+    if (!focusedBlock || !kindEnabled) return;
+    commit((current) => setBlockKind(current, focusedBlock.id, kind));
   };
 
   const insertAfter = (afterBlockId: string, kind: BlockType) => {
@@ -460,6 +649,104 @@ export function Editor({
       if (index < 0) return current;
       return insertStructure(current, kind, index + 1, ids.current());
     });
+  };
+
+  const insertAfterIndex = (index: number, kind: BlockType) => {
+    commit((current) => insertStructure(current, kind, index, ids.current()));
+  };
+
+  useEffect(() => {
+    void prepareHarper();
+  }, []);
+
+  const grammarAnchor = (anchorId?: string) => {
+    if (anchorId) return anchorId;
+    const current = docRef.current;
+    if (viewMode === 'raw' && rawRange) {
+      return rawSegmentAt(flattenRaw(current), rawRange.start)?.blockId ?? null;
+    }
+    return selection?.blockId ?? current.blocks[0]?.id ?? null;
+  };
+
+  const runGrammar = (blocks: ManuscriptDocument['blocks'], ranges: GrammarFieldRange[] | null, emptyNote: string) => {
+    setGrammarBusy(true);
+    setGrammarNote('');
+    void lintManuscriptBlocks(blocks)
+      .then((found) => {
+        const kept = ranges ? filterLintsToFields(found, ranges) : found;
+        setGrammarLints(kept);
+        setGrammarNote(kept.length ? '' : emptyNote);
+      })
+      .catch((error: unknown) => {
+        setGrammarLints([]);
+        setGrammarNote(error instanceof Error ? error.message : 'Grammar check failed.');
+      })
+      .finally(() => setGrammarBusy(false));
+  };
+
+  const checkGrammar = (scope: GrammarScope, anchorId?: string) => {
+    const current = docRef.current;
+    const anchor = grammarAnchor(anchorId);
+    if (scope === 'block' && !anchor) {
+      setGrammarLints([]);
+      setGrammarNote('There is no paragraph to check yet.');
+      return;
+    }
+    const blocks = blocksForGrammarScope(current.blocks, anchor, scope);
+    runGrammar(blocks, null, `No grammar issues in ${GRAMMAR_SCOPE_LABELS[scope].toLowerCase()}.`);
+  };
+
+  const checkHighlighted = () => {
+    const current = docRef.current;
+    const ranges: GrammarFieldRange[] = viewMode === 'raw'
+      ? rawRange && rawRange.end > rawRange.start
+        ? rawHighlightFields(current, rawRange.start, rawRange.end)
+        : []
+      : selection && selection.end > selection.start
+        ? (() => {
+            const block = current.blocks.find((item) => item.id === selection.blockId);
+            if (!block) return [];
+            const field = isProseBlock(block.type) ? 'text' as const : 'title' as const;
+            return [{ blockId: block.id, field, start: selection.start, end: selection.end }];
+          })()
+        : [];
+    if (!ranges.length) {
+      setGrammarLints([]);
+      setGrammarNote('Highlight the text to check, or choose a paragraph or the whole manuscript.');
+      return;
+    }
+    const ids = new Set(ranges.map((range) => range.blockId));
+    runGrammar(
+      current.blocks.filter((block) => ids.has(block.id)),
+      ranges,
+      'No grammar issues in the highlighted text.',
+    );
+  };
+
+  const acceptGrammar = (lint: GrammarLint, suggestion: GrammarSuggestionChoice) => {
+    const edit = grammarEditForSuggestion(lint, suggestion);
+    commit(async (current) => {
+      const block = current.blocks.find((item) => item.id === lint.blockId);
+      if (!block) return current;
+      const text = lint.field === 'text' ? block.text : block.title;
+      if (text.slice(lint.start, lint.end) !== lint.problem) return current;
+      return acceptGrammarSuggestion({
+        doc: current,
+        blockId: lint.blockId,
+        field: lint.field,
+        start: edit.start,
+        end: edit.end,
+        insert: edit.insert,
+        suggestion: suggestion.kind,
+        lintKind: lint.lintKind,
+        message: lint.message,
+        dialect: 'American',
+        engineVersion: harperEngineVersion(),
+        now: new Date().toISOString(),
+        newId: ids.current,
+      });
+    }, { external: true });
+    setGrammarLints((current) => shiftGrammarLints(current, lint, edit.insert.length));
   };
 
   const insertNear = (kind: BlockType) => {
@@ -478,6 +765,13 @@ export function Editor({
     const hashes: Record<string, string> = {};
     for (const point of doc.points) hashes[point.id] = point.contentHash;
     return hashes;
+  }, [doc.points]);
+  const grammarSeals = useMemo(() => {
+    const seals: Record<string, string> = {};
+    for (const point of doc.points) {
+      if (point.grammar?.used) seals[point.id] = point.grammar.comment;
+    }
+    return seals;
   }, [doc.points]);
   const typography = resolveManuscriptTypography(doc);
   const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
@@ -521,7 +815,7 @@ export function Editor({
       onChange={publish}
     />
     <div
-      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}`}
+      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}${notesCollapsed ? ' is-notes-collapsed' : ''}`}
     >
       {focusMode && (
         <div className="focus-exit-bar">
@@ -565,10 +859,39 @@ export function Editor({
       )}
       <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
-        <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
+        <div
+          className="toolbar"
+          role="toolbar"
+          aria-label="Manuscript tools"
+          onMouseDown={(event) => {
+            const target = event.target;
+            if (!(target instanceof Element) || target.closest('input, textarea, select, option')) return;
+            event.preventDefault();
+          }}
+        >
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
+              {viewMode === 'raw' ? (
+                ([
+                  ['chapter', 'Chapter'],
+                  ['scene', 'Scene'],
+                  ['section', 'Section'],
+                  ['paragraph', 'Paragraph'],
+                  ['blockquote', 'Block quote'],
+                ] as const).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`toolbar-text-btn${rawRange && rawKindAt(doc, rawRange.start, rawRange.end) === kind ? ' is-active' : ''}`}
+                    disabled={!rawRange || rawRange.end <= rawRange.start}
+                    onClick={() => assignHighlighted(kind)}
+                  >
+                    {label}
+                  </button>
+                ))
+              ) : (
+                <>
               <ToolbarIconButton label="Chapter" onClick={() => openChapter(docRef.current.blocks.length)}>
                 <IconChapter />
               </ToolbarIconButton>
@@ -581,12 +904,20 @@ export function Editor({
               <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
                 <IconParagraph />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Table" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>
+              <ToolbarIconButton
+                label="Table"
+                onClick={(event) => {
+                  const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                  openTablePicker(rect.left, rect.bottom + 4, docRef.current.blocks.length);
+                }}
+              >
                 <IconTable />
               </ToolbarIconButton>
               <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
                 <IconImage />
               </ToolbarIconButton>
+                </>
+              )}
             </div>
           </div>
           <div className="toolbar-group">
@@ -612,9 +943,17 @@ export function Editor({
               <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
                 <IconUnderline />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
-                <IconBlockQuote />
+              <ToolbarIconButton label="Strikethrough" onClick={() => onFormat('strike')}>
+                <IconStrikethrough />
               </ToolbarIconButton>
+              <button type="button" className="toolbar-text-btn" disabled={viewMode === 'raw' ? !rawRange || rawRange.end <= rawRange.start : !clearEnabled} onClick={onClearFormat}>
+                Clear format
+              </button>
+              {viewMode !== 'raw' && (
+                <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
+                  <IconBlockQuote />
+                </ToolbarIconButton>
+              )}
               <label className="toolbar-font toolbar-font--family" data-tooltip="Font">
                 <select
                   aria-label="Font"
@@ -647,6 +986,74 @@ export function Editor({
                   ))}
                 </select>
               </label>
+            </div>
+          </div>
+          {viewMode !== 'raw' && (
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-heading">Heading</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-heading">
+              {([
+                ['chapter', 'Chapter'],
+                ['scene', 'Scene'],
+                ['section', 'Section'],
+                ['paragraph', 'Body'],
+              ] as const).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className={`toolbar-text-btn${headingValue === kind ? ' is-active' : ''}`}
+                  disabled={!kindEnabled}
+                  aria-pressed={headingValue === kind}
+                  onClick={() => applyKind(kind)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          )}
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-arrange">Arrange</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-arrange">
+              <button
+                type="button"
+                className={`toolbar-text-btn${pickingInsert ? ' is-active' : ''}`}
+                aria-pressed={pickingInsert}
+                title={
+                  pickingInsert
+                    ? 'Click a gap in the manuscript, or click again to cancel'
+                    : 'Turn on, then click a gap to mark where dictation lands'
+                }
+                onClick={() => setPickingInsert((value) => !value)}
+              >
+                Choose insertion point
+              </button>
+              <button
+                type="button"
+                className={`toolbar-text-btn${selecting ? ' is-active' : ''}`}
+                aria-pressed={selecting}
+                title="Use this to select paragraphs to combine or delete"
+                onClick={() => {
+                  setSelecting((value) => {
+                    if (value) setSelectedIds(new Set());
+                    return !value;
+                  });
+                }}
+              >
+                Select paragraphs
+              </button>
+            </div>
+          </div>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-grammar">Grammar</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-grammar">
+              <GrammarMenu
+                disabled={showPreview}
+                busy={grammarBusy}
+                hasSelection={viewMode === 'raw' ? Boolean(rawRange && rawRange.end > rawRange.start) : Boolean(selection && selection.end > selection.start)}
+                onCheckSelection={checkHighlighted}
+                onCheckScope={checkGrammar}
+              />
             </div>
           </div>
           <div className="toolbar-group">
@@ -793,6 +1200,13 @@ export function Editor({
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-view">
               <div className="view-toggle" role="group" aria-label="Editor view">
                 <ToolbarIconButton
+                  label="Raw write"
+                  active={viewMode === 'raw'}
+                  onClick={() => setViewMode('raw')}
+                >
+                  <IconRawWrite />
+                </ToolbarIconButton>
+                <ToolbarIconButton
                   label="Manuscript view"
                   active={viewMode === 'manuscript'}
                   onClick={() => setViewMode('manuscript')}
@@ -823,6 +1237,9 @@ export function Editor({
           </div>
         </div>
 
+        {viewMode === 'raw' && (
+          <p className="raw-write-hint">Type on the blank page. Highlight a passage, then choose chapter, section, paragraph, block quote, or a format above.</p>
+        )}
         {showHighlights && (
           <ul className="legend legend--inline" aria-label="Passage origins">
             <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
@@ -830,7 +1247,20 @@ export function Editor({
             <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
             <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
             <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
+            <li><i className="swatch prov-grammar" /> Grammar checked, still sealed</li>
           </ul>
+        )}
+        {!showPreview && (
+          <GrammarResults
+            doc={doc}
+            lints={grammarLints}
+            note={grammarNote}
+            onAccept={acceptGrammar}
+            onDismiss={() => {
+              setGrammarLints([]);
+              setGrammarNote('');
+            }}
+          />
         )}
         </div>
 
@@ -842,6 +1272,33 @@ export function Editor({
         >
         {showPreview ? (
           <ExportPreview model={previewModel} doc={doc} />
+        ) : viewMode === 'raw' ? (
+          <RawWriteView
+            doc={doc}
+            style={manuscriptStyle}
+            onEdit={editRaw}
+            onSelection={setRawRange}
+            canInsertDictation={canInsertDictation}
+            canUnselectInsert={markedGap != null}
+            onUnselectInsert={clearGap}
+            onInsertDictation={onInsertDictation}
+            onGrammarCheck={checkGrammar}
+            onUnwrapHeading={(blockId) => commit((current) => removeBlock(current, blockId))}
+            onDeleteHeading={(blockId) => {
+              const block = docRef.current.blocks.find((item) => item.id === blockId);
+              if (!block || !isHeadingType(block.type)) return;
+              if (!window.confirm(headingLabels(block.type).confirm)) return;
+              commit((current) => deleteHeadingRange(current, blockId));
+            }}
+            onInsertPageBreak={(blockId) => (blockId ? insertAfter(blockId, 'pageBreak') : insertAfterIndex(0, 'pageBreak'))}
+            onInsertDivider={(blockId) => (blockId ? insertAfter(blockId, 'divider') : insertAfterIndex(0, 'divider'))}
+            onInsertBlockquote={(blockId) => (blockId ? insertAfter(blockId, 'blockquote') : insertAfterIndex(0, 'blockquote'))}
+            onInsertImage={(blockId) => (blockId ? insertAfter(blockId, 'image') : insertAfterIndex(0, 'image'))}
+            onInsertTable={(x, y, blockId) => {
+              const index = blockId ? docRef.current.blocks.findIndex((item) => item.id === blockId) + 1 : 0;
+              openTablePicker(x, y, index < 0 ? docRef.current.blocks.length : index);
+            }}
+          />
         ) : doc.blocks.length === 0 ? (
           <div className="empty">
             <h2>The page is blank.</h2>
@@ -850,7 +1307,7 @@ export function Editor({
           </div>
         ) : (
           <div
-            className={`manuscript${dragging != null ? ' is-dragging' : ''}`}
+            className={`manuscript${dragging != null ? ' is-dragging' : ''}${pickingInsert ? ' is-picking-insert' : ''}`}
             style={manuscriptStyle}
             data-manuscript-font={typography.font.id}
             data-manuscript-size={typography.sizePt}
@@ -858,11 +1315,35 @@ export function Editor({
               if (event.button !== 0) return;
               const target = event.target;
               if (!(target instanceof Element)) return;
-              if (target.closest('.ms-field, button, input, textarea, a, select, label, .ms-gutter, .ms-table-wrap, .ms-image-wrap, .ms-divider-block, .ms-page-break')) return;
+              if (target.closest('.ms-field, button, input, textarea, a, select, label, .ms-gutter, .ms-table-wrap, .ms-image-wrap, .ms-divider-block, .ms-page-break, .ms-insert-gap, .ms-select-banner, .ms-select-check')) return;
               event.preventDefault();
               focusProseAt(event.clientY);
             }}
+            onDragOver={(event) => {
+              if (dragging == null || !canvasRef.current) return;
+              scrollManuscriptNearEdge(event.clientY, canvasRef.current);
+            }}
           >
+            {selecting && (
+              <ManuscriptSelectBanner
+                count={selectedCount}
+                onCombine={() => {
+                  const chosen = [...selectedIds];
+                  setSelectedIds(new Set());
+                  commit((current) => combineParagraphs({
+                    doc: current,
+                    ids: chosen,
+                    now: new Date().toISOString(),
+                    newId: ids.current,
+                  }));
+                }}
+                onDelete={() => {
+                  const chosen = [...selectedIds];
+                  setSelectedIds(new Set());
+                  commit((current) => deleteParagraphs(current, chosen));
+                }}
+              />
+            )}
             {doc.blocks.map((block, index) => {
               const provSpans = isProseBlock(block.type)
                 ? doc.provenance[block.id]?.text ?? []
@@ -888,10 +1369,49 @@ export function Editor({
               return (
                 <div key={block.id}>
                   <div
-                    className={`ms-insert-gap${dropAt === index ? ' is-hot' : ''}`}
+                    className={`ms-insert-gap${dropAt === index ? ' is-hot is-drop-over' : ''}${markedGap === index ? ' is-insert-selected' : ''}`}
+                    data-insert-index={index}
+                    data-drop-label={dragging != null && dropAt === index ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
+                    data-insert-label={
+                      markedGap === index ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
+                    }
+                    role={pickingInsert || markedGap === index ? 'button' : undefined}
+                    tabIndex={pickingInsert || markedGap === index ? 0 : -1}
+                    aria-label={
+                      markedGap === index
+                        ? insertGapSelectedLabel()
+                        : pickingInsert
+                          ? insertGapHoverLabel()
+                          : 'Insertion gap'
+                    }
+                    onClick={(event) => {
+                      if (!pickingInsert) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      selectGap(index);
+                    }}
+                    onKeyDown={(event) => {
+                      if (!pickingInsert) return;
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      selectGap(index);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setGapMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        atIndex: index,
+                        hasSelection: false,
+                        canCutCopy: false,
+                        suggestions: [],
+                        misspelledWord: null,
+                      });
+                    }}
                     onDragOver={(e) => {
                       if (!e.dataTransfer.types.includes(BLOCK_MIME) || dragging == null) return;
                       e.preventDefault();
+                      if (canvasRef.current) scrollManuscriptNearEdge(e.clientY, canvasRef.current);
                       const gaps = [...canvasRef.current!.querySelectorAll<HTMLElement>('[data-insert-index]')].map((el) => ({
                         index: Number(el.dataset.insertIndex),
                         y: el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2,
@@ -908,10 +1428,23 @@ export function Editor({
                       setDropAt(null);
                       commit((current) => reorderBlocks(current, from, target, new Date().toISOString(), ids.current()));
                     }}
-                    data-insert-index={index}
                   />
                   <article id={`block-${block.id}`} className={`ms-block ms-${block.type}${dragging === index ? ' is-dragging' : ''}`}>
                     <div className="ms-gutter">
+                      {selecting && block.type === 'paragraph' && (
+                        <input
+                          type="checkbox"
+                          className="ms-select-check"
+                          checked={selectedIds.has(block.id)}
+                          aria-label="Select paragraph"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (event.shiftKey) selectParagraphRange(block.id);
+                            else toggleParagraph(block.id);
+                          }}
+                          onChange={() => undefined}
+                        />
+                      )}
                       <span
                         className="ms-drag-handle"
                         draggable
@@ -985,6 +1518,7 @@ export function Editor({
                       <ManuscriptImage
                         src={block.imageSrc}
                         alt={block.imageAlt}
+                        caption={block.imageCaption}
                         onPickFile={(file) => {
                           const reader = new FileReader();
                           reader.onload = () => {
@@ -995,7 +1529,8 @@ export function Editor({
                           reader.readAsDataURL(file);
                         }}
                         onAltChange={(alt) => commit((current) => updateImageBlock(current, block.id, { imageAlt: alt }))}
-                        onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '' }))}
+                        onCaptionChange={(caption) => commit((current) => updateImageBlock(current, block.id, { imageCaption: caption }))}
+                        onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '', imageCaption: '' }))}
                       />
                     ) : block.type === 'pageBreak' ? (
                       <ManuscriptPageBreak />
@@ -1033,12 +1568,31 @@ export function Editor({
                         ariaLabel={isProseBlock(block.type) ? (block.type === 'blockquote' ? 'Block quote' : 'Paragraph') : `${block.type} title`}
                         listStyle={block.type === 'paragraph' ? block.listStyle ?? null : null}
                         indentLevel={isProseBlock(block.type) ? block.indentLevel ?? 0 : 0}
-                        onInsertTable={() => insertAfter(block.id, 'table')}
+                        onInsertTable={(x, y) => {
+                          const at = docRef.current.blocks.findIndex((item) => item.id === block.id);
+                          openTablePicker(x, y, at < 0 ? docRef.current.blocks.length : at + 1);
+                        }}
                         onInsertImage={() => insertAfter(block.id, 'image')}
                         onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
                         onInsertDivider={() => insertAfter(block.id, 'divider')}
                         onInsertBlockquote={() => insertAfter(block.id, 'blockquote')}
+                        canInsertDictation={canInsertDictation}
+                        onInsertDictation={() => {
+                          const offset = selection?.blockId === block.id ? selection.start : (isProseBlock(block.type) ? block.text.length : 0);
+                          onInsertDictation?.({ blockId: block.id, splitOffset: offset });
+                        }}
+                        canUnselectInsert={markedGap != null}
+                        onUnselectInsert={clearGap}
+                        headingKind={isHeadingType(block.type) ? block.type : null}
+                        onUnwrapHeading={() => commit((current) => removeBlock(current, block.id))}
+                        onDeleteHeading={() => {
+                          if (!isHeadingType(block.type)) return;
+                          if (!window.confirm(headingLabels(block.type).confirm)) return;
+                          commit((current) => deleteHeadingRange(current, block.id));
+                        }}
                         certHashes={certHashes}
+                        grammarSeals={grammarSeals}
+                        onGrammarCheck={checkGrammar}
                         focusNonce={caretRequest?.blockId === block.id ? caretRequest.nonce : 0}
                         focusOffset={caretRequest?.blockId === block.id ? caretRequest.offset : null}
                         onCommit={(change) => applyCommit(block.id, isProseBlock(block.type) ? 'text' : 'title', change)}
@@ -1095,22 +1649,62 @@ export function Editor({
                           {state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
                         </span>
                       )}
-                      <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
-                        {block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
-                          ? 'Remove heading'
-                          : 'Remove'}
-                      </button>
+                      {isHeadingType(block.type) ? (
+                        <HeadingRemoveControl
+                          kind={block.type}
+                          onUnwrap={() => commit((current) => removeBlock(current, block.id))}
+                          onDelete={() => {
+                            if (!window.confirm(headingLabels(block.type as 'chapter' | 'scene' | 'section').confirm)) return;
+                            commit((current) => deleteHeadingRange(current, block.id));
+                          }}
+                        />
+                      ) : (
+                        <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
+                          Remove
+                        </button>
+                      )}
                     </div>
                   </article>
                 </div>
               );
             })}
             <div
-              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot' : ''}`}
+              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot is-drop-over' : ''}${markedGap === doc.blocks.length ? ' is-insert-selected' : ''}`}
               data-insert-index={doc.blocks.length}
+              data-drop-label={dragging != null && dropAt === doc.blocks.length ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
+              data-insert-label={
+                markedGap === doc.blocks.length ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
+              }
+              role={pickingInsert || markedGap === doc.blocks.length ? 'button' : undefined}
+              tabIndex={pickingInsert || markedGap === doc.blocks.length ? 0 : -1}
+              aria-label={
+                markedGap === doc.blocks.length
+                  ? insertGapSelectedLabel()
+                  : pickingInsert
+                    ? insertGapHoverLabel()
+                    : 'Insertion gap'
+              }
+              onClick={(event) => {
+                if (!pickingInsert) return;
+                event.preventDefault();
+                selectGap(doc.blocks.length);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setGapMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  atIndex: doc.blocks.length,
+                  hasSelection: false,
+                  canCutCopy: false,
+                  suggestions: [],
+                  misspelledWord: null,
+                });
+              }}
               onDragOver={(e) => {
                 if (dragging == null) return;
                 e.preventDefault();
+                if (canvasRef.current) scrollManuscriptNearEdge(e.clientY, canvasRef.current);
                 if (validDropIndices(doc.blocks, dragging).includes(doc.blocks.length)) setDropAt(doc.blocks.length);
               }}
               onDrop={(e) => {
@@ -1137,6 +1731,8 @@ export function Editor({
           doc={doc}
           activeBlockId={selection?.blockId ?? null}
           saveError={saveError}
+          collapsed={notesCollapsed}
+          onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
           onChange={publish}
         />
       )}
@@ -1182,6 +1778,9 @@ export function Editor({
                   <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
+                  {point.grammar?.used && (
+                    <p className="point-grammar">{point.grammar.comment || GRAMMAR_CHECK_COMMENT}</p>
+                  )}
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
                 </li>
               ))}
@@ -1219,6 +1818,43 @@ export function Editor({
       </aside>
       )}
     </div>
+    {tablePicker && (
+      <TableGridPicker
+        x={tablePicker.x}
+        y={tablePicker.y}
+        onClose={() => setTablePicker(null)}
+        onSelect={(rows, cols) => {
+          const at = tablePicker.at;
+          setTablePicker(null);
+          commit((current) => insertStructure(current, 'table', at, ids.current(), { rows, cols }));
+        }}
+      />
+    )}
+    <FieldContextMenu
+      variant="gap"
+      state={gapMenu}
+      anchorRef={gapAnchorRef}
+      onClose={() => setGapMenu(null)}
+      onCut={() => undefined}
+      onCopy={() => undefined}
+      onPaste={() => undefined}
+      onSelectAll={() => undefined}
+      onInsertPageBreak={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'pageBreak')}
+      onInsertDivider={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'divider')}
+      onInsertBlockquote={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'blockquote')}
+      onInsertImage={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'image')}
+      onInsertTable={(x, y) => {
+        if (!gapMenu) return;
+        openTablePicker(x, y, gapMenu.atIndex);
+      }}
+      canInsertDictation={canInsertDictation}
+      canUnselectInsert={markedGap != null}
+      onUnselectInsert={clearGap}
+      onInsertDictation={() => {
+        if (!gapMenu) return;
+        onInsertDictation?.({ atIndex: gapMenu.atIndex });
+      }}
+    />
     </>
   );
 }
@@ -1227,6 +1863,17 @@ function DeviceLine({ stored, live }: { stored?: string; live: string | null }) 
   const label = formatTypingDeviceLabel(stored, live);
   if (!label) return null;
   return <p className="point-device">Device: {label}</p>;
+}
+
+function scrollManuscriptNearEdge(clientY: number, scroller: HTMLElement) {
+  const box = scroller.getBoundingClientRect();
+  const zone = 56;
+  const max = 22;
+  if (clientY < box.top + zone) {
+    scroller.scrollTop -= Math.ceil(max * ((box.top + zone - clientY) / zone));
+  } else if (clientY > box.bottom - zone) {
+    scroller.scrollTop += Math.ceil(max * ((clientY - (box.bottom - zone)) / zone));
+  }
 }
 
 function scrollCardIntoCertificationPane(card: HTMLElement) {

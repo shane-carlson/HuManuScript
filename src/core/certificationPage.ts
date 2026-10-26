@@ -3,7 +3,7 @@
  * Describes origins; does not reclassify body text or list every passage.
  */
 
-import { TRUST_STATEMENT, type ProvenanceSpan } from './certification.ts';
+import { GRAMMAR_CHECK_COMMENT, TRUST_STATEMENT, type ProvenanceSpan } from './certification.ts';
 import { UNAVAILABLE_DEVICE_LABEL, formatTypingDeviceLabel } from './deviceName.ts';
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
@@ -54,6 +54,8 @@ export interface CertificationPageModel {
   sections: number;
   paragraphs: number;
   certificationPoints: number;
+  /** Accepted Harper suggestions. Zero means the summary does not mention grammar. */
+  grammarChecks: number;
 }
 
 const MONTHS = [
@@ -157,6 +159,8 @@ export function buildCertificationPageModel(
   liveDevice?: string | null,
 ): CertificationPageModel {
   const totals = emptyTotals();
+  let grammarChecks = 0;
+  for (const point of doc.points) grammarChecks += point.grammar?.checks.length ?? 0;
   for (const block of doc.blocks) {
     const prov = doc.provenance[block.id];
     if (isProseBlock(block.type)) {
@@ -183,6 +187,7 @@ export function buildCertificationPageModel(
     sections: stats.sections,
     paragraphs: stats.paragraphs,
     certificationPoints: doc.points.length,
+    grammarChecks,
   };
 }
 
@@ -219,6 +224,9 @@ export function certificationFactLines(model: CertificationPageModel): string[] 
     `Paragraphs: ${model.paragraphs}`,
     `Certification points: ${model.certificationPoints}`,
   );
+  if (model.grammarChecks > 0) {
+    lines.push(`Grammar checks: ${model.grammarChecks}`, GRAMMAR_CHECK_COMMENT);
+  }
   const devices = deviceStatLine(model.devices);
   if (devices) lines.push(devices);
   lines.push(`Book: ${model.bookTitle}`);

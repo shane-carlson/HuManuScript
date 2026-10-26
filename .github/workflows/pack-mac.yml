@@ -1,23 +1,66 @@
-# Signed + notarized macOS DMG via electron-builder (see README → GitHub Actions secrets).
-name: Pack Mac DMG
+# Signed + notarized macOS DMG and a Windows NSIS installer (see README).
+# The file name stays pack-mac.yml so this workflow's run number, and the
+# marketing version 0.1.<run>, keep counting from the existing Mac packs.
+name: Pack Mac and Windows
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 concurrency:
   group: pack-mac-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      HM_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bake the shared marketing version
+        id: version
+        run: |
+          VERSION=$(node -e "const {resolveAppVersion}=require('./scripts/write-app-version.cjs'); const pkg=require('./package.json'); const info=resolveAppVersion(process.env, pkg.version); if (info.build==='dev') { console.error('HM_BUILD_NUMBER is missing'); process.exit(1); } process.stdout.write(info.version)")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Marketing version ${VERSION}"
+
+      - name: Open the GitHub Release for both installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists."
+          else
+            gh release create "$TAG" \
+              --title "${VERSION}" \
+              --notes "HuManuScript ${VERSION} for Mac and Windows. Each installer is attached when its pack finishes."
+          fi
+
   dmg:
+    needs: release
     runs-on: macos-14
     timeout-minutes: 45
     env:
       # Increments on every run of this workflow, including a cancelled one.
-      # pack-mac writes it into the app and into CFBundleVersion.
+      # A numeric value becomes marketing version 0.1.<run> in the app and the DMG.
       HM_BUILD_NUMBER: ${{ github.run_number }}
+      # Publish the signed, notarized build to GitHub Releases (electron-updater feed).
+      HM_PUBLISH: always
       # Developer ID Application (.p12), base64-encoded — electron-builder accepts this form.
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -78,10 +121,46 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run make:icns
-      - run: npm run pack:mac
+      - name: Pack, sign, notarize, and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run pack:mac
 
       - uses: actions/upload-artifact@v4
         with:
           name: HuManuScript-dmg-arm64-signed
           path: release/*.dmg
+          if-no-files-found: error
+
+  windows:
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # Same run number as the Mac job, so both installers are 0.1.<run>.
+      HM_BUILD_NUMBER: ${{ github.run_number }}
+      HM_PUBLISH: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - name: Pack and publish the Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Optional Windows Authenticode cert. Unset builds an unsigned installer.
+          # Do not reuse the Apple CSC_LINK secret here.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run pack:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HuManuScript-win-x64
+          path: release/*.exe
           if-no-files-found: error

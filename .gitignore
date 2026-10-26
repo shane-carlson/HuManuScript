@@ -11,6 +11,7 @@ node_modules
 dist
 release
 build/app-version.json
+electron/autoUpdate.bundle.cjs
 dist-ssr
 *.local
 

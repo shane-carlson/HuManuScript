@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dispatch the signed macOS DMG workflow via GitHub Actions API (gh).
+# Dispatch the Mac and Windows pack workflow via GitHub Actions API (gh).
 # Requires Cloud Agent secret GH_TOKEN or GITHUB_TOKEN (PAT with repo + Actions write).
 set -euo pipefail
 

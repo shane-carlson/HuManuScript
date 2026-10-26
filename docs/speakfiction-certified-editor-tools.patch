@@ -1,0 +1,2173 @@
+From 8f8014c51bfd8e867a5fb5878d5d4fe1b02270e9 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sat, 24 Oct 2026 17:40:05 +0000
+Subject: [PATCH] Add the manuscript tools to the certified editor.
+
+The HuManuScript-based editor can select and combine paragraphs, mark where dictation lands, change a block's kind in place, clear formatting including strike, pick a table size, and store an image caption apart from alt text. Headings offer remove-header versus delete, and drags name the landing gap.
+---
+ src/components/hm/CertifiedManuscript.tsx    |   9 +
+ src/components/hm/Editor.tsx                 | 394 +++++++++++++++++--
+ src/components/hm/ExportPreview.tsx          |   7 +-
+ src/components/hm/FieldContextMenu.tsx       |  87 +++-
+ src/components/hm/HeadingRemoveControl.tsx   | 115 ++++++
+ src/components/hm/ManuscriptImage.tsx        | 124 +++++-
+ src/components/hm/ManuscriptSelectBanner.tsx |  42 ++
+ src/components/hm/ManuscriptToolRail.tsx     |  96 +++++
+ src/components/hm/ManuscriptToolbarIcons.tsx |  14 +-
+ src/components/hm/ProvenanceField.tsx        |  25 +-
+ src/components/hm/TableGridPicker.tsx        |  85 ++++
+ src/hm/bridge.ts                             |  10 +-
+ src/hm/document.ts                           | 125 +++++-
+ src/hm/editor.css                            | 115 +++++-
+ src/hm/exportManuscript.ts                   |   9 +
+ src/hm/manuscript.ts                         | 139 ++++++-
+ src/hm/manuscriptStructure.test.ts           | 139 +++++++
+ src/hm/types.ts                              |   2 +
+ src/views/DictationView.tsx                  |  12 +
+ 19 files changed, 1482 insertions(+), 67 deletions(-)
+ create mode 100644 src/components/hm/HeadingRemoveControl.tsx
+ create mode 100644 src/components/hm/ManuscriptSelectBanner.tsx
+ create mode 100644 src/components/hm/ManuscriptToolRail.tsx
+ create mode 100644 src/components/hm/TableGridPicker.tsx
+ create mode 100644 src/hm/manuscriptStructure.test.ts
+
+diff --git a/src/components/hm/CertifiedManuscript.tsx b/src/components/hm/CertifiedManuscript.tsx
+index 02dee6e..7ce4c0f 100644
+--- a/src/components/hm/CertifiedManuscript.tsx
++++ b/src/components/hm/CertifiedManuscript.tsx
+@@ -11,9 +11,15 @@ import { Editor } from './Editor';
+ export function CertifiedManuscript({
+   book,
+   onPlaceChange,
++  canInsertDictation = false,
++  onInsertDictation,
++  insertAt = null,
+ }: {
+   book: Book;
+   onPlaceChange?: (place: ManuscriptPlace) => void;
++  canInsertDictation?: boolean;
++  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
++  insertAt?: number | null;
+ }) {
+   const replaceManuscriptDocument = useStore((s) => s.replaceManuscriptDocument);
+   const series = useStore((s) => s.series);
+@@ -40,6 +46,9 @@ export function CertifiedManuscript({
+         focusMode={editorOpen}
+         onFocusModeChange={setEditorOpen}
+         onChange={(next) => replaceManuscriptDocument(book.id, next)}
++        canInsertDictation={canInsertDictation}
++        onInsertDictation={onInsertDictation}
++        insertAt={insertAt}
+         onDictationTarget={(target) => {
+           if (target.blockId) {
+             onPlaceChange?.({
+diff --git a/src/components/hm/Editor.tsx b/src/components/hm/Editor.tsx
+index 5388282..21b10a7 100644
+--- a/src/components/hm/Editor.tsx
++++ b/src/components/hm/Editor.tsx
+@@ -2,10 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
+ import {
+   certificationExport,
+   chapterOrder,
++  clearBlockFormatting,
++  combineParagraphs,
++  deleteHeadingRange,
++  deleteParagraphs,
+   displayTitle,
+   dragPreviewLabel,
+   editField,
+   insertStructure,
++  setBlockKind,
+   movePassage,
+   replaceAllManuscriptMatches,
+   replaceManuscriptMatch,
+@@ -23,7 +28,19 @@ import {
+   type ManuscriptDocument,
+ } from '../../hm/document';
+ import { formatMixLabel, provenanceMix } from '../../hm/provenanceMix';
+-import { findMatches, matchIndexAtOrAfter, nearestValidDropIndex, validDropIndices } from '../../hm/manuscript';
++import {
++  dropPlaceLabel,
++  findMatches,
++  headingLabels,
++  insertGapHoverLabel,
++  insertGapSelectedLabel,
++  isHeadingType,
++  matchIndexAtOrAfter,
++  nearestValidDropIndex,
++  paragraphRangeIds,
++  validDropIndices,
++  type StructureHeadingKind,
++} from '../../hm/manuscript';
+ import { isProseBlock, type BlockType, type InlineMarkKind } from '../../hm/types';
+ import { createIdFactory } from '../../hm/uid';
+ import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../../hm/deviceName';
+@@ -38,8 +55,13 @@ import {
+ } from '../../hm/editorPrefs';
+ import { CertificationMark } from './CertificationMark';
+ import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks';
++import { HeadingRemoveControl } from './HeadingRemoveControl';
+ import { ManuscriptImage } from './ManuscriptImage';
++import { ManuscriptSelectBanner } from './ManuscriptSelectBanner';
+ import { ManuscriptTable } from './ManuscriptTable';
++import { ManuscriptToolRail } from './ManuscriptToolRail';
++import { TableGridPicker } from './TableGridPicker';
++import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu';
+ import {
+   IconBlockQuote,
+   IconBold,
+@@ -61,6 +83,7 @@ import {
+   IconScene,
+   IconSceneBreak,
+   IconSection,
++  IconStrikethrough,
+   IconTable,
+   IconUnderline,
+   IconUndo,
+@@ -104,7 +127,10 @@ export function Editor({
+   onFocusModeChange,
+   bookTitle,
+   seriesLabel = null,
++  canInsertDictation = false,
+   onDictationTarget,
++  onInsertDictation,
++  insertAt,
+ }: {
+   doc: ManuscriptDocument;
+   onChange: (doc: ManuscriptDocument) => void;
+@@ -112,8 +138,12 @@ export function Editor({
+   onFocusModeChange?: (focus: boolean) => void;
+   bookTitle?: string;
+   seriesLabel?: string | null;
+-  /** SpeakFiction dictation insert point. Gaps set an index; a caret sets a split. */
++  canInsertDictation?: boolean;
++  /** Gap index, or a caret split inside a paragraph or block quote. */
+   onDictationTarget?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
++  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
++  /** When set, the parent owns the marked insertion gap. `null` means none. */
++  insertAt?: number | null;
+ }) {
+   const ids = useRef(createIdFactory('hm'));
+   const docRef = useRef(doc);
+@@ -127,6 +157,14 @@ export function Editor({
+   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
+   const [renderToken, setRenderToken] = useState(0);
+   const [dragging, setDragging] = useState<number | null>(null);
++  const [pickingInsert, setPickingInsert] = useState(false);
++  const [selectedGap, setSelectedGap] = useState<number | null>(null);
++  const [selecting, setSelecting] = useState(false);
++  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
++  const [tablePicker, setTablePicker] = useState<{ x: number; y: number; at: number } | null>(null);
++  const [gapMenu, setGapMenu] = useState<(ContextMenuState & { atIndex: number }) | null>(null);
++  const gapAnchorRef = useRef<MenuAnchor | null>(null);
++  const lastSelectedRef = useRef<string | null>(null);
+   const [dropAt, setDropAt] = useState<number | null>(null);
+   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
+   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
+@@ -326,6 +364,65 @@ export function Editor({
+     commit((current) => toggleFormat(current, selection.blockId, selection, kind));
+   };
+ 
++  const onClearFormat = () => {
++    if (!selection) return;
++    commit((current) => clearBlockFormatting(current, selection.blockId, selection));
++  };
++
++  const selectGap = (atIndex: number) => {
++    const next = Math.max(0, Math.min(atIndex, docRef.current.blocks.length));
++    setSelectedGap(next);
++    setPickingInsert(false);
++    dictationTargetRef.current?.({ atIndex: next });
++  };
++
++  const clearGap = () => {
++    setSelectedGap(null);
++    setPickingInsert(false);
++    if (!selection) return;
++    const block = docRef.current.blocks.find((item) => item.id === selection.blockId);
++    if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
++      dictationTargetRef.current?.({ blockId: block.id, splitOffset: selection.start });
++    }
++  };
++
++  const paragraphIds = doc.blocks.filter((block) => block.type === 'paragraph').map((block) => block.id);
++  const selectedCount = paragraphIds.filter((id) => selectedIds.has(id)).length;
++  const toggleParagraph = (id: string) => {
++    lastSelectedRef.current = id;
++    setSelectedIds((current) => {
++      const next = new Set(current);
++      if (next.has(id)) next.delete(id);
++      else next.add(id);
++      return next;
++    });
++  };
++  const selectParagraphRange = (id: string) => {
++    const ids = paragraphRangeIds(paragraphIds, lastSelectedRef.current, id);
++    lastSelectedRef.current = id;
++    setSelectedIds(new Set(ids));
++  };
++  const openTablePicker = (x: number, y: number, at: number) => setTablePicker({ x, y, at });
++  const focusedBlock = selection ? doc.blocks.find((block) => block.id === selection.blockId) : undefined;
++  const kindEnabled = Boolean(focusedBlock && focusedBlock.type !== 'image' && focusedBlock.type !== 'table');
++  const headingValue: StructureHeadingKind | null =
++    focusedBlock?.type === 'chapter' || focusedBlock?.type === 'scene' || focusedBlock?.type === 'section'
++      ? focusedBlock.type
++      : focusedBlock?.type === 'paragraph'
++        ? 'paragraph'
++        : null;
++  const clearEnabled = Boolean(focusedBlock && isProseBlock(focusedBlock.type));
++  const applyKind = (kind: StructureHeadingKind) => {
++    if (!focusedBlock || !kindEnabled) return;
++    commit((current) => setBlockKind(current, focusedBlock.id, kind));
++  };
++  const insertStructureKind = (kind: 'chapter' | 'scene' | 'section' | 'paragraph') => {
++    commit((current) => insertStructure(current, kind, current.blocks.length, ids.current()));
++  };
++  const insertAfterIndex = (index: number, kind: BlockType) => {
++    commit((current) => insertStructure(current, kind, index, ids.current()));
++  };
++
+   const insertAfter = (afterBlockId: string, kind: BlockType) => {
+     commit((current) => {
+       const index = current.blocks.findIndex((b) => b.id === afterBlockId);
+@@ -346,16 +443,21 @@ export function Editor({
+ 
+   const dictationTargetRef = useRef(onDictationTarget);
+   dictationTargetRef.current = onDictationTarget;
++  const markedGap = insertAt !== undefined ? insertAt : selectedGap;
++
+   useEffect(() => {
+     const report = dictationTargetRef.current;
+-    if (!report || !selection) return;
+-    const atIndex = doc.blocks.findIndex((block) => block.id === selection.blockId);
+-    if (atIndex < 0) return;
+-    const block = doc.blocks[atIndex];
++    if (!report) return;
++    if (markedGap != null) {
++      if (insertAt === undefined) report({ atIndex: Math.min(markedGap, doc.blocks.length) });
++      return;
++    }
++    if (!selection) return;
++    const block = doc.blocks.find((item) => item.id === selection.blockId);
+     if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
+       report({ blockId: block.id, splitOffset: selection.start });
+     }
+-  }, [selection, doc.blocks]);
++  }, [markedGap, insertAt, selection, doc.blocks]);
+ 
+   const showHighlights = viewMode === 'highlights';
+   const showPreview = viewMode === 'preview';
+@@ -394,8 +496,25 @@ export function Editor({
+ 
+   return (
+     <div
+-      className={`editor-layout${certCollapsed ? ' is-cert-collapsed' : ''}`}
++      className={`editor-layout${focusMode ? ' is-focus' : ''}${certCollapsed ? ' is-cert-collapsed' : ''}`}
+     >
++      <ManuscriptToolRail
++        heading={headingValue}
++        kindEnabled={kindEnabled}
++        onInsert={insertStructureKind}
++        onSetKind={applyKind}
++        onClear={onClearFormat}
++        clearEnabled={clearEnabled}
++        pickingInsert={pickingInsert}
++        onTogglePicking={() => setPickingInsert((value) => !value)}
++        selecting={selecting}
++        onToggleSelecting={() => {
++          setSelecting((value) => {
++            if (value) setSelectedIds(new Set());
++            return !value;
++          });
++        }}
++      />
+       <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
+         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
+         <div className="toolbar" role="toolbar" aria-label="Manuscript tools">
+@@ -414,7 +533,13 @@ export function Editor({
+               <ToolbarIconButton label="Insert paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
+                 <IconParagraph />
+               </ToolbarIconButton>
+-              <ToolbarIconButton label="Insert table" onClick={() => commit((current) => insertStructure(current, 'table', current.blocks.length, ids.current()))}>
++              <ToolbarIconButton
++                label="Insert table"
++                onClick={(event) => {
++                  const rect = event.currentTarget.getBoundingClientRect();
++                  openTablePicker(rect.left, rect.bottom + 4, docRef.current.blocks.length);
++                }}
++              >
+                 <IconTable />
+               </ToolbarIconButton>
+               <ToolbarIconButton label="Insert image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
+@@ -445,6 +570,12 @@ export function Editor({
+               <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
+                 <IconUnderline />
+               </ToolbarIconButton>
++              <ToolbarIconButton label="Strikethrough" onClick={() => onFormat('strike')}>
++                <IconStrikethrough />
++              </ToolbarIconButton>
++              <button type="button" className="toolbar-text-btn" disabled={!clearEnabled} onClick={onClearFormat}>
++                Clear format
++              </button>
+               <ToolbarIconButton label="Insert block quote" onClick={() => insertNear('blockquote')}>
+                 <IconBlockQuote />
+               </ToolbarIconButton>
+@@ -482,6 +613,60 @@ export function Editor({
+               </label>
+             </div>
+           </div>
++          <div className="toolbar-group">
++            <span className="toolbar-group__label" id="toolbar-heading">Heading</span>
++            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-heading">
++              {([
++                ['chapter', 'Chapter'],
++                ['scene', 'Scene'],
++                ['section', 'Section'],
++                ['paragraph', 'Body'],
++              ] as const).map(([kind, label]) => (
++                <button
++                  key={kind}
++                  type="button"
++                  className={`toolbar-text-btn${headingValue === kind ? ' is-active' : ''}`}
++                  disabled={!kindEnabled}
++                  aria-pressed={headingValue === kind}
++                  onClick={() => applyKind(kind)}
++                >
++                  {label}
++                </button>
++              ))}
++            </div>
++          </div>
++          <div className="toolbar-group">
++            <span className="toolbar-group__label" id="toolbar-arrange">Arrange</span>
++            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-arrange">
++              <button
++                type="button"
++                className={`toolbar-text-btn${pickingInsert ? ' is-active' : ''}`}
++                aria-pressed={pickingInsert}
++                title={
++                  pickingInsert
++                    ? 'Click a gap in the manuscript, or click again to cancel'
++                    : 'Turn on, then click a gap to mark where dictation lands'
++                }
++                onClick={() => setPickingInsert((value) => !value)}
++              >
++                Choose insertion point
++              </button>
++              <button
++                type="button"
++                className={`toolbar-text-btn${selecting ? ' is-active' : ''}`}
++                aria-pressed={selecting}
++                title="Use this to select paragraphs to combine or delete"
++                onClick={() => {
++                  setSelecting((value) => {
++                    if (value) setSelectedIds(new Set());
++                    return !value;
++                  });
++                }}
++              >
++                Select paragraphs
++              </button>
++            </div>
++          </div>
+           <div className="toolbar-group">
+             <span className="toolbar-group__label" id="toolbar-lists">Lists</span>
+             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-lists">
+@@ -683,11 +868,35 @@ export function Editor({
+           </div>
+         ) : (
+           <div
+-            className={`manuscript${dragging != null ? ' is-dragging' : ''}`}
++            className={`manuscript${dragging != null ? ' is-dragging' : ''}${pickingInsert ? ' is-picking-insert' : ''}`}
+             style={manuscriptStyle}
+             data-manuscript-font={typography.font.id}
+             data-manuscript-size={typography.sizePt}
++            onDragOver={(event) => {
++              if (dragging == null || !canvasRef.current) return;
++              scrollManuscriptNearEdge(event.clientY, canvasRef.current);
++            }}
+           >
++            {selecting && (
++              <ManuscriptSelectBanner
++                count={selectedCount}
++                onCombine={() => {
++                  const chosen = [...selectedIds];
++                  setSelectedIds(new Set());
++                  commit((current) => combineParagraphs({
++                    doc: current,
++                    ids: chosen,
++                    now: new Date().toISOString(),
++                    newId: ids.current,
++                  }));
++                }}
++                onDelete={() => {
++                  const chosen = [...selectedIds];
++                  setSelectedIds(new Set());
++                  commit((current) => deleteParagraphs(current, chosen));
++                }}
++              />
++            )}
+             {doc.blocks.map((block, index) => {
+               const provSpans = isProseBlock(block.type)
+                 ? doc.provenance[block.id]?.text ?? []
+@@ -713,10 +922,37 @@ export function Editor({
+               return (
+                 <div key={block.id}>
+                   <div
+-                    className={`ms-insert-gap${dropAt === index ? ' is-hot' : ''}`}
++                    className={`ms-insert-gap${dropAt === index ? ' is-hot is-drop-over' : ''}${markedGap === index ? ' is-insert-selected' : ''}`}
++                    data-insert-index={index}
++                    data-drop-label={dragging != null && dropAt === index ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
++                    data-insert-label={
++                      markedGap === index ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
++                    }
++                    role={pickingInsert || markedGap === index ? 'button' : undefined}
++                    tabIndex={pickingInsert || markedGap === index ? 0 : -1}
++                    aria-label={
++                      markedGap === index ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : 'Insertion gap'
++                    }
++                    onClick={(event) => {
++                      if (!pickingInsert) return;
++                      event.preventDefault();
++                      selectGap(index);
++                    }}
++                    onContextMenu={(event) => {
++                      event.preventDefault();
++                      setGapMenu({
++                        x: event.clientX,
++                        y: event.clientY,
++                        atIndex: index,
++                        hasSelection: false,
++                        suggestions: [],
++                        misspelledWord: null,
++                      });
++                    }}
+                     onDragOver={(e) => {
+                       if (!e.dataTransfer.types.includes(BLOCK_MIME) || dragging == null) return;
+                       e.preventDefault();
++                      if (canvasRef.current) scrollManuscriptNearEdge(e.clientY, canvasRef.current);
+                       const gaps = [...canvasRef.current!.querySelectorAll<HTMLElement>('[data-insert-index]')].map((el) => ({
+                         index: Number(el.dataset.insertIndex),
+                         y: el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2,
+@@ -733,11 +969,23 @@ export function Editor({
+                       setDropAt(null);
+                       commit((current) => reorderBlocks(current, from, target, new Date().toISOString(), ids.current()));
+                     }}
+-                    data-insert-index={index}
+-                    onClick={() => onDictationTarget?.({ atIndex: index })}
+                   />
+                   <article id={`block-${block.id}`} className={`ms-block ms-${block.type}${dragging === index ? ' is-dragging' : ''}`}>
+                     <div className="ms-gutter">
++                      {selecting && block.type === 'paragraph' && (
++                        <input
++                          type="checkbox"
++                          className="ms-select-check"
++                          checked={selectedIds.has(block.id)}
++                          aria-label="Select paragraph"
++                          onClick={(event) => {
++                            event.stopPropagation();
++                            if (event.shiftKey) selectParagraphRange(block.id);
++                            else toggleParagraph(block.id);
++                          }}
++                          onChange={() => undefined}
++                        />
++                      )}
+                       <span
+                         className="ms-drag-handle"
+                         draggable
+@@ -811,6 +1059,7 @@ export function Editor({
+                       <ManuscriptImage
+                         src={block.imageSrc}
+                         alt={block.imageAlt}
++                        caption={block.imageCaption}
+                         onPickFile={(file) => {
+                           const reader = new FileReader();
+                           reader.onload = () => {
+@@ -821,7 +1070,8 @@ export function Editor({
+                           reader.readAsDataURL(file);
+                         }}
+                         onAltChange={(alt) => commit((current) => updateImageBlock(current, block.id, { imageAlt: alt }))}
+-                        onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '' }))}
++                        onCaptionChange={(caption) => commit((current) => updateImageBlock(current, block.id, { imageCaption: caption }))}
++                        onClear={() => commit((current) => updateImageBlock(current, block.id, { imageSrc: '', imageAlt: '', imageCaption: '' }))}
+                       />
+                     ) : block.type === 'pageBreak' ? (
+                       <ManuscriptPageBreak />
+@@ -859,8 +1109,25 @@ export function Editor({
+                         ariaLabel={isProseBlock(block.type) ? (block.type === 'blockquote' ? 'Block quote' : 'Paragraph') : `${block.type} title`}
+                         listStyle={block.type === 'paragraph' ? block.listStyle ?? null : null}
+                         indentLevel={isProseBlock(block.type) ? block.indentLevel ?? 0 : 0}
+-                        onInsertTable={() => insertAfter(block.id, 'table')}
++                        onInsertTable={(x, y) => {
++                          const at = docRef.current.blocks.findIndex((item) => item.id === block.id);
++                          openTablePicker(x, y, at < 0 ? docRef.current.blocks.length : at + 1);
++                        }}
+                         onInsertImage={() => insertAfter(block.id, 'image')}
++                        canInsertDictation={canInsertDictation}
++                        onInsertDictation={() => {
++                          const offset = selection?.blockId === block.id ? selection.start : (isProseBlock(block.type) ? block.text.length : 0);
++                          onInsertDictation?.({ blockId: block.id, splitOffset: offset });
++                        }}
++                        canUnselectInsert={markedGap != null}
++                        onUnselectInsert={clearGap}
++                        headingKind={isHeadingType(block.type) ? block.type : null}
++                        onUnwrapHeading={() => commit((current) => removeBlock(current, block.id))}
++                        onDeleteHeading={() => {
++                          if (!isHeadingType(block.type)) return;
++                          if (!window.confirm(headingLabels(block.type).confirm)) return;
++                          commit((current) => deleteHeadingRange(current, block.id));
++                        }}
+                         onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
+                         onInsertDivider={() => insertAfter(block.id, 'divider')}
+                         onInsertBlockquote={() => insertAfter(block.id, 'blockquote')}
+@@ -918,23 +1185,58 @@ export function Editor({
+                           {state === 'certified' ? 'Certified' : state === 'mixed' ? 'Mixed' : 'Uncertified'}
+                         </span>
+                       )}
+-                      <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
+-                        {block.type === 'chapter' || block.type === 'scene' || block.type === 'section'
+-                          ? 'Remove heading'
+-                          : 'Remove'}
+-                      </button>
++                      {isHeadingType(block.type) ? (
++                        <HeadingRemoveControl
++                          kind={block.type}
++                          onUnwrap={() => commit((current) => removeBlock(current, block.id))}
++                          onDelete={() => {
++                            if (!isHeadingType(block.type)) return;
++                            if (!window.confirm(headingLabels(block.type).confirm)) return;
++                            commit((current) => deleteHeadingRange(current, block.id));
++                          }}
++                        />
++                      ) : (
++                        <button type="button" onClick={() => commit((current) => removeBlock(current, block.id))}>
++                          Remove
++                        </button>
++                      )}
+                     </div>
+                   </article>
+                 </div>
+               );
+             })}
+             <div
+-              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot' : ''}`}
++              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot is-drop-over' : ''}${markedGap === doc.blocks.length ? ' is-insert-selected' : ''}`}
+               data-insert-index={doc.blocks.length}
+-              onClick={() => onDictationTarget?.({ atIndex: doc.blocks.length })}
++              data-drop-label={dragging != null && dropAt === doc.blocks.length ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
++              data-insert-label={
++                markedGap === doc.blocks.length ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
++              }
++              role={pickingInsert || markedGap === doc.blocks.length ? 'button' : undefined}
++              tabIndex={pickingInsert || markedGap === doc.blocks.length ? 0 : -1}
++              aria-label={
++                markedGap === doc.blocks.length ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : 'Insertion gap'
++              }
++              onClick={(event) => {
++                if (!pickingInsert) return;
++                event.preventDefault();
++                selectGap(doc.blocks.length);
++              }}
++              onContextMenu={(event) => {
++                event.preventDefault();
++                setGapMenu({
++                  x: event.clientX,
++                  y: event.clientY,
++                  atIndex: doc.blocks.length,
++                  hasSelection: false,
++                  suggestions: [],
++                  misspelledWord: null,
++                });
++              }}
+               onDragOver={(e) => {
+                 if (dragging == null) return;
+                 e.preventDefault();
++                if (canvasRef.current) scrollManuscriptNearEdge(e.clientY, canvasRef.current);
+                 if (validDropIndices(doc.blocks, dragging).includes(doc.blocks.length)) setDropAt(doc.blocks.length);
+               }}
+               onDrop={(e) => {
+@@ -1031,10 +1333,58 @@ export function Editor({
+           <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
+         </div>
+       </aside>
++      {tablePicker && (
++        <TableGridPicker
++          x={tablePicker.x}
++          y={tablePicker.y}
++          onClose={() => setTablePicker(null)}
++          onSelect={(rows, cols) => {
++            const at = tablePicker.at;
++            setTablePicker(null);
++            commit((current) => insertStructure(current, 'table', at, ids.current(), { rows, cols }));
++          }}
++        />
++      )}
++      <FieldContextMenu
++        variant="gap"
++        state={gapMenu}
++        anchorRef={gapAnchorRef}
++        onClose={() => setGapMenu(null)}
++        onCut={() => undefined}
++        onCopy={() => undefined}
++        onPaste={() => undefined}
++        onSelectAll={() => undefined}
++        onInsertPageBreak={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'pageBreak')}
++        onInsertDivider={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'divider')}
++        onInsertBlockquote={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'blockquote')}
++        onInsertImage={() => gapMenu && insertAfterIndex(gapMenu.atIndex, 'image')}
++        onInsertTable={(x, y) => {
++          if (!gapMenu) return;
++          openTablePicker(x, y, gapMenu.atIndex);
++        }}
++        canInsertDictation={canInsertDictation}
++        canUnselectInsert={markedGap != null}
++        onUnselectInsert={clearGap}
++        onInsertDictation={() => {
++          if (!gapMenu) return;
++          onInsertDictation?.({ atIndex: gapMenu.atIndex });
++        }}
++      />
+     </div>
+   );
+ }
+ 
++function scrollManuscriptNearEdge(clientY: number, scroller: HTMLElement) {
++  const box = scroller.getBoundingClientRect();
++  const zone = 56;
++  const max = 22;
++  if (clientY < box.top + zone) {
++    scroller.scrollTop -= Math.ceil(max * ((box.top + zone - clientY) / zone));
++  } else if (clientY > box.bottom - zone) {
++    scroller.scrollTop += Math.ceil(max * ((clientY - (box.bottom - zone)) / zone));
++  }
++}
++
+ function DeviceLine({ stored, live }: { stored?: string; live: string | null }) {
+   const label = formatTypingDeviceLabel(stored, live);
+   if (!label) return null;
+diff --git a/src/components/hm/ExportPreview.tsx b/src/components/hm/ExportPreview.tsx
+index b827931..95df82b 100644
+--- a/src/components/hm/ExportPreview.tsx
++++ b/src/components/hm/ExportPreview.tsx
+@@ -192,13 +192,14 @@ export function CleanManuscript({ doc }: { doc: ManuscriptDocument }) {
+               </table>
+             );
+           case 'image':
+-            if (!block.imageSrc && !block.imageAlt?.trim()) return null;
++            if (!block.imageSrc && !block.imageAlt?.trim() && !block.imageCaption?.trim()) return null;
+             return block.imageSrc ? (
+               <figure key={block.id} className="clean-manuscript__figure">
+-                <img src={block.imageSrc} alt={block.imageAlt?.trim() || ''} />
++                <img src={block.imageSrc} alt={block.imageAlt?.trim() || block.imageCaption?.trim() || ''} />
++                {block.imageCaption?.trim() ? <figcaption>{block.imageCaption.trim()}</figcaption> : null}
+               </figure>
+             ) : (
+-              <p key={block.id}>[Image: {block.imageAlt?.trim()}]</p>
++              <p key={block.id}>[Image: {block.imageAlt?.trim() || block.imageCaption?.trim()}]</p>
+             );
+           default:
+             return null;
+diff --git a/src/components/hm/FieldContextMenu.tsx b/src/components/hm/FieldContextMenu.tsx
+index a22596d..7d3573d 100644
+--- a/src/components/hm/FieldContextMenu.tsx
++++ b/src/components/hm/FieldContextMenu.tsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+ import { createPortal } from 'react-dom';
+ import { placeContextMenu } from '../../hm/contextMenu';
++import { headingLabels } from '../../hm/manuscript';
+ 
+ export interface ContextMenuState {
+   x: number;
+@@ -32,6 +33,14 @@ export function FieldContextMenu({
+   onInsertDivider,
+   onInsertBlockquote,
+   onReplaceWord,
++  variant = 'field',
++  canInsertDictation = false,
++  onInsertDictation,
++  canUnselectInsert = false,
++  onUnselectInsert,
++  headingKind = null,
++  onUnwrapHeading,
++  onDeleteHeading,
+ }: {
+   state: ContextMenuState | null;
+   anchorRef: RefObject<MenuAnchor | null>;
+@@ -40,12 +49,20 @@ export function FieldContextMenu({
+   onCopy: () => void;
+   onPaste: () => void;
+   onSelectAll: () => void;
+-  onInsertTable: () => void;
++  onInsertTable: (x: number, y: number) => void;
+   onInsertImage: () => void;
+   onInsertPageBreak: () => void;
+   onInsertDivider: () => void;
+   onInsertBlockquote: () => void;
+   onReplaceWord?: (word: string) => void;
++  variant?: 'field' | 'gap' | 'spell';
++  canInsertDictation?: boolean;
++  onInsertDictation?: () => void;
++  canUnselectInsert?: boolean;
++  onUnselectInsert?: () => void;
++  headingKind?: 'chapter' | 'scene' | 'section' | null;
++  onUnwrapHeading?: () => void;
++  onDeleteHeading?: () => void;
+ }) {
+   const ref = useRef<HTMLDivElement>(null);
+ 
+@@ -107,6 +124,9 @@ export function FieldContextMenu({
+   if (!state) return null;
+ 
+   const suggestions = state.suggestions;
++  const showClipboard = variant === 'field';
++  const showInserts = variant !== 'spell';
++  const heading = headingKind ? headingLabels(headingKind) : null;
+ 
+   return createPortal(
+     <div
+@@ -117,6 +137,29 @@ export function FieldContextMenu({
+       onMouseDown={(e) => e.preventDefault()}
+       onContextMenu={(e) => e.preventDefault()}
+     >
++      {heading && (
++        <>
++          <button type="button" role="menuitem" onClick={() => { onUnwrapHeading?.(); onClose(); }}>{heading.unwrap}</button>
++          <button type="button" role="menuitem" onClick={() => { onDeleteHeading?.(); onClose(); }}>{heading.delete}</button>
++          <div className="field-context-menu__sep" />
++        </>
++      )}
++      {variant !== 'spell' && (
++        <>
++          {canUnselectInsert && (
++            <button type="button" role="menuitem" onClick={() => { onUnselectInsert?.(); onClose(); }}>Unselect insertion point</button>
++          )}
++          <button
++            type="button"
++            role="menuitem"
++            disabled={!canInsertDictation}
++            onClick={() => { onInsertDictation?.(); onClose(); }}
++          >
++            Insert dictation here
++          </button>
++          <div className="field-context-menu__sep" />
++        </>
++      )}
+       {suggestions.length > 0 && (
+         <>
+           {suggestions.map((suggestion) => (
+@@ -139,23 +182,41 @@ export function FieldContextMenu({
+               {suggestion}
+             </button>
+           ))}
+-          <div className="field-context-menu__sep" />
++          {variant !== 'spell' && <div className="field-context-menu__sep" />}
++        </>
++      )}
++      {showClipboard && (
++        <>
++          {state.hasSelection && (
++            <>
++              <button type="button" role="menuitem" onClick={() => { onCut(); onClose(); }}>Cut</button>
++              <button type="button" role="menuitem" onClick={() => { onCopy(); onClose(); }}>Copy</button>
++            </>
++          )}
++          <button type="button" role="menuitem" onClick={() => { onPaste(); onClose(); }}>Paste</button>
++          <button type="button" role="menuitem" onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
++          {showInserts && <div className="field-context-menu__sep" />}
+         </>
+       )}
+-      {state.hasSelection && (
++      {showInserts && (
+         <>
+-          <button type="button" role="menuitem" onClick={() => { onCut(); onClose(); }}>Cut</button>
+-          <button type="button" role="menuitem" onClick={() => { onCopy(); onClose(); }}>Copy</button>
++          <button type="button" role="menuitem" onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
++          <button type="button" role="menuitem" onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
++          <button type="button" role="menuitem" onClick={() => { onInsertBlockquote(); onClose(); }}>Insert block quote</button>
++          <button
++            type="button"
++            role="menuitem"
++            onClick={(event) => {
++              const rect = event.currentTarget.getBoundingClientRect();
++              onInsertTable(rect.left, rect.bottom + 4);
++              onClose();
++            }}
++          >
++            Insert table…
++          </button>
++          <button type="button" role="menuitem" onClick={() => { onInsertImage(); onClose(); }}>Insert image…</button>
+         </>
+       )}
+-      <button type="button" role="menuitem" onClick={() => { onPaste(); onClose(); }}>Paste</button>
+-      <button type="button" role="menuitem" onClick={() => { onSelectAll(); onClose(); }}>Select all</button>
+-      <div className="field-context-menu__sep" />
+-      <button type="button" role="menuitem" onClick={() => { onInsertPageBreak(); onClose(); }}>Insert page break</button>
+-      <button type="button" role="menuitem" onClick={() => { onInsertDivider(); onClose(); }}>Insert scene break</button>
+-      <button type="button" role="menuitem" onClick={() => { onInsertBlockquote(); onClose(); }}>Insert block quote</button>
+-      <button type="button" role="menuitem" onClick={() => { onInsertTable(); onClose(); }}>Insert table…</button>
+-      <button type="button" role="menuitem" onClick={() => { onInsertImage(); onClose(); }}>Insert image…</button>
+     </div>,
+     document.body,
+   );
+diff --git a/src/components/hm/HeadingRemoveControl.tsx b/src/components/hm/HeadingRemoveControl.tsx
+new file mode 100644
+index 0000000..145b8cb
+--- /dev/null
++++ b/src/components/hm/HeadingRemoveControl.tsx
+@@ -0,0 +1,115 @@
++import { useEffect, useLayoutEffect, useRef, useState } from 'react';
++import { createPortal } from 'react-dom';
++import { headingLabels } from '../../hm/manuscript';
++
++export function HeadingRemoveControl({
++  kind,
++  onUnwrap,
++  onDelete,
++}: {
++  kind: 'chapter' | 'scene' | 'section';
++  onUnwrap: () => void;
++  onDelete: () => void;
++}) {
++  const [open, setOpen] = useState(false);
++  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
++  const pinned = useRef(false);
++  const rootRef = useRef<HTMLDivElement>(null);
++  const buttonRef = useRef<HTMLButtonElement>(null);
++  const menuRef = useRef<HTMLDivElement>(null);
++  const labels = headingLabels(kind);
++
++  const close = () => {
++    pinned.current = false;
++    setOpen(false);
++  };
++
++  const contains = (node: Node | null) =>
++    Boolean(node && (rootRef.current?.contains(node) || menuRef.current?.contains(node)));
++
++  useLayoutEffect(() => {
++    if (!open || !buttonRef.current) return;
++    const place = () => {
++      const rect = buttonRef.current?.getBoundingClientRect();
++      if (!rect) return;
++      const width = 220;
++      const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
++      setBox({ top: rect.bottom - 2, left });
++    };
++    place();
++    window.addEventListener('scroll', place, true);
++    window.addEventListener('resize', place);
++    return () => {
++      window.removeEventListener('scroll', place, true);
++      window.removeEventListener('resize', place);
++    };
++  }, [open]);
++
++  useEffect(() => {
++    if (!open) return;
++    const onKey = (event: KeyboardEvent) => {
++      if (event.key === 'Escape') close();
++    };
++    const onPointer = (event: PointerEvent) => {
++      if (!contains(event.target as Node)) close();
++    };
++    document.addEventListener('keydown', onKey);
++    document.addEventListener('pointerdown', onPointer);
++    return () => {
++      document.removeEventListener('keydown', onKey);
++      document.removeEventListener('pointerdown', onPointer);
++    };
++  }, [open]);
++
++  return (
++    <div
++      ref={rootRef}
++      className={`ms-chapter-remove${open ? ' is-open' : ''}`}
++      onMouseEnter={() => setOpen(true)}
++      onMouseLeave={(event) => {
++        if (pinned.current || contains(event.relatedTarget as Node)) return;
++        setOpen(false);
++      }}
++      onMouseDown={(event) => event.stopPropagation()}
++      onClick={(event) => event.stopPropagation()}
++    >
++      <button
++        ref={buttonRef}
++        type="button"
++        className="btn ghost ms-block-remove"
++        aria-label={labels.aria}
++        aria-haspopup="menu"
++        aria-expanded={open}
++        title={`${labels.unwrap} or ${labels.delete.toLowerCase()}`}
++        onMouseDown={() => {
++          pinned.current = true;
++          setOpen(true);
++        }}
++        onKeyDown={(event) => {
++          if (event.key === 'Escape') close();
++        }}
++      >
++        ✕
++      </button>
++      {open && box && createPortal(
++        <div
++          ref={menuRef}
++          className="ms-chapter-remove-flyout"
++          role="menu"
++          aria-label={labels.aria}
++          style={{ position: 'fixed', top: box.top, left: box.left, right: 'auto', zIndex: 80 }}
++          onMouseDown={(event) => event.stopPropagation()}
++          onMouseEnter={() => setOpen(true)}
++        >
++          <button type="button" role="menuitem" onClick={() => { close(); onUnwrap(); }}>
++            {labels.unwrap}
++          </button>
++          <button type="button" role="menuitem" onClick={() => { close(); onDelete(); }}>
++            {labels.delete}
++          </button>
++        </div>,
++        document.body,
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/hm/ManuscriptImage.tsx b/src/components/hm/ManuscriptImage.tsx
+index 75225f8..967fdf6 100644
+--- a/src/components/hm/ManuscriptImage.tsx
++++ b/src/components/hm/ManuscriptImage.tsx
+@@ -1,31 +1,46 @@
++import { useRef, useState } from 'react';
++import { collectSpellSuggestions, wordAroundOffset } from '../../hm/contextMenu';
++import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu';
++
+ export function ManuscriptImage({
+   src,
+   alt,
++  caption,
+   onPickFile,
+   onAltChange,
++  onCaptionChange,
+   onClear,
+ }: {
+   src: string | undefined;
+   alt: string | undefined;
++  caption: string | undefined;
+   onPickFile: (file: File) => void;
+   onAltChange: (alt: string) => void;
++  onCaptionChange: (caption: string) => void;
+   onClear: () => void;
+ }) {
+   return (
+     <div className="ms-image-wrap">
+       {src ? (
+         <figure className="ms-image-figure">
+-          <img src={src} alt={alt || 'Manuscript image'} className="ms-image" />
++          <img src={src} alt={alt || caption || 'Manuscript image'} className="ms-image" />
+           <figcaption>
+-            <label className="ms-image-alt-label">
+-              Alt text
+-              <input
+-                type="text"
+-                value={alt ?? ''}
+-                onChange={(e) => onAltChange(e.target.value)}
+-                placeholder="Describe the image for export"
+-              />
+-            </label>
++            <SpellField
++              label="Caption"
++              ariaLabel="Image caption"
++              className="ms-image-caption"
++              value={caption ?? ''}
++              placeholder="Caption"
++              onChange={onCaptionChange}
++            />
++            <SpellField
++              label="Alt text"
++              ariaLabel="Image alt text"
++              className="ms-image-alt"
++              value={alt ?? ''}
++              placeholder="Describe the image for export"
++              onChange={onAltChange}
++            />
+             <button type="button" onClick={onClear}>Remove image</button>
+           </figcaption>
+         </figure>
+@@ -35,10 +50,10 @@ export function ManuscriptImage({
+             type="file"
+             accept="image/*"
+             className="ms-image-file"
+-            onChange={(e) => {
+-              const file = e.target.files?.[0];
++            onChange={(event) => {
++              const file = event.target.files?.[0];
+               if (file) onPickFile(file);
+-              e.target.value = '';
++              event.target.value = '';
+             }}
+           />
+           <span>Choose an image or drop a file here when pasting from the toolbar.</span>
+@@ -48,3 +63,86 @@ export function ManuscriptImage({
+     </div>
+   );
+ }
++
++function SpellField({
++  label,
++  ariaLabel,
++  className,
++  value,
++  placeholder,
++  onChange,
++}: {
++  label: string;
++  ariaLabel: string;
++  className: string;
++  value: string;
++  placeholder: string;
++  onChange: (value: string) => void;
++}) {
++  const inputRef = useRef<HTMLInputElement>(null);
++  const anchorRef = useRef<MenuAnchor | null>(null);
++  const replaceRef = useRef<{ start: number; end: number } | null>(null);
++  const [menu, setMenu] = useState<ContextMenuState | null>(null);
++
++  return (
++    <label className="ms-image-alt-label">
++      {label}
++      <input
++        ref={inputRef}
++        type="text"
++        className={className}
++        value={value}
++        aria-label={ariaLabel}
++        placeholder={placeholder}
++        spellCheck
++        onChange={(event) => onChange(event.target.value)}
++        onContextMenu={(event) => {
++          const input = inputRef.current;
++          if (!input) return;
++          event.preventDefault();
++          const at = input.selectionStart ?? value.length;
++          const word = wordAroundOffset(value, at);
++          const suggestions = word
++            ? collectSpellSuggestions({
++                word: word.word,
++                event: event.nativeEvent,
++                platform: window.speakfiction?.device?.spellSuggestions ?? window.humanuscript?.getSpellSuggestions,
++              })
++            : [];
++          replaceRef.current = word ? { start: word.start, end: word.end } : null;
++          anchorRef.current = null;
++          setMenu({
++            x: event.clientX,
++            y: event.clientY,
++            hasSelection: (input.selectionEnd ?? at) > at,
++            suggestions,
++            misspelledWord: word ? word.word : null,
++          });
++        }}
++      />
++      <FieldContextMenu
++        variant="spell"
++        state={menu}
++        anchorRef={anchorRef}
++        onClose={() => {
++          replaceRef.current = null;
++          setMenu(null);
++        }}
++        onCut={() => undefined}
++        onCopy={() => undefined}
++        onPaste={() => undefined}
++        onSelectAll={() => inputRef.current?.select()}
++        onInsertTable={() => undefined}
++        onInsertImage={() => undefined}
++        onInsertPageBreak={() => undefined}
++        onInsertDivider={() => undefined}
++        onInsertBlockquote={() => undefined}
++        onReplaceWord={(replacement) => {
++          const range = replaceRef.current;
++          if (!range) return;
++          onChange(value.slice(0, range.start) + replacement + value.slice(range.end));
++        }}
++      />
++    </label>
++  );
++}
+diff --git a/src/components/hm/ManuscriptSelectBanner.tsx b/src/components/hm/ManuscriptSelectBanner.tsx
+new file mode 100644
+index 0000000..ea875d8
+--- /dev/null
++++ b/src/components/hm/ManuscriptSelectBanner.tsx
+@@ -0,0 +1,42 @@
++export function ManuscriptSelectBanner({
++  count,
++  onCombine,
++  onDelete,
++}: {
++  count: number;
++  onCombine: () => void;
++  onDelete: () => void;
++}) {
++  const label =
++    count === 0
++      ? 'Select paragraphs to combine or delete'
++      : count === 1
++        ? '1 paragraph selected'
++        : `${count} paragraphs selected`;
++
++  return (
++    <div className="ms-select-banner" role="region" aria-label="Paragraph actions">
++      <span className="ms-select-banner-copy">{label}</span>
++      <div className="ms-select-banner-actions">
++        <button
++          type="button"
++          className="btn compact"
++          disabled={count < 2}
++          title={count < 2 ? 'Select at least two paragraphs' : 'Join selected paragraphs in document order'}
++          onClick={onCombine}
++        >
++          Combine
++        </button>
++        <button
++          type="button"
++          className="btn compact danger"
++          disabled={count < 1}
++          title="Delete the selected paragraphs"
++          onClick={onDelete}
++        >
++          Delete
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/hm/ManuscriptToolRail.tsx b/src/components/hm/ManuscriptToolRail.tsx
+new file mode 100644
+index 0000000..1a8bdc2
+--- /dev/null
++++ b/src/components/hm/ManuscriptToolRail.tsx
+@@ -0,0 +1,96 @@
++import type { StructureHeadingKind } from '../../hm/manuscript';
++
++const STRUCTURE: Array<{ kind: 'chapter' | 'scene' | 'section' | 'paragraph'; short: string; label: string }> = [
++  { kind: 'chapter', short: 'Chapter', label: 'New chapter' },
++  { kind: 'scene', short: 'Scene', label: 'New scene' },
++  { kind: 'section', short: 'Section', label: 'New section' },
++  { kind: 'paragraph', short: 'Paragraph', label: 'New paragraph' },
++];
++
++const KINDS: Array<{ kind: StructureHeadingKind; label: string }> = [
++  { kind: 'chapter', label: 'Chapter' },
++  { kind: 'scene', label: 'Scene' },
++  { kind: 'section', label: 'Section' },
++  { kind: 'paragraph', label: 'Body' },
++];
++
++/** Compact labels beside the full manuscript bar. */
++export function ManuscriptToolRail({
++  heading,
++  kindEnabled,
++  onInsert,
++  onSetKind,
++  onClear,
++  clearEnabled,
++  pickingInsert,
++  onTogglePicking,
++  selecting,
++  onToggleSelecting,
++}: {
++  heading: StructureHeadingKind | null;
++  kindEnabled: boolean;
++  onInsert: (kind: 'chapter' | 'scene' | 'section' | 'paragraph') => void;
++  onSetKind: (kind: StructureHeadingKind) => void;
++  onClear: () => void;
++  clearEnabled: boolean;
++  pickingInsert: boolean;
++  onTogglePicking: () => void;
++  selecting: boolean;
++  onToggleSelecting: () => void;
++}) {
++  return (
++    <div className="toolbar-rail" role="toolbar" aria-label="Compact manuscript tools">
++      <div className="toolbar-rail__group">
++        {STRUCTURE.map((item) => (
++          <button key={item.kind} type="button" title={item.label} onClick={() => onInsert(item.kind)}>
++            {item.short}
++          </button>
++        ))}
++      </div>
++      <div className="toolbar-rail__group">
++        <span className="toolbar-rail__label">Heading</span>
++        <div className="toolbar-rail__kinds">
++          {KINDS.map((item) => (
++            <button
++              key={item.kind}
++              type="button"
++              className={heading === item.kind ? 'is-active' : undefined}
++              disabled={!kindEnabled}
++              aria-pressed={heading === item.kind}
++              onClick={() => onSetKind(item.kind)}
++            >
++              {item.label}
++            </button>
++          ))}
++        </div>
++      </div>
++      <div className="toolbar-rail__group">
++        <button type="button" disabled={!clearEnabled} onClick={onClear} title="Clear format">
++          Clear
++        </button>
++        <button
++          type="button"
++          className={pickingInsert ? 'is-active' : undefined}
++          aria-pressed={pickingInsert}
++          title={
++            pickingInsert
++              ? 'Click a gap in the manuscript, or click again to cancel'
++              : 'Turn on, then click a gap to mark where dictation lands'
++          }
++          onClick={onTogglePicking}
++        >
++          Insert point
++        </button>
++        <button
++          type="button"
++          className={selecting ? 'is-active' : undefined}
++          aria-pressed={selecting}
++          title="Use this to select paragraphs to combine or delete"
++          onClick={onToggleSelecting}
++        >
++          Select
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/hm/ManuscriptToolbarIcons.tsx b/src/components/hm/ManuscriptToolbarIcons.tsx
+index 44e0930..150f64f 100644
+--- a/src/components/hm/ManuscriptToolbarIcons.tsx
++++ b/src/components/hm/ManuscriptToolbarIcons.tsx
+@@ -1,4 +1,4 @@
+-import type { ReactNode } from 'react';
++import type { MouseEvent, ReactNode } from 'react';
+ 
+ export function ToolbarIconButton({
+   label,
+@@ -8,7 +8,7 @@ export function ToolbarIconButton({
+   children,
+ }: {
+   label: string;
+-  onClick: () => void;
++  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+   disabled?: boolean;
+   active?: boolean;
+   children: ReactNode;
+@@ -140,6 +140,16 @@ export function IconItalic() {
+   );
+ }
+ 
++export function IconStrikethrough() {
++  return (
++    <svg {...iconProps} aria-hidden="true">
++      <path d="M4 12h16" />
++      <path d="M7 7.5c.4-1.6 2-3 5-3 3.2 0 5 1.6 5 3.6 0 1.2-.6 2.1-1.6 2.8" />
++      <path d="M8.2 16.2c.8 1.4 2.2 2.3 3.8 2.3 3.1 0 4.8-1.7 4.8-3.7 0-.7-.2-1.4-.5-2" />
++    </svg>
++  );
++}
++
+ export function IconUnderline() {
+   return (
+     <svg {...iconProps} aria-hidden="true">
+diff --git a/src/components/hm/ProvenanceField.tsx b/src/components/hm/ProvenanceField.tsx
+index 4171b4d..bffce11 100644
+--- a/src/components/hm/ProvenanceField.tsx
++++ b/src/components/hm/ProvenanceField.tsx
+@@ -140,6 +140,13 @@ export function ProvenanceField({
+   onInsertPageBreak,
+   onInsertDivider,
+   onInsertBlockquote,
++  canInsertDictation = false,
++  onInsertDictation,
++  canUnselectInsert = false,
++  onUnselectInsert,
++  headingKind = null,
++  onUnwrapHeading,
++  onDeleteHeading,
+ }: {
+   text: string;
+   spans: ProvenanceSpan[];
+@@ -165,11 +172,18 @@ export function ProvenanceField({
+   onCertificationHover?: (cardId: string | null) => void;
+   listStyle?: ListStyle;
+   indentLevel?: number;
+-  onInsertTable?: () => void;
++  onInsertTable?: (x: number, y: number) => void;
+   onInsertImage?: () => void;
+   onInsertPageBreak?: () => void;
+   onInsertDivider?: () => void;
+   onInsertBlockquote?: () => void;
++  canInsertDictation?: boolean;
++  onInsertDictation?: () => void;
++  canUnselectInsert?: boolean;
++  onUnselectInsert?: () => void;
++  headingKind?: 'chapter' | 'scene' | 'section' | null;
++  onUnwrapHeading?: () => void;
++  onDeleteHeading?: () => void;
+ }) {
+   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+   const anchorRef = useRef<MenuAnchor | null>(null);
+@@ -525,11 +539,18 @@ export function ProvenanceField({
+         sel?.removeAllRanges();
+         sel?.addRange(range);
+       }}
+-      onInsertTable={() => onInsertTable?.()}
++      onInsertTable={(x, y) => onInsertTable?.(x, y)}
+       onInsertImage={() => onInsertImage?.()}
+       onInsertPageBreak={() => onInsertPageBreak?.()}
+       onInsertDivider={() => onInsertDivider?.()}
+       onInsertBlockquote={() => onInsertBlockquote?.()}
++      canInsertDictation={canInsertDictation}
++      onInsertDictation={onInsertDictation}
++      canUnselectInsert={canUnselectInsert}
++      onUnselectInsert={onUnselectInsert}
++      headingKind={headingKind}
++      onUnwrapHeading={onUnwrapHeading}
++      onDeleteHeading={onDeleteHeading}
+       onReplaceWord={(replacement) => {
+         const range = replaceRef.current;
+         if (!range) return;
+diff --git a/src/components/hm/TableGridPicker.tsx b/src/components/hm/TableGridPicker.tsx
+new file mode 100644
+index 0000000..046d17d
+--- /dev/null
++++ b/src/components/hm/TableGridPicker.tsx
+@@ -0,0 +1,85 @@
++import { useLayoutEffect, useRef, useState, type ReactElement } from 'react';
++import { TABLE_MAX_COLS, TABLE_MAX_ROWS, TABLE_MIN_COLS, TABLE_MIN_ROWS } from '../../hm/manuscript';
++
++export function TableGridPicker({
++  x,
++  y,
++  onSelect,
++  onClose,
++}: {
++  x: number;
++  y: number;
++  onSelect: (rows: number, cols: number) => void;
++  onClose: () => void;
++}) {
++  const ref = useRef<HTMLDivElement>(null);
++  const [hover, setHover] = useState({ rows: TABLE_MIN_ROWS, cols: TABLE_MIN_COLS });
++
++  useLayoutEffect(() => {
++    const el = ref.current;
++    if (!el) return;
++    const rect = el.getBoundingClientRect();
++    let left = x;
++    let top = y;
++    if (left + rect.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - rect.width - 8);
++    if (top + rect.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - rect.height - 8);
++    el.style.left = `${left}px`;
++    el.style.top = `${top}px`;
++  }, [x, y]);
++
++  useLayoutEffect(() => {
++    const onKey = (event: KeyboardEvent) => {
++      if (event.key !== 'Escape') return;
++      event.preventDefault();
++      event.stopPropagation();
++      onClose();
++    };
++    const onPointer = (event: Event) => {
++      const el = ref.current;
++      if (el && event.target instanceof Node && el.contains(event.target)) return;
++      onClose();
++    };
++    window.addEventListener('keydown', onKey, true);
++    window.addEventListener('pointerdown', onPointer, true);
++    window.addEventListener('contextmenu', onPointer, true);
++    return () => {
++      window.removeEventListener('keydown', onKey, true);
++      window.removeEventListener('pointerdown', onPointer, true);
++      window.removeEventListener('contextmenu', onPointer, true);
++    };
++  }, [onClose]);
++
++  const cells: ReactElement[] = [];
++  for (let row = 1; row <= TABLE_MAX_ROWS; row++) {
++    for (let col = 1; col <= TABLE_MAX_COLS; col++) {
++      const rows = Math.max(TABLE_MIN_ROWS, row);
++      const cols = Math.max(TABLE_MIN_COLS, col);
++      const on = row <= hover.rows && col <= hover.cols;
++      cells.push(
++        <button
++          key={`${row}-${col}`}
++          type="button"
++          className={on ? 'ms-table-picker-cell is-on' : 'ms-table-picker-cell'}
++          aria-label={`${rows} by ${cols} table`}
++          onMouseEnter={() => setHover({ rows, cols })}
++          onClick={() => onSelect(rows, cols)}
++        />,
++      );
++    }
++  }
++
++  return (
++    <div ref={ref} className="ms-table-picker" role="dialog" aria-label="Insert table" style={{ left: x, top: y }}>
++      <div
++        className="ms-table-picker-grid"
++        style={{ gridTemplateColumns: `repeat(${TABLE_MAX_COLS}, 14px)` }}
++        onMouseLeave={() => setHover({ rows: TABLE_MIN_ROWS, cols: TABLE_MIN_COLS })}
++      >
++        {cells}
++      </div>
++      <div className="ms-table-picker-label">
++        {hover.rows} × {hover.cols}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/hm/bridge.ts b/src/hm/bridge.ts
+index ecfcb21..6af51eb 100644
+--- a/src/hm/bridge.ts
++++ b/src/hm/bridge.ts
+@@ -56,6 +56,7 @@ function toEditorBlock(block: Block): ManuscriptBlock {
+   if (block.type === 'image') {
+     next.imageSrc = block.imageDataUrl ?? '';
+     next.imageAlt = block.image?.alt ?? '';
++    next.imageCaption = block.image?.caption ?? block.title ?? '';
+     next.mediaId = block.image?.mediaId;
+     next.imageMime = block.image?.mime;
+   }
+@@ -85,14 +86,19 @@ function toSpeakFictionBlock(block: ManuscriptBlock, prev?: Block): Block {
+           mediaId: block.mediaId,
+           mime,
+           alt: block.imageAlt || prev?.image?.alt,
+-          caption: prev?.image?.caption,
++          caption: block.imageCaption ?? prev?.image?.caption,
+           width: prev?.image?.width,
+           height: prev?.image?.height,
+         };
+       } else if (prev?.image && !block.imageSrc) {
+-        next.image = { ...prev.image, alt: block.imageAlt || prev.image.alt };
++        next.image = {
++          ...prev.image,
++          alt: block.imageAlt || prev.image.alt,
++          caption: block.imageCaption ?? prev.image.caption,
++        };
+       }
+     }
++    if (block.imageCaption != null) next.title = block.imageCaption;
+   }
+   return next;
+ }
+diff --git a/src/hm/document.ts b/src/hm/document.ts
+index 0eee70d..a760c91 100644
+--- a/src/hm/document.ts
++++ b/src/hm/document.ts
+@@ -25,12 +25,19 @@ import {
+   manuscriptStats,
+   moveBlockBy,
+   moveBlockRange,
++  combineParagraphs as combineParagraphBlocks,
++  deleteMovableRange,
++  deleteParagraphs as deleteParagraphBlocks,
++  emptyTableRows,
++  isHeadingType,
+   movableRange,
++  setBlockKind as setBlockKindBlocks,
+   unwrapHeading,
+   type BlockRange,
+   type ManuscriptMatch,
++  type StructureHeadingKind,
+ } from './manuscript';
+-import { expandCollapsedRange, toggleMark } from './richText';
++import { clearFormatting, expandCollapsedRange, normalizeMarks, toggleMark } from './richText';
+ import type { ManuscriptFontId } from './typography';
+ import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types';
+ 
+@@ -425,8 +432,10 @@ export function insertStructure(
+   kind: BlockType,
+   index: number,
+   id: string,
++  table?: { rows: number; cols: number },
+ ): ManuscriptDocument {
+   const block = emptyBlock(kind, id);
++  if (kind === 'table' && table) block.tableRows = emptyTableRows(table.rows, table.cols);
+   const at = Math.max(0, Math.min(index, doc.blocks.length));
+   const blocks = [...doc.blocks.slice(0, at), block, ...doc.blocks.slice(at)];
+   return { ...doc, blocks, provenance: { ...doc.provenance, [id]: { title: [], text: [] } } };
+@@ -668,7 +677,7 @@ export function updateTableRows(doc: ManuscriptDocument, blockId: string, tableR
+ export function updateImageBlock(
+   doc: ManuscriptDocument,
+   blockId: string,
+-  patch: { imageSrc?: string; imageAlt?: string },
++  patch: { imageSrc?: string; imageAlt?: string; imageCaption?: string },
+ ): ManuscriptDocument {
+   return {
+     ...doc,
+@@ -687,6 +696,117 @@ export function updateDividerBlock(
+   };
+ }
+ 
++/** Strip inline marks on the selection, or on the whole paragraph when the caret is collapsed. */
++export function clearBlockFormatting(
++  doc: ManuscriptDocument,
++  blockId: string,
++  range: { start: number; end: number },
++): ManuscriptDocument {
++  return {
++    ...doc,
++    blocks: doc.blocks.map((block) => {
++      if (block.id !== blockId || !isProseBlock(block.type)) return block;
++      const whole = range.end <= range.start;
++      const start = whole ? 0 : range.start;
++      const end = whole ? block.text.length : range.end;
++      return { ...block, marks: clearFormatting(block.marks, start, end, block.text.length) };
++    }),
++  };
++}
++
++export function setBlockKind(
++  doc: ManuscriptDocument,
++  blockId: string,
++  kind: StructureHeadingKind,
++): ManuscriptDocument {
++  const block = doc.blocks.find((item) => item.id === blockId);
++  if (!block || block.type === 'image' || block.type === 'table' || block.type === kind) return doc;
++  const prov = doc.provenance[blockId] ?? { title: [], text: [] };
++  const fromHeading = isHeadingType(block.type);
++  const toHeading = kind !== 'paragraph';
++  const spans = fromHeading ? prov.title : prov.text;
++  const blocks = setBlockKindBlocks(doc.blocks, blockId, kind);
++  return {
++    ...doc,
++    blocks,
++    provenance: {
++      ...doc.provenance,
++      [blockId]: toHeading ? { title: spans, text: [] } : { title: [], text: fromHeading ? spans : prov.text },
++    },
++  };
++}
++
++/** Delete a chapter, scene, or section and every block under it. */
++export function deleteHeadingRange(doc: ManuscriptDocument, blockId: string): ManuscriptDocument {
++  const nextBlocks = deleteMovableRange(doc.blocks, blockId);
++  if (nextBlocks === doc.blocks) return doc;
++  const kept = new Set(nextBlocks.map((block) => block.id));
++  const provenance = { ...doc.provenance };
++  for (const id of Object.keys(provenance)) {
++    if (!kept.has(id)) delete provenance[id];
++  }
++  return prunePoints({ ...doc, blocks: nextBlocks, provenance });
++}
++
++export function deleteParagraphs(doc: ManuscriptDocument, ids: Iterable<string>): ManuscriptDocument {
++  const nextBlocks = deleteParagraphBlocks(doc.blocks, ids);
++  if (nextBlocks === doc.blocks) return doc;
++  const kept = new Set(nextBlocks.map((block) => block.id));
++  const provenance = { ...doc.provenance };
++  for (const id of Object.keys(provenance)) {
++    if (!kept.has(id)) delete provenance[id];
++  }
++  return prunePoints({ ...doc, blocks: nextBlocks, provenance });
++}
++
++export async function combineParagraphs(args: {
++  doc: ManuscriptDocument;
++  ids: Iterable<string>;
++  now: string;
++  newId: () => string;
++}): Promise<ManuscriptDocument> {
++  const wanted = new Set(args.ids);
++  const selected = args.doc.blocks.filter((block) => block.type === 'paragraph' && wanted.has(block.id));
++  if (selected.length < 2) return args.doc;
++  const keep = selected[0]!;
++  let text = '';
++  const spans: ProvenanceSpan[] = [];
++  for (const part of selected) {
++    const piece = part.text ?? '';
++    const joiner = text && piece ? ' ' : '';
++    const offset = text.length + joiner.length;
++    if (joiner) text += joiner;
++    for (const span of args.doc.provenance[part.id]?.text ?? []) {
++      spans.push({ ...span, start: span.start + offset, end: span.end + offset });
++    }
++    text += piece;
++  }
++  const mergedBlocks = combineParagraphBlocks(args.doc.blocks, args.ids);
++  const sealed = await syncBlockPoints({
++    blockId: keep.id,
++    text,
++    spans,
++    points: args.doc.points,
++    evidence: null,
++    now: args.now,
++    newId: args.newId,
++  });
++  const marks = normalizeMarks(mergedBlocks.find((block) => block.id === keep.id)?.marks, text.length);
++  const blocks = mergedBlocks.map((block) => (block.id === keep.id ? { ...block, text, marks } : block));
++  const kept = new Set(blocks.map((block) => block.id));
++  const provenance = { ...args.doc.provenance };
++  for (const id of Object.keys(provenance)) {
++    if (!kept.has(id)) delete provenance[id];
++  }
++  provenance[keep.id] = { title: [], text: sealed.spans };
++  return prunePoints({
++    ...args.doc,
++    blocks,
++    provenance,
++    points: sealed.points,
++  });
++}
++
+ export function toggleFormat(
+   doc: ManuscriptDocument,
+   blockId: string,
+@@ -834,6 +954,7 @@ export function manuscriptExport(doc: ManuscriptDocument, exportedAt: string) {
+       tableRows: block.type === 'table' ? block.tableRows : undefined,
+       imageSrc: block.type === 'image' ? block.imageSrc : undefined,
+       imageAlt: block.type === 'image' ? block.imageAlt : undefined,
++      imageCaption: block.type === 'image' ? block.imageCaption : undefined,
+     })),
+   };
+ }
+diff --git a/src/hm/editor.css b/src/hm/editor.css
+index 32e4ead..53527d4 100644
+--- a/src/hm/editor.css
++++ b/src/hm/editor.css
+@@ -379,7 +379,7 @@ html[data-mode='dark'] .hm-root {
+   background: var(--bg-elev-2);
+ }.hm-root .editor-layout {
+   display: grid;
+-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
++  grid-template-columns: 11.5rem minmax(0, 1fr) minmax(220px, 280px);
+   grid-template-rows: minmax(0, 1fr);
+   gap: 12px;
+   flex: 1;
+@@ -387,11 +387,106 @@ html[data-mode='dark'] .hm-root {
+   overflow: hidden;
+   align-items: stretch;
+ }.hm-root .editor-layout.is-focus {
+-  grid-template-columns: minmax(0, 1fr);
+-  grid-template-rows: auto minmax(0, 1fr);
++  grid-template-columns: 11.5rem minmax(0, 1fr);
++  grid-template-rows: minmax(0, 1fr);
+ }.hm-root .editor-layout.is-cert-collapsed {
+-  grid-template-columns: minmax(0, 1fr) 52px;
+-}.hm-root .points, .hm-root .canvas, .hm-root .status {
++  grid-template-columns: 11.5rem minmax(0, 1fr) 52px;
++}.hm-root .toolbar-rail {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  min-height: 0;
++  overflow: auto;
++  padding: 12px 8px;
++  background: var(--bg-elev);
++  border: 1px solid var(--border);
++  border-radius: 16px;
++}.hm-root .toolbar-rail__group { display: flex; flex-direction: column; gap: 4px; }
++.hm-root .toolbar-rail__kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
++.hm-root .toolbar-rail__label {
++  font-size: 0.68rem;
++  font-weight: 650;
++  letter-spacing: 0.12em;
++  text-transform: uppercase;
++  color: var(--text-faint);
++}.hm-root .toolbar-rail button {
++  padding: 4px 6px;
++  border-radius: 8px;
++  border: 1px solid var(--border-strong);
++  background: var(--bg);
++  color: var(--text);
++  font-size: 11px;
++  cursor: pointer;
++}.hm-root .toolbar-text-btn {
++  height: 36px;
++  padding: 0 10px;
++  border-radius: 8px;
++  border: 1px solid var(--border-strong);
++  background: var(--bg-elev);
++  color: var(--text);
++  font-size: 0.78rem;
++  cursor: pointer;
++}.hm-root .toolbar-text-btn.is-active,
++.hm-root .toolbar-rail button.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--bg-elev)); }
++.hm-root .ms-insert-gap { position: relative; }
++.hm-root .manuscript.is-picking-insert .ms-insert-gap { height: 22px; cursor: pointer; }
++.hm-root .manuscript.is-picking-insert .ms-insert-gap:hover::before,
++.hm-root .ms-insert-gap.is-insert-selected::before,
++.hm-root .manuscript.is-dragging .ms-insert-gap.is-drop-over::before {
++  content: attr(data-insert-label);
++  position: absolute;
++  left: 50%;
++  top: 50%;
++  transform: translate(-50%, -50%);
++  z-index: 2;
++  padding: 2px 10px;
++  border-radius: 999px;
++  background: var(--accent);
++  color: var(--on-accent, #fff);
++  font-size: 11px;
++  font-weight: 700;
++  white-space: nowrap;
++  pointer-events: none;
++}.hm-root .manuscript.is-dragging .ms-insert-gap.is-drop-over::before {
++  content: attr(data-drop-label);
++  background: var(--bg-elev);
++  color: var(--text);
++  border: 1px solid var(--accent);
++}.hm-root .ms-select-banner {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px 12px;
++  align-items: center;
++  justify-content: space-between;
++  margin-bottom: 10px;
++  padding: 8px 10px;
++  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
++  border-radius: 10px;
++}.hm-root .ms-chapter-remove { position: relative; display: inline-flex; }
++.hm-root .ms-chapter-remove.is-open,
++.hm-root .ms-block:has(.ms-chapter-remove.is-open) { z-index: 30; }
++.hm-root .ms-chapter-remove-flyout {
++  position: absolute;
++  right: 0;
++  top: calc(100% - 2px);
++  z-index: 30;
++  display: flex;
++  flex-direction: column;
++  min-width: 12rem;
++  padding: 4px;
++  background: var(--bg-elev);
++  border: 1px solid var(--border-strong);
++  border-radius: 10px;
++}.hm-root .ms-table-picker {
++  position: fixed;
++  z-index: 40;
++  padding: 8px;
++  background: var(--bg-elev);
++  border: 1px solid var(--border-strong);
++  border-radius: 12px;
++}.hm-root .ms-table-picker-grid { display: grid; gap: 2px; }
++.hm-root .ms-table-picker-cell { width: 14px; height: 14px; padding: 0; }
++.hm-root .ms-table-picker-cell.is-on { background: color-mix(in srgb, var(--accent) 55%, var(--bg)); }.hm-root .points, .hm-root .canvas, .hm-root .status {
+   background: var(--bg-elev);
+   border: 1px solid var(--border);
+   border-radius: 16px;
+@@ -1147,11 +1242,19 @@ html[data-mode='dark'] .hm-root {
+   .hm-root .editor-layout.is-cert-collapsed,
+   .hm-root .editor-layout.is-focus {
+     grid-template-columns: minmax(0, 1fr);
+-    grid-template-rows: minmax(0, 1fr) auto;
++    grid-template-rows: auto minmax(0, 1fr) auto;
+     min-height: 0;
+     overflow: hidden;
+     height: 100%;
+   }
++  .hm-root .toolbar-rail {
++    flex-direction: row;
++    flex-wrap: wrap;
++    max-height: none;
++  }
++  .hm-root .toolbar-rail__group { flex: 1 1 8rem; }
++  .hm-root .manuscript-surface.canvas { grid-row: 2; }
++  .hm-root .points { grid-row: 3; }
+   .hm-root .manuscript-surface.canvas {
+     overflow: hidden;
+     min-height: 0;
+diff --git a/src/hm/exportManuscript.ts b/src/hm/exportManuscript.ts
+index a83b038..b056f78 100644
+--- a/src/hm/exportManuscript.ts
++++ b/src/hm/exportManuscript.ts
+@@ -135,6 +135,7 @@ function bodyMarkdown(doc: ManuscriptDocument): string {
+         if (block.imageSrc) {
+           lines.push(`![${block.imageAlt?.trim() || 'image'}](${block.imageSrc})`, '');
+         }
++        if (block.imageCaption?.trim()) lines.push(block.imageCaption.trim(), '');
+         break;
+     }
+   }
+@@ -186,6 +187,7 @@ function bodyPlain(doc: ManuscriptDocument): string {
+       case 'image':
+         if (block.imageAlt?.trim()) lines.push(`[Image: ${block.imageAlt.trim()}]`, '');
+         else if (block.imageSrc) lines.push('[Image]', '');
++        if (block.imageCaption?.trim()) lines.push(block.imageCaption.trim(), '');
+         break;
+     }
+   }
+@@ -240,6 +242,7 @@ function bodyRtfInner(doc: ManuscriptDocument, chapterSplit: boolean): string {
+       }
+       case 'image':
+         if (block.imageAlt?.trim()) parts.push(`\\pard\\i ${rtfEscape(`[Image: ${block.imageAlt.trim()}]`)}\\i0\\par\\pard\\par`);
++        if (block.imageCaption?.trim()) parts.push(`\\pard ${rtfEscape(block.imageCaption.trim())}\\par\\pard\\par`);
+         break;
+     }
+   }
+@@ -386,6 +389,9 @@ function bodyDocxParagraphsFixed(doc: ManuscriptDocument, type: ManuscriptTypogr
+         if (block.imageAlt?.trim()) {
+           children.push(new Paragraph({ children: [docxRun(type, `[Image: ${block.imageAlt.trim()}]`, { italics: true })] }));
+         }
++        if (block.imageCaption?.trim()) {
++          children.push(new Paragraph({ children: [docxRun(type, block.imageCaption.trim())] }));
++        }
+         break;
+     }
+   }
+@@ -456,6 +462,9 @@ function bodyOdt(doc: ManuscriptDocument): string {
+         if (block.imageAlt?.trim()) {
+           parts.push(`<text:p text:style-name="TextBody">${xmlEscape(`[Image: ${block.imageAlt.trim()}]`)}</text:p>`);
+         }
++        if (block.imageCaption?.trim()) {
++          parts.push(`<text:p text:style-name="TextBody">${xmlEscape(block.imageCaption.trim())}</text:p>`);
++        }
+         break;
+     }
+   }
+diff --git a/src/hm/manuscript.ts b/src/hm/manuscript.ts
+index 767963f..d734a60 100644
+--- a/src/hm/manuscript.ts
++++ b/src/hm/manuscript.ts
+@@ -4,7 +4,7 @@
+  * Dragging a heading moves the heading plus the body under it.
+  */
+ 
+-import type { BlockType, DividerStyle, ManuscriptBlock } from './types';
++import type { BlockType, DividerStyle, InlineMark, ManuscriptBlock } from './types';
+ 
+ const STRUCTURE_RANK: Record<BlockType, number> = {
+   chapter: 0,
+@@ -140,7 +140,7 @@ export function dragPreviewLabel(block: ManuscriptBlock, chapterNo?: number): st
+   if (block.type === 'scene') return block.title.trim() || 'Scene';
+   if (block.type === 'section') return block.title.trim() || 'Section';
+   if (block.type === 'table') return 'Table';
+-  if (block.type === 'image') return block.imageAlt?.trim() || 'Image';
++  if (block.type === 'image') return block.imageCaption?.trim() || block.imageAlt?.trim() || 'Image';
+   if (block.type === 'pageBreak') return 'Page break';
+   if (block.type === 'divider') return block.title.trim() || 'Scene break';
+   if (block.type === 'blockquote') {
+@@ -246,3 +246,138 @@ export function matchIndexAtOrAfter(
+     return match.start >= anchor.at;
+   });
+ }
++
++export const TABLE_MIN_ROWS = 2;
++export const TABLE_MAX_ROWS = 4;
++export const TABLE_MIN_COLS = 2;
++export const TABLE_MAX_COLS = 8;
++
++function clampTableDim(n: number, min: number, max: number): number {
++  if (!Number.isFinite(n)) return min;
++  return Math.max(min, Math.min(max, Math.floor(n)));
++}
++
++/** Empty rectangular table. Dimensions clamp to 2×2 … 4×8. */
++export function emptyTableRows(rows: number, cols: number): string[][] {
++  const r = clampTableDim(rows, TABLE_MIN_ROWS, TABLE_MAX_ROWS);
++  const c = clampTableDim(cols, TABLE_MIN_COLS, TABLE_MAX_COLS);
++  return Array.from({ length: r }, () => Array.from({ length: c }, () => ''));
++}
++
++export type StructureHeadingKind = 'chapter' | 'scene' | 'section' | 'paragraph';
++
++export function isHeadingType(type: string | undefined): type is 'chapter' | 'scene' | 'section' {
++  return type === 'chapter' || type === 'scene' || type === 'section';
++}
++
++export function headingLabels(kind: 'chapter' | 'scene' | 'section'): {
++  unwrap: string;
++  delete: string;
++  aria: string;
++  confirm: string;
++} {
++  return {
++    unwrap: `Remove ${kind} header`,
++    delete: `Delete ${kind}`,
++    aria: `${kind.charAt(0).toUpperCase()}${kind.slice(1)} remove options`,
++    confirm: `Delete this ${kind} and all of its content?`,
++  };
++}
++
++export function insertGapHoverLabel(): string {
++  return 'Click to insert dictation here';
++}
++
++export function insertGapSelectedLabel(): string {
++  return 'Dictation inserts here';
++}
++
++export function dropPlaceLabel(block: ManuscriptBlock | undefined): string {
++  if (!block) return 'Drop here';
++  if (block.type === 'chapter') return 'Drop chapter here';
++  if (block.type === 'scene') return 'Drop scene here';
++  if (block.type === 'section') return 'Drop section here';
++  if (block.type === 'image') return 'Drop image here';
++  if (block.type === 'table') return 'Drop table here';
++  return 'Drop paragraph here';
++}
++
++/** Paragraph ids from `anchorId` through `toId`, in manuscript order. */
++export function paragraphRangeIds(
++  paragraphIds: readonly string[],
++  anchorId: string | null,
++  toId: string,
++): string[] {
++  const to = paragraphIds.indexOf(toId);
++  if (to < 0) return [];
++  const from = anchorId ? paragraphIds.indexOf(anchorId) : -1;
++  if (from < 0) return [toId];
++  const start = Math.min(from, to);
++  const end = Math.max(from, to);
++  return paragraphIds.slice(start, end + 1);
++}
++
++/** Remove a heading and the body under it, through the next block of the same rank or higher. */
++export function deleteMovableRange(blocks: ManuscriptBlock[], blockId: string): ManuscriptBlock[] {
++  const index = blocks.findIndex((block) => block.id === blockId);
++  if (!isHeadingType(blocks[index]?.type)) return blocks;
++  const range = movableRange(blocks, index);
++  if (!range) return blocks;
++  return [...blocks.slice(0, range.start), ...blocks.slice(range.end)];
++}
++
++/**
++ * Turn the focused block into a chapter, scene, section, or body paragraph.
++ * Images and tables stay as they are. The visible words move with the block.
++ */
++export function setBlockKind(
++  blocks: ManuscriptBlock[],
++  blockId: string,
++  kind: StructureHeadingKind,
++): ManuscriptBlock[] {
++  return blocks.map((block) => {
++    if (block.id !== blockId) return block;
++    if (block.type === 'image' || block.type === 'table') return block;
++    if (block.type === kind) return block;
++    if (kind === 'paragraph') {
++      const text = isHeadingType(block.type) ? block.title : block.text;
++      return { ...block, type: 'paragraph', title: '', text, marks: isHeadingType(block.type) ? [] : block.marks };
++    }
++    const title = isHeadingType(block.type) ? block.title : block.text;
++    return { ...block, type: kind, title, text: '', marks: [] };
++  });
++}
++
++/** Remove selected paragraphs. Headings and other block types stay. */
++export function deleteParagraphs(blocks: ManuscriptBlock[], ids: Iterable<string>): ManuscriptBlock[] {
++  const drop = new Set(ids);
++  const next = blocks.filter((block) => !(block.type === 'paragraph' && drop.has(block.id)));
++  return next.length === blocks.length ? blocks : next;
++}
++
++/**
++ * Merge selected paragraphs into the topmost one, in manuscript order.
++ * Click order is ignored. Non-paragraph ids are skipped.
++ */
++export function combineParagraphs(blocks: ManuscriptBlock[], ids: Iterable<string>): ManuscriptBlock[] {
++  const wanted = new Set(ids);
++  const selected = blocks.filter((block) => block.type === 'paragraph' && wanted.has(block.id));
++  if (selected.length < 2) return blocks;
++  const keepId = selected[0]!.id;
++  let text = '';
++  const marks: InlineMark[] = [];
++  for (const part of selected) {
++    const piece = part.text ?? '';
++    const joiner = text && piece ? ' ' : '';
++    const offset = text.length + joiner.length;
++    if (joiner) text += joiner;
++    for (const mark of part.marks ?? []) {
++      marks.push({ kind: mark.kind, start: mark.start + offset, end: mark.end + offset });
++    }
++    text += piece;
++  }
++  const merged: ManuscriptBlock = { ...selected[0]!, text, marks };
++  const drop = new Set(selected.slice(1).map((block) => block.id));
++  return blocks.map((block) => (block.id === keepId ? merged : block)).filter((block) => !drop.has(block.id));
++}
++
+diff --git a/src/hm/manuscriptStructure.test.ts b/src/hm/manuscriptStructure.test.ts
+new file mode 100644
+index 0000000..9df9b94
+--- /dev/null
++++ b/src/hm/manuscriptStructure.test.ts
+@@ -0,0 +1,139 @@
++import assert from 'node:assert/strict';
++import { test } from 'vitest';
++import {
++  clearBlockFormatting,
++  combineParagraphs,
++  deleteHeadingRange,
++  deleteParagraphs,
++  emptyDocument,
++  insertStructure,
++  setBlockKind,
++} from './document';
++import {
++  combineParagraphs as combineBlocks,
++  deleteMovableRange,
++  deleteParagraphs as deleteBlocks,
++  dropPlaceLabel,
++  emptyBlock,
++  emptyTableRows,
++  headingLabels,
++  insertGapHoverLabel,
++  insertGapSelectedLabel,
++  paragraphRangeIds,
++  setBlockKind as setKindBlocks,
++} from './manuscript';
++import { sequenceIds } from './uid';
++import type { ManuscriptBlock } from './types';
++
++function paras(): ManuscriptBlock[] {
++  return [
++    { ...emptyBlock('chapter', 'c1'), title: 'One' },
++    { ...emptyBlock('paragraph', 'p1'), text: 'The wind howled.' },
++    { ...emptyBlock('paragraph', 'p2'), text: 'Rain followed.', marks: [{ kind: 'italic', start: 0, end: 4 }] },
++    { ...emptyBlock('scene', 's1'), title: 'Later' },
++    { ...emptyBlock('paragraph', 'p3'), text: 'Aelith waited.' },
++  ];
++}
++
++test('paragraph range follows manuscript order', () => {
++  assert.deepEqual(paragraphRangeIds(['p1', 'p2', 'p3'], 'p1', 'p3'), ['p1', 'p2', 'p3']);
++  assert.deepEqual(paragraphRangeIds(['p1', 'p2', 'p3'], 'p3', 'p1'), ['p1', 'p2', 'p3']);
++  assert.deepEqual(paragraphRangeIds(['p1', 'p2', 'p3'], null, 'p2'), ['p2']);
++});
++
++test('combine joins selected paragraphs in document order and shifts marks', () => {
++  const next = combineBlocks(paras(), ['p3', 'p1']);
++  assert.deepEqual(next.map((block) => block.id), ['c1', 'p1', 'p2', 's1']);
++  assert.equal(next[1]!.text, 'The wind howled. Aelith waited.');
++  const marked = combineBlocks(paras(), ['p1', 'p2']);
++  assert.equal(marked[1]!.text, 'The wind howled. Rain followed.');
++  assert.deepEqual(marked[1]!.marks, [{ kind: 'italic', start: 17, end: 21 }]);
++  assert.equal(combineBlocks(paras(), ['p2']).length, paras().length);
++  assert.equal(combineBlocks(paras(), ['c1', 'p1']).length, paras().length);
++});
++
++test('delete paragraphs leaves headings', () => {
++  const next = deleteBlocks(paras(), ['p3', 'p1', 'c1']);
++  assert.deepEqual(next.map((block) => block.id), ['c1', 'p2', 's1']);
++});
++
++test('set block kind moves the words between a heading and a body paragraph', () => {
++  const scene = setKindBlocks(paras(), 'p1', 'scene');
++  assert.equal(scene[1]!.type, 'scene');
++  assert.equal(scene[1]!.title, 'The wind howled.');
++  assert.equal(scene[1]!.text, '');
++  const body = setKindBlocks(paras(), 'c1', 'paragraph');
++  assert.equal(body[0]!.type, 'paragraph');
++  assert.equal(body[0]!.text, 'One');
++});
++
++test('delete movable range removes a chapter and the body under it', () => {
++  const next = deleteMovableRange(paras(), 'c1');
++  assert.deepEqual(next.map((block) => block.id), []);
++  const sceneOnly = deleteMovableRange(paras(), 's1');
++  assert.deepEqual(sceneOnly.map((block) => block.id), ['c1', 'p1', 'p2']);
++});
++
++test('table size clamps to 2×2 through 4×8', () => {
++  assert.equal(emptyTableRows(1, 1).length, 2);
++  assert.equal(emptyTableRows(1, 1)[0]!.length, 2);
++  assert.equal(emptyTableRows(10, 20).length, 4);
++  assert.equal(emptyTableRows(10, 20)[0]!.length, 8);
++  assert.equal(emptyTableRows(3, 5).length, 3);
++  assert.equal(emptyTableRows(3, 5)[0]!.length, 5);
++});
++
++test('drop and insertion labels name the landing spot', () => {
++  assert.equal(dropPlaceLabel(emptyBlock('chapter', 'c')), 'Drop chapter here');
++  assert.equal(dropPlaceLabel(emptyBlock('scene', 's')), 'Drop scene here');
++  assert.equal(dropPlaceLabel(emptyBlock('section', 'n')), 'Drop section here');
++  assert.equal(dropPlaceLabel(emptyBlock('paragraph', 'p')), 'Drop paragraph here');
++  assert.equal(dropPlaceLabel(emptyBlock('image', 'i')), 'Drop image here');
++  assert.equal(dropPlaceLabel(emptyBlock('table', 't')), 'Drop table here');
++  assert.equal(insertGapHoverLabel(), 'Click to insert dictation here');
++  assert.equal(insertGapSelectedLabel(), 'Dictation inserts here');
++  assert.equal(headingLabels('scene').confirm, 'Delete this scene and all of its content?');
++  assert.equal(headingLabels('chapter').unwrap, 'Remove chapter header');
++});
++
++test('document edits keep provenance with a kind change and a paragraph merge', async () => {
++  const ids = sequenceIds('id');
++  let doc = insertStructure(emptyDocument('book'), 'paragraph', 0, ids());
++  const first = doc.blocks[0]!.id;
++  doc = {
++    ...doc,
++    blocks: doc.blocks.map((block) => (block.id === first ? { ...block, text: 'Alpha' } : block)),
++    provenance: { ...doc.provenance, [first]: { title: [], text: [{ id: 's1', start: 0, end: 5, origin: 'other' }] } },
++  };
++  doc = insertStructure(doc, 'paragraph', 1, ids());
++  const second = doc.blocks[1]!.id;
++  doc = {
++    ...doc,
++    blocks: doc.blocks.map((block) => (block.id === second ? { ...block, text: 'Beta', marks: [{ kind: 'strike' as const, start: 0, end: 4 }] } : block)),
++  };
++  doc = await combineParagraphs({ doc, ids: [second, first], now: '2026-10-24T00:00:00.000Z', newId: ids });
++  assert.equal(doc.blocks.length, 1);
++  assert.equal(doc.blocks[0]!.text, 'Alpha Beta');
++  assert.deepEqual(doc.blocks[0]!.marks, [{ kind: 'strike', start: 6, end: 10 }]);
++  assert.equal(doc.provenance[doc.blocks[0]!.id]?.text[0]?.start, 0);
++
++  doc = setBlockKind(doc, doc.blocks[0]!.id, 'scene');
++  assert.equal(doc.blocks[0]!.type, 'scene');
++  assert.equal(doc.blocks[0]!.title, 'Alpha Beta');
++  assert.equal(doc.provenance[doc.blocks[0]!.id]?.title[0]?.end, 10);
++  assert.deepEqual(doc.provenance[doc.blocks[0]!.id]?.text, []);
++
++  doc = clearBlockFormatting({
++    ...doc,
++    blocks: [{ ...emptyBlock('paragraph', 'p'), text: 'Struck', marks: [{ kind: 'bold', start: 0, end: 6 }] }],
++  }, 'p', { start: 0, end: 0 });
++  assert.deepEqual(doc.blocks[0]!.marks, []);
++
++  const headed = insertStructure(insertStructure(emptyDocument('book'), 'chapter', 0, 'c'), 'paragraph', 1, 'p');
++  const removed = deleteHeadingRange({
++    ...headed,
++    blocks: headed.blocks.map((block) => block.id === 'p' ? { ...block, text: 'Body' } : { ...block, title: 'Title' }),
++  }, 'c');
++  assert.equal(removed.blocks.length, 0);
++  assert.equal(deleteParagraphs(headed, ['p']).blocks.map((block) => block.id).join(','), 'c');
++});
+diff --git a/src/hm/types.ts b/src/hm/types.ts
+index c332f46..7ba5092 100644
+--- a/src/hm/types.ts
++++ b/src/hm/types.ts
+@@ -42,6 +42,8 @@ export interface ManuscriptBlock {
+   /** Data URL or object URL when type is `image`. */
+   imageSrc?: string;
+   imageAlt?: string;
++  /** Visible caption, separate from alt text. */
++  imageCaption?: string;
+   /** SpeakFiction media-store id when the picture is not an inline data URL. */
+   mediaId?: string;
+   imageMime?: string;
+diff --git a/src/views/DictationView.tsx b/src/views/DictationView.tsx
+index 79a7e13..955c962 100644
+--- a/src/views/DictationView.tsx
++++ b/src/views/DictationView.tsx
+@@ -454,6 +454,18 @@ export function DictationView({
+     <div className="dictate-ms-scroll" ref={scrollRef}>
+       <CertifiedManuscript
+         book={book}
++        canInsertDictation={canInsertDictation}
++        insertAt={place?.atIndex ?? null}
++        onInsertDictation={(target) => {
++          promoteToManuscript(
++            target.atIndex != null
++              ? { atIndex: target.atIndex }
++              : destFromPlace(book.manuscript.blocks, {
++                  blockId: target.blockId,
++                  selectionStart: target.splitOffset,
++                }),
++          );
++        }}
+         onPlaceChange={(next) => {
+           const scrollTop = manuscriptBodyScroller(scrollRef.current)?.scrollTop ?? next.scrollTop;
+           setManuscriptPlace(book.id, { ...next, scrollTop });
+-- 
+2.43.0
+

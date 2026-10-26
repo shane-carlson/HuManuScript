@@ -5,7 +5,7 @@
  */
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { writeAppVersion } = require('./write-app-version.cjs');
+const { formatPackLabel, writeAppVersion } = require('./write-app-version.cjs');
 
 const root = path.join(__dirname, '..');
 
@@ -44,7 +44,18 @@ function run(command, args, extraEnv = {}) {
 }
 
 const appVersion = writeAppVersion();
-console.log(`Baking app version ${appVersion.version} (${appVersion.build}) into the DMG.`);
+const bakedLabel = formatPackLabel(appVersion);
+console.log(`Baking app version ${bakedLabel} into the DMG.`);
+
+const wantPublish = env.HM_PUBLISH === 'always';
+if (wantPublish && (!canSign || !canNotarize)) {
+  console.error('Refusing to publish without Apple signing and notarization.');
+  process.exit(1);
+}
+const publish = wantPublish ? 'always' : 'never';
+if (publish === 'always') {
+  console.log('Publishing the signed build to a GitHub Release for auto-update.');
+}
 
 run('npm', ['run', 'build:electron']);
 
@@ -59,10 +70,11 @@ for (const arch of arches) {
     '--config',
     path.join(root, 'electron-builder.config.cjs'),
     '--publish',
-    'never',
+    publish,
     ...extra.filter((a) => a !== '--intel' && a !== '--x64' && a !== '--all'),
   ];
   builderArgs.push(canNotarize ? '--config.mac.notarize=true' : '--config.mac.notarize=false');
+  console.log(`DMG filename: HuManuScript-${appVersion.version}-${arch}.dmg`);
   run(builder, builderArgs, archEnv);
 }
 

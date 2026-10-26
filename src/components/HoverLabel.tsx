@@ -42,6 +42,7 @@ export function HoverLabel() {
   const labelRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [tip, setTip] = useState('');
 
   const hide = useCallback(() => {
     anchorRef.current = null;
@@ -58,9 +59,21 @@ export function HoverLabel() {
   }, []);
 
   useLayoutEffect(() => {
+    if (!anchor) {
+      setTip('');
+      return;
+    }
+    const read = () => setTip(labelText(anchor));
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(anchor, { attributes: true, attributeFilter: ['data-tooltip'] });
+    return () => observer.disconnect();
+  }, [anchor]);
+
+  useLayoutEffect(() => {
     if (!anchor) return;
     place(anchor);
-  }, [anchor, place]);
+  }, [anchor, tip, place]);
 
   useEffect(() => {
     const show = (el: HTMLElement) => {
@@ -113,9 +126,8 @@ export function HoverLabel() {
     };
   }, [hide, place]);
 
-  if (!anchor) return null;
-  const text = labelText(anchor);
-  if (!text) return null;
+  if (!anchor || !tip) return null;
+  const text = tip;
   return createPortal(
     <div
       ref={labelRef}

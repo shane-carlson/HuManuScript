@@ -8,11 +8,15 @@ export function NotesRail({
   doc,
   activeBlockId,
   saveError,
+  collapsed = false,
+  onToggleCollapsed,
   onChange,
 }: {
   doc: ManuscriptDocument;
   activeBlockId: string | null;
   saveError?: string | null;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onChange: (doc: ManuscriptDocument) => void;
 }) {
   const [tab, setTab] = useState<'characters' | 'scene'>('characters');
@@ -38,10 +42,23 @@ export function NotesRail({
   };
 
   return (
-    <aside className="notes-rail" aria-label="Character and scene notes" data-notes-phase={phase}>
+    <aside className={`notes-rail${collapsed ? ' is-collapsed' : ''}`} aria-label="Character and scene notes" data-notes-phase={phase}>
       <div className="notes-rail__head">
-        <p className="eyebrow">Beside the page</p>
-        <h2>Notes</h2>
+        <div className="notes-rail__title">
+          <p className="eyebrow">Beside the page</p>
+          <h2>Notes</h2>
+        </div>
+        <button
+          type="button"
+          className="notes-rail__toggle"
+          aria-expanded={!collapsed}
+          aria-controls="beside-the-page-notes"
+          aria-label={collapsed ? 'Open notes' : 'Close notes'}
+          data-tooltip={collapsed ? 'Open notes' : 'Close notes'}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <span className="notes-rail__mark">Notes</span> : <span className="notes-rail__chevron" aria-hidden="true">›</span>}
+        </button>
         <div className="notes-rail__tabs" role="tablist" aria-label="Notes">
           <button type="button" role="tab" aria-selected={tab === 'characters'} onClick={() => setTab('characters')}>
             Characters
@@ -51,6 +68,7 @@ export function NotesRail({
           </button>
         </div>
       </div>
+      <div id="beside-the-page-notes" hidden={collapsed}>
       {phase === 'loading' && <p className="notes-rail__status">Opening notes…</p>}
       {phase === 'error' && (
         <div className="notes-rail__status notes-rail__status--error" role="alert">
@@ -121,6 +139,7 @@ export function NotesRail({
           )}
         </div>
       )}
+      </div>
     </aside>
   );
 }

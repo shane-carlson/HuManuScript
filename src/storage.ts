@@ -1,6 +1,6 @@
 import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from './core/document.ts';
 import type { Book, Library, Series } from './core/library.ts';
-import type { CertificationPoint, MoveRecord, ProvenanceSpan } from './core/certification.ts';
+import { readGrammarUsage, type CertificationPoint, type MoveRecord, type ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 import { readBookNotes } from './core/notes.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
@@ -11,18 +11,23 @@ export const THEME_KEY = 'humanuscript.theme';
 export const EDITOR_VIEW_KEY = 'humanuscript.editorView';
 export const SIDEBAR_COLLAPSED_KEY = 'humanuscript.sidebarCollapsed';
 export const CERTIFICATION_COLLAPSED_KEY = 'humanuscript.certificationCollapsed';
+export const NOTES_COLLAPSED_KEY = 'humanuscript.notesCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
-export type EditorViewMode = 'manuscript' | 'highlights' | 'preview';
+export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview';
 export type WorkspaceTab = 'manuscript' | 'export' | 'history';
+
+/** A new session opens on the blank raw-write page. A choice made in this session stays. */
+export function editorViewFromStored(value: string | null | undefined): EditorViewMode {
+  if (value === 'manuscript' || value === 'highlights' || value === 'preview' || value === 'raw') return value;
+  return 'raw';
+}
 
 export function loadEditorView(): EditorViewMode {
   try {
-    const value = sessionStorage.getItem(EDITOR_VIEW_KEY);
-    if (value === 'highlights' || value === 'preview') return value;
-    return 'manuscript';
+    return editorViewFromStored(sessionStorage.getItem(EDITOR_VIEW_KEY));
   } catch {
-    return 'manuscript';
+    return 'raw';
   }
 }
 
@@ -79,6 +84,22 @@ export function loadCertificationCollapsed(): boolean {
 export function saveCertificationCollapsed(collapsed: boolean): void {
   try {
     sessionStorage.setItem(CERTIFICATION_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadNotesCollapsed(): boolean {
+  try {
+    return sessionStorage.getItem(NOTES_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveNotesCollapsed(collapsed: boolean): void {
+  try {
+    sessionStorage.setItem(NOTES_COLLAPSED_KEY, collapsed ? '1' : '0');
   } catch {
     /* ignore */
   }
@@ -147,6 +168,16 @@ function isPoint(value: unknown): value is CertificationPoint {
   );
 }
 
+function sanitizePoint(point: CertificationPoint): CertificationPoint {
+  if (point.grammar == null) return point;
+  const grammar = readGrammarUsage(point.grammar);
+  if (!grammar) {
+    const { grammar: _removed, ...rest } = point;
+    return rest;
+  }
+  return { ...point, grammar };
+}
+
 function isMove(value: unknown): value is MoveRecord {
   if (!value || typeof value !== 'object') return false;
   const move = value as MoveRecord;
@@ -181,7 +212,7 @@ function parseDocument(parsed: StoredManuscript): ManuscriptDocument | null {
       return next;
     }),
     provenance,
-    points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint) : [],
+    points: Array.isArray(parsed.points) ? parsed.points.filter(isPoint).map(sanitizePoint) : [],
     moves: Array.isArray(parsed.moves) ? parsed.moves.filter(isMove) : [],
     ...(isManuscriptFontId(parsed.fontFamily) ? { fontFamily: parsed.fontFamily } : {}),
     ...(isManuscriptFontSize(parsed.fontSize) ? { fontSize: parsed.fontSize } : {}),

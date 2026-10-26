@@ -1,6 +1,6 @@
 # Cloud agent — HuManuScript
 
-## GitHub Actions (signed Mac DMG)
+## GitHub Actions (signed Mac DMG and Windows installer)
 
 `git push` / `git pull` use Cursor’s GitHub App token. **`gh` and the Actions API use `GH_TOKEN`** (or `GITHUB_TOKEN`) from **Cloud Agent environment secrets**.
 
@@ -14,7 +14,7 @@
    npm run dispatch:pack-mac
    ```
 
-   Or after a push to `main`, the workflow also runs automatically (see `.github/workflows/pack-mac.yml`).
+   Or after a push to `main`, the workflow also runs automatically (see `.github/workflows/pack-mac.yml`). That same workflow packs the Windows installer.
 
 Optional env vars:
 
