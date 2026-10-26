@@ -24,6 +24,15 @@ export function isSealedOrigin(origin: InsertionOrigin | null | undefined): orig
   return origin === 'keyboard' || origin === 'dictation';
 }
 
+/** The keyboard or dictation span that fully contains [start, end), if there is one. */
+export function sealedSpanCovering(spans: ProvenanceSpan[], start: number, end: number): ProvenanceSpan | null {
+  return (
+    spans.find(
+      (span) => span.start <= start && span.end >= end && isSealedOrigin(span.origin) && Boolean(span.certificationId),
+    ) ?? null
+  );
+}
+
 export interface ProvenanceSpan {
   id: string;
   start: number;
@@ -63,6 +72,110 @@ export interface CertificationPoint {
   lineage?: string;
   /** Computer name (Electron) or best-effort platform label (browser); omitted when unknown. */
   typingDevice?: string;
+  /**
+   * Present only after the writer accepts a Harper suggestion inside this seal.
+   * Harper is a local rule checker. This record cannot say a generative model was used.
+   */
+  grammar?: GrammarUsage;
+}
+
+/** Shown on the seal and the certification page. The wording is fixed. */
+export const GRAMMAR_CHECK_COMMENT = 'Grammar Checked without Generative AI Usage via Harper';
+
+export type GrammarDialect = 'American' | 'British' | 'Canadian' | 'Australian' | 'Indian';
+export type GrammarSuggestionKind = 'replace' | 'remove' | 'insert-after';
+
+export interface GrammarCheck {
+  id: string;
+  /** When the writer accepted the suggestion. */
+  at: string;
+  engine: 'harper';
+  engineVersion: string;
+  /** Literal false. Harper does not generate prose. */
+  generative: false;
+  dialect: GrammarDialect;
+  lintKind: string;
+  message: string;
+  suggestion: GrammarSuggestionKind;
+  before: string;
+  after: string;
+  beforeHash: string;
+  afterHash: string;
+  /**
+   * Where `after` sits in this seal's current text.
+   * Absent once a later edit touches those letters. The check itself stays.
+   */
+  range?: { start: number; end: number };
+}
+
+export interface GrammarUsage {
+  schema: 1;
+  used: true;
+  engine: 'harper';
+  generative: false;
+  comment: typeof GRAMMAR_CHECK_COMMENT;
+  checks: GrammarCheck[];
+}
+
+const GRAMMAR_DIALECTS = new Set<GrammarDialect>(['American', 'British', 'Canadian', 'Australian', 'Indian']);
+const GRAMMAR_SUGGESTIONS = new Set<GrammarSuggestionKind>(['replace', 'remove', 'insert-after']);
+
+/** Keep a saved grammar record only when it still matches this seal. */
+export function readGrammarUsage(value: unknown): GrammarUsage | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const usage = value as GrammarUsage;
+  if (usage.schema !== 1 || usage.used !== true || usage.engine !== 'harper' || usage.generative !== false) return undefined;
+  if (usage.comment !== GRAMMAR_CHECK_COMMENT || !Array.isArray(usage.checks)) return undefined;
+  const checks: GrammarCheck[] = [];
+  for (const item of usage.checks) {
+    if (!item || typeof item !== 'object') return undefined;
+    const check = item as GrammarCheck;
+    if (
+      typeof check.id !== 'string' ||
+      typeof check.at !== 'string' ||
+      check.engine !== 'harper' ||
+      typeof check.engineVersion !== 'string' ||
+      check.generative !== false ||
+      !GRAMMAR_DIALECTS.has(check.dialect) ||
+      !GRAMMAR_SUGGESTIONS.has(check.suggestion) ||
+      typeof check.lintKind !== 'string' ||
+      typeof check.message !== 'string' ||
+      typeof check.before !== 'string' ||
+      typeof check.after !== 'string' ||
+      typeof check.beforeHash !== 'string' ||
+      typeof check.afterHash !== 'string'
+    ) {
+      return undefined;
+    }
+    const next: GrammarCheck = {
+      id: check.id,
+      at: check.at,
+      engine: 'harper',
+      engineVersion: check.engineVersion,
+      generative: false,
+      dialect: check.dialect,
+      lintKind: check.lintKind,
+      message: check.message,
+      suggestion: check.suggestion,
+      before: check.before,
+      after: check.after,
+      beforeHash: check.beforeHash,
+      afterHash: check.afterHash,
+    };
+    if (check.range) {
+      if (typeof check.range.start !== 'number' || typeof check.range.end !== 'number') return undefined;
+      next.range = { start: check.range.start, end: check.range.end };
+    }
+    checks.push(next);
+  }
+  return {
+    schema: 1,
+    used: true,
+    engine: 'harper',
+    generative: false,
+    comment: GRAMMAR_CHECK_COMMENT,
+    checks,
+  };
 }
 
 export interface MoveRecord {
@@ -442,6 +555,119 @@ function edgeEdit(previous: string, next: string): boolean {
   return next.startsWith(previous) || previous.startsWith(next) || next.endsWith(previous) || previous.endsWith(next);
 }
 
+function withoutGrammarRange(check: GrammarCheck): GrammarCheck {
+  if (!check.range) return check;
+  const { range: _range, ...rest } = check;
+  return rest;
+}
+
+/**
+ * Move grammar flags with the letters they describe.
+ * A flag that the edit overwrites loses its range. The check record stays.
+ * Ranges are offsets into the seal's own text.
+ */
+export function retargetGrammar(args: {
+  grammar: GrammarUsage;
+  oldSealText: string;
+  newSealText: string;
+  newSpanStart: number;
+  textEdit?: { start: number; end: number; insertLength: number };
+}): GrammarUsage {
+  if (args.oldSealText === args.newSealText) return args.grammar;
+  const textEdit = args.textEdit;
+  const checks = args.grammar.checks.map((check) => {
+    if (!check.range || !textEdit) return withoutGrammarRange(check);
+    const next = mapGrammarRange({
+      range: check.range,
+      newSpanStart: args.newSpanStart,
+      newSealText: args.newSealText,
+      textEdit,
+    });
+    if (!next || args.newSealText.slice(next.start, next.end) !== check.after) return withoutGrammarRange(check);
+    return { ...check, range: next };
+  });
+  return { ...args.grammar, checks };
+}
+
+function mapGrammarRange(args: {
+  range: { start: number; end: number };
+  newSpanStart: number;
+  newSealText: string;
+  textEdit: { start: number; end: number; insertLength: number };
+}): { start: number; end: number } | null {
+  const { textEdit } = args;
+  const removed = textEdit.end - textEdit.start;
+  const delta = textEdit.insertLength - removed;
+  const newEditStart = textEdit.start;
+  const newEditEnd = textEdit.start + textEdit.insertLength;
+  const newSpanEnd = args.newSpanStart + args.newSealText.length;
+  let oldSpanStart: number;
+  if (newSpanEnd <= newEditStart) oldSpanStart = args.newSpanStart;
+  else if (args.newSpanStart >= newEditEnd) oldSpanStart = args.newSpanStart - delta;
+  else if (args.newSpanStart <= newEditStart) oldSpanStart = args.newSpanStart;
+  else oldSpanStart = textEdit.start;
+
+  const mapPoint = (offsetInOldSeal: number): number | null => {
+    const pos = oldSpanStart + offsetInOldSeal;
+    if (pos < textEdit.start) return pos;
+    if (pos >= textEdit.end) return pos + delta;
+    return null;
+  };
+  const mappedStart = mapPoint(args.range.start);
+  const mappedEnd = mapPoint(args.range.end);
+  if (mappedStart == null || mappedEnd == null) return null;
+  const start = mappedStart - args.newSpanStart;
+  const end = mappedEnd - args.newSpanStart;
+  if (start < 0 || end < start || end > args.newSealText.length) return null;
+  return { start, end };
+}
+
+/**
+ * Replace letters strictly inside one keyboard or dictation seal.
+ * The origin and the certification id stay. This does not mint a seal.
+ */
+export function reviseSealedPassage(args: {
+  text: string;
+  spans: ProvenanceSpan[];
+  marks: InlineMark[];
+  start: number;
+  end: number;
+  insert: string;
+}): (TextChange & { certificationId: string; spanId: string }) | null {
+  const text = args.text ?? '';
+  const start = Math.max(0, Math.min(args.start, text.length));
+  const end = Math.max(start, Math.min(args.end, text.length));
+  const insert = args.insert ?? '';
+  if (insert.includes('\n') || insert.includes('\r')) return null;
+  if (start === end && insert === '') return null;
+  let gap = 0;
+  const gapId = () => `sealed_gap_${gap++}`;
+  const spans = normalizeSpans(text, args.spans, gapId);
+  const span = spans.find(
+    (item) => item.start <= start && item.end >= end && isSealedOrigin(item.origin) && item.certificationId,
+  );
+  if (!span?.certificationId) return null;
+  const overlapsAnother = spans.some((item) => item.id !== span.id && item.end > start && item.start < end);
+  if (overlapsAnother) return null;
+
+  const nextText = text.slice(0, start) + insert + text.slice(end);
+  const delta = insert.length - (end - start);
+  const nextSpans = spans.map((item) => {
+    if (item.id === span.id) return { ...item, end: item.end + delta };
+    if (item.end <= start) return item;
+    if (item.start >= end) return { ...item, start: item.start + delta, end: item.end + delta };
+    return item;
+  });
+  return {
+    text: nextText,
+    spans: normalizeSpans(nextText, nextSpans, gapId),
+    marks: shiftMarks(args.marks, start, end, insert.length, nextText.length),
+    evidenceSpanIds: [],
+    certificationId: span.certificationId,
+    spanId: span.id,
+  };
+}
+
 export async function syncBlockPoints(args: {
   blockId: string;
   text: string;
@@ -451,6 +677,8 @@ export async function syncBlockPoints(args: {
   now: string;
   newId: () => string;
   typingDevice?: string | null;
+  /** Block coordinates of the edit that produced `text`, so grammar flags move with the letters. */
+  textEdit?: { start: number; end: number; insertLength: number };
 }): Promise<{ spans: ProvenanceSpan[]; points: CertificationPoint[] }> {
   const typingDevice = args.typingDevice ?? (await getTypingDeviceLabel());
   const spans = normalizeSpans(args.text, args.spans, args.newId).map((s) => ({ ...s }));
@@ -470,6 +698,7 @@ export async function syncBlockPoints(args: {
     const slice = args.text.slice(span.start, span.end);
     const hash = await contentHash(slice);
     const source = span.certificationId ? pool.get(span.certificationId) : undefined;
+    const previousSealText = source?.text;
     const foreign = Boolean(source && source.blockId !== args.blockId);
     let point = source && !foreign && source.origin === sealedOrigin ? source : undefined;
     let lineage = point?.lineage;
@@ -544,6 +773,18 @@ export async function syncBlockPoints(args: {
           eventCount: point.evidence.eventCount + 1,
           events: [...point.evidence.events, event].slice(-MAX_EVIDENCE_EVENTS),
         },
+      };
+    }
+    if (point.grammar && previousSealText != null) {
+      point = {
+        ...point,
+        grammar: retargetGrammar({
+          grammar: point.grammar,
+          oldSealText: previousSealText,
+          newSealText: slice,
+          newSpanStart: span.start,
+          textEdit: args.textEdit,
+        }),
       };
     }
     usedCert.add(point.id);

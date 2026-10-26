@@ -9,6 +9,7 @@ import {
   deleteParagraphs,
   displayTitle,
   dragPreviewLabel,
+  acceptGrammarSuggestion,
   editField,
   insertHeadingWithParagraph,
   insertStructure,
@@ -46,7 +47,18 @@ import {
 } from '../core/manuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
+import { GRAMMAR_CHECK_COMMENT } from '../core/certification.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
+import {
+  GRAMMAR_SCOPE_LABELS,
+  blocksForGrammarScope,
+  grammarEditForSuggestion,
+  shiftGrammarLints,
+  type GrammarLint,
+  type GrammarScope,
+  type GrammarSuggestionChoice,
+} from '../core/grammar.ts';
+import { harperEngineVersion, lintManuscriptBlocks, prepareHarper } from '../core/harperEngine.ts';
 import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
@@ -97,6 +109,7 @@ import {
   IconUndo,
   ToolbarIconButton,
 } from './ManuscriptToolbarIcons.tsx';
+import { GrammarMenu, GrammarResults } from './GrammarControls.tsx';
 import { ProvenanceField, type FieldCommit } from './ProvenanceField.tsx';
 import { ExportPreview } from './ExportPreview.tsx';
 import {
@@ -171,6 +184,9 @@ export function Editor({
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [replaceNote, setReplaceNote] = useState('');
+  const [grammarLints, setGrammarLints] = useState<GrammarLint[]>([]);
+  const [grammarNote, setGrammarNote] = useState('');
+  const [grammarBusy, setGrammarBusy] = useState(false);
   const [hit, setHit] = useState(0);
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
   const [renderToken, setRenderToken] = useState(0);
@@ -630,6 +646,54 @@ export function Editor({
     commit((current) => insertStructure(current, kind, index, ids.current()));
   };
 
+  useEffect(() => {
+    void prepareHarper();
+  }, []);
+
+  const checkGrammar = (scope: GrammarScope) => {
+    const current = docRef.current;
+    const anchor = selection?.blockId ?? current.blocks[0]?.id ?? null;
+    const blocks = blocksForGrammarScope(current.blocks, anchor, scope);
+    setGrammarBusy(true);
+    setGrammarNote('');
+    void lintManuscriptBlocks(blocks)
+      .then((found) => {
+        setGrammarLints(found);
+        setGrammarNote(found.length ? '' : `No grammar issues in ${GRAMMAR_SCOPE_LABELS[scope].toLowerCase()}.`);
+      })
+      .catch((error: unknown) => {
+        setGrammarLints([]);
+        setGrammarNote(error instanceof Error ? error.message : 'Grammar check failed.');
+      })
+      .finally(() => setGrammarBusy(false));
+  };
+
+  const acceptGrammar = (lint: GrammarLint, suggestion: GrammarSuggestionChoice) => {
+    const edit = grammarEditForSuggestion(lint, suggestion);
+    commit(async (current) => {
+      const block = current.blocks.find((item) => item.id === lint.blockId);
+      if (!block) return current;
+      const text = lint.field === 'text' ? block.text : block.title;
+      if (text.slice(lint.start, lint.end) !== lint.problem) return current;
+      return acceptGrammarSuggestion({
+        doc: current,
+        blockId: lint.blockId,
+        field: lint.field,
+        start: edit.start,
+        end: edit.end,
+        insert: edit.insert,
+        suggestion: suggestion.kind,
+        lintKind: lint.lintKind,
+        message: lint.message,
+        dialect: 'American',
+        engineVersion: harperEngineVersion(),
+        now: new Date().toISOString(),
+        newId: ids.current,
+      });
+    }, { external: true });
+    setGrammarLints((current) => shiftGrammarLints(current, lint, edit.insert.length));
+  };
+
   const insertNear = (kind: BlockType) => {
     commit((current) => {
       const index = selection
@@ -646,6 +710,13 @@ export function Editor({
     const hashes: Record<string, string> = {};
     for (const point of doc.points) hashes[point.id] = point.contentHash;
     return hashes;
+  }, [doc.points]);
+  const grammarSeals = useMemo(() => {
+    const seals: Record<string, string> = {};
+    for (const point of doc.points) {
+      if (point.grammar?.used) seals[point.id] = point.grammar.comment;
+    }
+    return seals;
   }, [doc.points]);
   const typography = resolveManuscriptTypography(doc);
   const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
@@ -919,6 +990,12 @@ export function Editor({
             </div>
           </div>
           <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-grammar">Grammar</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-grammar">
+              <GrammarMenu disabled={doc.blocks.length === 0 || showPreview} busy={grammarBusy} onCheck={checkGrammar} />
+            </div>
+          </div>
+          <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-lists">Lists</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-lists">
               <ToolbarIconButton
@@ -1109,7 +1186,20 @@ export function Editor({
             <li><i className="swatch prov-paste" /> Pasted, not sealed</li>
             <li><i className="swatch prov-drop" /> Dropped, not sealed</li>
             <li><i className="swatch prov-other" /> Other insertion, not sealed</li>
+            <li><i className="swatch prov-grammar" /> Grammar checked, still sealed</li>
           </ul>
+        )}
+        {!showPreview && (
+          <GrammarResults
+            doc={doc}
+            lints={grammarLints}
+            note={grammarNote}
+            onAccept={acceptGrammar}
+            onDismiss={() => {
+              setGrammarLints([]);
+              setGrammarNote('');
+            }}
+          />
         )}
         </div>
 
@@ -1415,6 +1505,8 @@ export function Editor({
                           commit((current) => deleteHeadingRange(current, block.id));
                         }}
                         certHashes={certHashes}
+                        grammarSeals={grammarSeals}
+                        onGrammarCheck={checkGrammar}
                         focusNonce={caretRequest?.blockId === block.id ? caretRequest.nonce : 0}
                         focusOffset={caretRequest?.blockId === block.id ? caretRequest.offset : null}
                         onCommit={(change) => applyCommit(block.id, isProseBlock(block.type) ? 'text' : 'title', change)}
@@ -1598,6 +1690,9 @@ export function Editor({
                   <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
+                  {point.grammar?.used && (
+                    <p className="point-grammar">{point.grammar.comment || GRAMMAR_CHECK_COMMENT}</p>
+                  )}
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
                 </li>
               ))}
