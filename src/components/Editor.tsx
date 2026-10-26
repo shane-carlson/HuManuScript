@@ -762,6 +762,9 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const noteBlockId = viewMode === 'raw'
+    ? (rawRange ? rawSegmentAt(flattenRaw(doc), rawRange.start)?.blockId ?? null : null)
+    : (selection?.blockId ?? null);
   const certHashes = useMemo(() => {
     const hashes: Record<string, string> = {};
     for (const point of doc.points) hashes[point.id] = point.contentHash;
@@ -1722,11 +1725,20 @@ export function Editor({
       {!focusMode && (
         <NotesRail
           doc={doc}
-          activeBlockId={selection?.blockId ?? null}
+          activeBlockId={noteBlockId}
           saveError={saveError}
           collapsed={notesCollapsed}
           onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
           onChange={publish}
+          onShowBlock={(blockId) => {
+            if (viewMode === 'raw' || viewMode === 'preview') setViewMode('manuscript');
+            setSelection({ blockId, start: 0, end: 0 });
+            window.requestAnimationFrame(() => {
+              window.requestAnimationFrame(() => {
+                document.getElementById(`block-${blockId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              });
+            });
+          }}
         />
       )}
       {!focusMode && (

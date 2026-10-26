@@ -8,6 +8,7 @@ import { sequenceIds } from './uid.ts';
 import { typewriterScrollDelta } from './typewriter.ts';
 import {
   applyWritingAids,
+  bookSceneNotePlaces,
   parseGoalCount,
   readWritingAids,
   sessionWordsWritten,
@@ -82,6 +83,30 @@ test('notes round-trip and the panel phases', () => {
   assert.equal(notesPanelPhase({ ready: true, unreadable: true, count: 0 }), 'error');
   assert.equal(notesPanelPhase({ ready: true, unreadable: false, count: 0 }), 'empty');
   assert.equal(notesPanelPhase({ ready: true, unreadable: false, count: 1 }), 'ready');
+});
+
+test('book notes list every scene, not only the one on the page', () => {
+  const blocks = [
+    { id: 'c1', type: 'chapter' as const, title: 'Arrival', text: '', marks: [] },
+    { id: 's1', type: 'scene' as const, title: '', text: '', marks: [] },
+    { id: 'p1', type: 'paragraph' as const, title: '', text: 'She waited.', marks: [] },
+    { id: 'c2', type: 'chapter' as const, title: '', text: '', marks: [] },
+    { id: 's2', type: 'scene' as const, title: 'The road', text: '', marks: [] },
+  ];
+  const notes = [
+    { blockId: 's1' },
+    { blockId: 's2' },
+    { blockId: 'gone' },
+  ];
+  const places = bookSceneNotePlaces(blocks, notes, 'p1');
+  assert.deepEqual(places, [
+    { blockId: 's1', label: 'Chapter 1 · Arrival · Scene 1', current: true, missing: false },
+    { blockId: 's2', label: 'Chapter 2 · The road', current: false, missing: false },
+    { blockId: 'gone', label: 'Removed from this book', current: false, missing: true },
+  ]);
+  const onlyCurrent = bookSceneNotePlaces(blocks, [], 'c2');
+  assert.deepEqual(onlyCurrent.map((place) => place.blockId), ['c2']);
+  assert.equal(onlyCurrent[0]?.current, true);
 });
 
 test('a chapter goal stays put when an undo snapshot is restored', () => {
