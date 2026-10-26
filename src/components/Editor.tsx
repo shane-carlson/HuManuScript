@@ -91,10 +91,12 @@ import {
   IconBulletList,
   IconCertificationView,
   IconChapter,
+  IconClearFormat,
   IconExportPreview,
   IconFindNext,
   IconFindPrevious,
   IconImage,
+  IconInsertionPoint,
   IconItalic,
   IconManuscriptView,
   IconNumberList,
@@ -107,6 +109,7 @@ import {
   IconScene,
   IconSceneBreak,
   IconSection,
+  IconSelectParagraphs,
   IconStrikethrough,
   IconTable,
   IconUnderline,
@@ -880,12 +883,23 @@ export function Editor({
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
               {viewMode === 'raw' ? (
                 ([
-                  ['chapter', 'Chapter'],
-                  ['scene', 'Scene'],
-                  ['section', 'Section'],
-                  ['paragraph', 'Paragraph'],
-                  ['blockquote', 'Block quote'],
-                ] as const).map(([kind, label]) => (
+                  ['chapter', 'Chapter', <IconChapter key="chapter" />],
+                  ['scene', 'Scene', <IconScene key="scene" />],
+                  ['section', 'Section', <IconSection key="section" />],
+                  ['paragraph', 'Paragraph', <IconParagraph key="paragraph" />],
+                  ['blockquote', 'Block quote', <IconBlockQuote key="quote" />],
+                ] as const).map(([kind, label, icon]) => (
+                  focusMode ? (
+                    <ToolbarIconButton
+                      key={kind}
+                      label={label}
+                      active={Boolean(rawRange && rawKindAt(doc, rawRange.start, rawRange.end) === kind)}
+                      disabled={!rawRange || rawRange.end <= rawRange.start}
+                      onClick={() => assignHighlighted(kind)}
+                    >
+                      {icon}
+                    </ToolbarIconButton>
+                  ) : (
                   <button
                     key={kind}
                     type="button"
@@ -895,6 +909,7 @@ export function Editor({
                   >
                     {label}
                   </button>
+                  )
                 ))
               ) : (
                 <>
@@ -952,9 +967,19 @@ export function Editor({
               <ToolbarIconButton label="Strikethrough" onClick={() => onFormat('strike')}>
                 <IconStrikethrough />
               </ToolbarIconButton>
+              {focusMode ? (
+                <ToolbarIconButton
+                  label="Clear format"
+                  disabled={viewMode === 'raw' ? !rawRange || rawRange.end <= rawRange.start : !clearEnabled}
+                  onClick={onClearFormat}
+                >
+                  <IconClearFormat />
+                </ToolbarIconButton>
+              ) : (
               <button type="button" className="toolbar-text-btn" disabled={viewMode === 'raw' ? !rawRange || rawRange.end <= rawRange.start : !clearEnabled} onClick={onClearFormat}>
                 Clear format
               </button>
+              )}
               {viewMode !== 'raw' && (
                 <ToolbarIconButton label="Block quote" onClick={() => insertNear('blockquote')}>
                   <IconBlockQuote />
@@ -962,6 +987,7 @@ export function Editor({
               )}
               <FontFamilyControl
                 fontId={typography.font.id}
+                compact={focusMode}
                 onChange={(fontFamily) => {
                   commit((current) => setManuscriptTypography(current, { fontFamily }));
                 }}
@@ -989,11 +1015,22 @@ export function Editor({
             <span className="toolbar-group__label" id="toolbar-heading">Heading</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-heading">
               {([
-                ['chapter', 'Chapter'],
-                ['scene', 'Scene'],
-                ['section', 'Section'],
-                ['paragraph', 'Body'],
-              ] as const).map(([kind, label]) => (
+                ['chapter', 'Chapter', <IconChapter key="chapter" />],
+                ['scene', 'Scene', <IconScene key="scene" />],
+                ['section', 'Section', <IconSection key="section" />],
+                ['paragraph', 'Body', <IconParagraph key="body" />],
+              ] as const).map(([kind, label, icon]) => (
+                focusMode ? (
+                  <ToolbarIconButton
+                    key={kind}
+                    label={label}
+                    active={headingValue === kind}
+                    disabled={!kindEnabled}
+                    onClick={() => applyKind(kind)}
+                  >
+                    {icon}
+                  </ToolbarIconButton>
+                ) : (
                 <button
                   key={kind}
                   type="button"
@@ -1004,6 +1041,7 @@ export function Editor({
                 >
                   {label}
                 </button>
+                )
               ))}
             </div>
           </div>
@@ -1011,6 +1049,15 @@ export function Editor({
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-arrange">Arrange</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-arrange">
+              {focusMode ? (
+                <ToolbarIconButton
+                  label="Choose insertion point"
+                  active={pickingInsert}
+                  onClick={() => setPickingInsert((value) => !value)}
+                >
+                  <IconInsertionPoint />
+                </ToolbarIconButton>
+              ) : (
               <button
                 type="button"
                 className={`toolbar-text-btn${pickingInsert ? ' is-active' : ''}`}
@@ -1024,6 +1071,21 @@ export function Editor({
               >
                 Choose insertion point
               </button>
+              )}
+              {focusMode ? (
+                <ToolbarIconButton
+                  label="Select paragraphs"
+                  active={selecting}
+                  onClick={() => {
+                    setSelecting((value) => {
+                      if (value) setSelectedIds(new Set());
+                      return !value;
+                    });
+                  }}
+                >
+                  <IconSelectParagraphs />
+                </ToolbarIconButton>
+              ) : (
               <button
                 type="button"
                 className={`toolbar-text-btn${selecting ? ' is-active' : ''}`}
@@ -1038,6 +1100,7 @@ export function Editor({
               >
                 Select paragraphs
               </button>
+              )}
             </div>
           </div>
           <div className="toolbar-group">
@@ -1046,6 +1109,7 @@ export function Editor({
               <GrammarMenu
                 disabled={showPreview}
                 busy={grammarBusy}
+                iconOnly={focusMode}
                 hasSelection={viewMode === 'raw' ? Boolean(rawRange && rawRange.end > rawRange.start) : Boolean(selection && selection.end > selection.start)}
                 onCheckSelection={checkHighlighted}
                 onCheckScope={checkGrammar}
@@ -1140,7 +1204,7 @@ export function Editor({
                         e.preventDefault();
                         stepMatch(e.shiftKey ? -1 : 1);
                       }}
-                      placeholder="Search the manuscript"
+                      placeholder={focusMode ? 'Search' : 'Search the manuscript'}
                       autoComplete="off"
                       spellCheck={false}
                     />

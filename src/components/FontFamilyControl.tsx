@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { IconAddFont, IconRemoveFont, ToolbarIconButton } from './ManuscriptToolbarIcons.tsx';
 import { addCustomFontFile, installCustomFonts, removeCustomFont } from '../core/customFonts.ts';
 import { APPROVED_FONT_TYPE_LABEL } from '../core/fontFile.ts';
 import {
@@ -12,9 +13,11 @@ import {
 export function FontFamilyControl({
   fontId,
   onChange,
+  compact = false,
 }: {
   fontId: string;
   onChange: (fontId: string) => void;
+  compact?: boolean;
 }) {
   const inputId = useId();
   const [added, setAdded] = useState<readonly ManuscriptFontFace[]>(() => extraManuscriptFaces());
@@ -74,8 +77,9 @@ export function FontFamilyControl({
           ))}
         </select>
       </label>
-      <label className="toolbar-text-btn toolbar-font-add" data-tooltip={`Add a font. ${APPROVED_FONT_TYPE_LABEL}.`}>
-        Add font
+      <label className={`${compact ? 'toolbar-icon-btn' : 'toolbar-text-btn'} toolbar-font-add`} data-tooltip={`Add a font. ${APPROVED_FONT_TYPE_LABEL}.`}>
+        {compact ? <IconAddFont /> : 'Add font'}
+        {compact ? <span className="sr-only">Add font</span> : null}
         <input
           id={inputId}
           className="toolbar-font-file"
@@ -91,6 +95,22 @@ export function FontFamilyControl({
         />
       </label>
       {isCustomFontId(fontId) && (
+        compact ? (
+          <ToolbarIconButton
+            label="Remove font"
+            disabled={busy}
+            onClick={() => {
+              void removeCustomFont(fontId).then(() => {
+                setAdded(extraManuscriptFaces());
+                setMessageIsError(false);
+                setMessage('Removed the added font.');
+                onChange('palatino');
+              });
+            }}
+          >
+            <IconRemoveFont />
+          </ToolbarIconButton>
+        ) : (
         <button
           type="button"
           className="toolbar-text-btn"
@@ -106,6 +126,7 @@ export function FontFamilyControl({
         >
           Remove font
         </button>
+        )
       )}
       {message && (
         <p className={`toolbar-font-note${messageIsError ? ' is-error' : ''}`} role="status">
