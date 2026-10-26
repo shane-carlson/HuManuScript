@@ -401,22 +401,60 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   margin-bottom: 10px;
 }
 .notes-rail__tabs button {
+  flex: 1;
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 4px 12px;
-  font-size: 0.8rem;
+  padding: 4px 6px;
+  font-size: 0.78rem;
 }
 .notes-rail__tabs button[aria-selected='true'] {
   background: var(--text);
   color: var(--bg);
 }
+.notes-rail__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.notes-rail.is-collapsed .notes-rail__panel { display: none; }
 .notes-rail__body {
   overflow: auto;
   min-height: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.notes-rail__section {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.notes-rail__scene {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-rail__scene.is-current {
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 10px;
+}
+.notes-rail__place {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notes-rail__show {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  padding: 2px 6px;
 }
 .notes-rail__status { margin: 0 0 8px; color: var(--text-dim); font-size: 0.86rem; }
 .notes-rail__status--error { color: var(--warn); }

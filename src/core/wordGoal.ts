@@ -33,6 +33,68 @@ export function sessionWordsWritten(totalWords: number, goal: SessionGoal | null
   return Math.max(0, totalWords - goal.baseline);
 }
 
+export interface BookSceneNotePlace {
+  blockId: string;
+  label: string;
+  /** The scene or chapter the caret is in. */
+  current: boolean;
+  /** The note's block is no longer in this book. */
+  missing: boolean;
+}
+
+/**
+ * Every scene note in the book, in manuscript order, plus the place you are
+ * writing even when it has no note yet. Notes whose block was removed stay
+ * at the end so they are not hidden.
+ */
+export function bookSceneNotePlaces(
+  blocks: ManuscriptBlock[],
+  sceneNotes: { blockId: string }[],
+  activeBlockId: string | null,
+): BookSceneNotePlace[] {
+  const labels = new Map<string, string>();
+  let chapterNumber = 0;
+  let chapterLabel = '';
+  let sceneNumber = 0;
+  for (const block of blocks) {
+    if (block.type === 'chapter') {
+      chapterNumber += 1;
+      sceneNumber = 0;
+      const title = block.title.trim();
+      chapterLabel = title ? `Chapter ${chapterNumber} · ${title}` : `Chapter ${chapterNumber}`;
+      labels.set(block.id, chapterLabel);
+    } else if (block.type === 'scene') {
+      sceneNumber += 1;
+      const title = block.title.trim();
+      const sceneLabel = title || `Scene ${sceneNumber}`;
+      labels.set(block.id, chapterLabel ? `${chapterLabel} · ${sceneLabel}` : sceneLabel);
+    }
+  }
+  const anchor = noteAnchor(blocks, activeBlockId);
+  const noted = new Set(sceneNotes.map((note) => note.blockId));
+  const places: BookSceneNotePlace[] = [];
+  const seen = new Set<string>();
+  for (const block of blocks) {
+    const label = labels.get(block.id);
+    if (!label) continue;
+    const current = anchor?.blockId === block.id;
+    if (!noted.has(block.id) && !current) continue;
+    seen.add(block.id);
+    places.push({ blockId: block.id, label, current, missing: false });
+  }
+  for (const note of sceneNotes) {
+    if (seen.has(note.blockId)) continue;
+    seen.add(note.blockId);
+    places.push({
+      blockId: note.blockId,
+      label: 'Removed from this book',
+      current: false,
+      missing: true,
+    });
+  }
+  return places;
+}
+
 export function noteAnchor(
   blocks: ManuscriptBlock[],
   blockId: string | null,
