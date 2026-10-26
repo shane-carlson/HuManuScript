@@ -1,0 +1,31 @@
+Bundled TrueType faces
+
+Each file below is a TrueType font under the SIL Open Font License, Version 1.1.
+The license text is OFL.txt. Copyright notices are stored in each font file.
+Source: the Google Fonts collection.
+
+Crimson Text — CrimsonText-Regular.ttf
+Cardo — Cardo-Regular.ttf
+Spectral — Spectral-Regular.ttf
+EB Garamond — EBGaramond.ttf
+Gentium Book Plus — GentiumBookPlus-Regular.ttf
+Literata — Literata.ttf
+Newsreader — Newsreader.ttf
+IBM Plex Serif — IBMPlexSerif-Regular.ttf
+Tinos — Tinos-Regular.ttf
+Charis SIL — CharisSIL-Regular.ttf
+Source Serif 4 — SourceSerif4.ttf
+Alegreya — Alegreya.ttf
+Vollkorn — Vollkorn.ttf
+Cormorant Garamond — CormorantGaramond.ttf
+Neuton — Neuton-Regular.ttf
+Sorts Mill Goudy — SortsMillGoudy-Regular.ttf
+Fanwood Text — FanwoodText-Regular.ttf
+Lora — Lora.ttf
+Atkinson Hyperlegible — AtkinsonHyperlegible-Regular.ttf
+Source Sans 3 — SourceSans3.ttf
+Libre Franklin — LibreFranklin.ttf
+Karla — Karla.ttf
+IBM Plex Mono — IBMPlexMono-Regular.ttf
+Source Code Pro — SourceCodePro.ttf
+JetBrains Mono — JetBrainsMono.ttf

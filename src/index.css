@@ -1210,7 +1210,22 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   line-height: 1;
   cursor: pointer;
 }
-.toolbar-font--family select { width: 9.5rem; }
+.toolbar-font--family select { width: 12.5rem; }
+.toolbar-font-add { position: relative; overflow: hidden; }
+.toolbar-font-file {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+.toolbar-font-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.toolbar-font-note.is-error { color: var(--warn); }
 .toolbar-font--size select { width: 4.75rem; }
 .hover-label {
   position: fixed;
