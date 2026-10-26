@@ -6,7 +6,6 @@
 
 import { Dialect, LocalLinter, WorkerLinter, createBinaryModuleFromUrl, type BinaryModule, type Linter } from 'harper.js';
 import type { GrammarDialect, GrammarSuggestionKind } from './certification.ts';
-import { windowsPathFromFileUrlPathname } from './harperWindowsPath.ts';
 import {
   HARPER_ENGINE_VERSION,
   HARPER_UPDATE_MANIFEST_URL,
@@ -51,24 +50,15 @@ function inBrowser(): boolean {
   return typeof window !== 'undefined' && typeof Worker !== 'undefined';
 }
 
-let harperFsPatched = false;
-
-/** Node on Windows: rewrite Harper's `/C:/...` pathname before it reads the wasm file. */
-async function patchHarperWindowsPaths(): Promise<void> {
-  if (harperFsPatched || inBrowser()) return;
-  if (typeof process === 'undefined' || process.platform !== 'win32') return;
-  harperFsPatched = true;
-  const fs = (await import(/* @vite-ignore */ 'node:fs')) as typeof import('node:fs');
-  const readFile = fs.readFile;
-  const patched = ((path: import('node:fs').PathLike, ...rest: unknown[]) => {
-    const fixed = typeof path === 'string' ? (windowsPathFromFileUrlPathname(path) ?? path) : path;
-    return (readFile as (path: import('node:fs').PathLike, ...rest: unknown[]) => unknown).call(fs, fixed, ...rest);
-  }) as typeof fs.readFile;
-  fs.readFile = patched;
-}
-
 async function bundledBinary(): Promise<BinaryModule> {
-  await patchHarperWindowsPaths();
+  // Harper reads a file URL with URL.pathname. On Windows that doubles the drive letter.
+  // The inlined copy is a data URL, so Node never touches that path. The app build keeps
+  // the separate wasm asset and does not download this copy.
+  if (!inBrowser() && typeof process !== 'undefined' && process.platform === 'win32') {
+    const specifier = 'harper.js/binaryInlined';
+    const mod = (await import(/* @vite-ignore */ specifier)) as { binaryInlined: BinaryModule };
+    return mod.binaryInlined;
+  }
   const mod = await import('harper.js/binary');
   return mod.binary;
 }
