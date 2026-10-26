@@ -16,6 +16,7 @@
     "pack:mac": "node scripts/pack-mac.cjs",
     "pack:mac:all": "node scripts/pack-mac.cjs --all",
     "pack:mac:intel": "node scripts/pack-mac.cjs --intel",
+    "pack:win": "node scripts/pack-win.cjs",
     "dispatch:pack-mac": "bash scripts/dispatch-pack-mac.sh",
     "test": "node --experimental-strip-types --test src/core/*.test.ts scripts/app-version.test.cjs electron/*.test.cjs",
     "lint": "oxlint",

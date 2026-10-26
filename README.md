@@ -22,9 +22,11 @@ npm run build
 
 The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). **Version history** in the left navigation opens snapshots and backup as tabs. Snapshots save named versions per book (with auto-save checkpoints and a safety copy before restore). **Backup & restore** downloads JSON for selected books (all selected by default) or merges a backup file back in. On the manuscript toolbar, **View → Export preview** shows the one-page certification summary, the page break, and the manuscript without certification highlights. Use the left **Export** workspace to download that same file. Every writer format (Word, RTF, Scrivener, ODT, Markdown, plain text, PDF) uses that same summary and starts the manuscript on the next page. The certification panel still offers a certification JSON download per book.
 
-### Desktop (macOS)
+### Desktop
 
-Electron wraps the same Vite build as the web app (Speak Fiction’s desktop pattern, without dictation). **Build the `.dmg` on a Mac only** — electron-builder’s DMG target needs macOS.
+Electron wraps the same Vite build as the web app (Speak Fiction’s desktop pattern, without dictation). **Build the `.dmg` on a Mac** and the Windows installer on Windows — the GitHub Actions workflow does both.
+
+#### macOS
 
 ```bash
 npm install
@@ -35,9 +37,18 @@ npm run pack:mac:all  # arm64 + Intel DMGs
 
 Artifacts land in `release/`. Signing matches Speak Fiction / StoryBind: set `CSC_LINK` + `CSC_KEY_PASSWORD` or `CSC_NAME` (Developer ID in your keychain) before `pack:mac`. For notarization, also set `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` (or Apple API key vars). Without those, the script builds an **unsigned** DMG for local testing — use **Open** from the context menu the first time if Gatekeeper blocks it.
 
-#### GitHub Actions (signed DMG)
+#### Windows
 
-The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` pushes and manual dispatch. It **requires** repository secrets:
+```bash
+npm install
+npm run pack:win    # NSIS installer, x64. Run this on Windows.
+```
+
+The installer is `release/HuManuScript-<version>-x64.exe`. Signing uses `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` (a Windows `.pfx`, not the Apple Developer ID). Without those, the script builds an **unsigned** installer and Windows SmartScreen warns on first open. The same `HM_BUILD_NUMBER` as the Mac pack becomes `0.1.<run>` in the installer name and `latest.yml`, which is what the installed app updates from.
+
+#### GitHub Actions (Mac and Windows)
+
+The **Pack Mac and Windows** workflow (`.github/workflows/pack-mac.yml`) runs on `main` pushes and manual dispatch. One run number is the marketing version for both installers, and both are attached to the same GitHub Release. The Mac job **requires** repository secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -49,9 +60,18 @@ The **Pack Mac DMG** workflow (`.github/workflows/pack-mac.yml`) runs on `main` 
 
 **Or** instead of the API key trio: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`.
 
-The workflow uploads `HuManuScript-*-arm64-signed` from the Actions **Artifacts** tab. Local `pack:mac` still works unsigned when those env vars are unset.
+The workflow uploads the signed DMG and the Windows installer from the Actions **Artifacts** tab, and publishes both on the release (`latest-mac.yml` and `latest.yml`). Local `pack:mac` still works unsigned when the Apple env vars are unset.
 
-Each signed pack writes `build/app-version.json` from `package.json` `version` (`0.1.0`) plus `HM_BUILD_NUMBER` (the workflow run number). A numeric run number becomes the marketing version `0.1.<run number>` in the header, the window title, the DMG filename, and `CFBundleShortVersionString` / `CFBundleVersion`. `package.json` stays at `0.1.0`. Local and unsigned packs with no numeric build number stay `0.1.0 (dev)`. The same signed workflow publishes a GitHub Release (`latest-mac.yml`) so an installed copy can download and install a newer pack.
+Optional Windows signing secrets, separate from the Apple certificate:
+
+| Secret | Purpose |
+| --- | --- |
+| `WIN_CSC_LINK` | Base64 of a Windows code-signing `.pfx` |
+| `WIN_CSC_KEY_PASSWORD` | Password for that `.pfx` |
+
+If those are unset, the Windows installer is still published, unsigned.
+
+Each pack writes `build/app-version.json` from `package.json` `version` (`0.1.0`) plus `HM_BUILD_NUMBER` (the workflow run number). A numeric run number becomes the marketing version `0.1.<run number>` in the header, the window title, the installer filenames, and `CFBundleShortVersionString` / `CFBundleVersion`. `package.json` stays at `0.1.0`. Local and unsigned packs with no numeric build number stay `0.1.0 (dev)`. An installed copy downloads a newer pack from that release.
 
 #### Cloud agent: trigger the workflow
 
@@ -69,7 +89,7 @@ npm run dev:electron   # Vite + Electron against localhost:47321
 
 ## What came from Speak Fiction
 
-The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. A speech engine and licensing are out of scope; dictated text that the platform already inserts is sealed as its own origin. The Electron shell and `pack:mac` script are included for local Mac installs.
+The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. A speech engine and licensing are out of scope; dictated text that the platform already inserts is sealed as its own origin. The Electron shell, `pack:mac`, and `pack:win` scripts build the local installers.
 
 ## Certification, briefly
 

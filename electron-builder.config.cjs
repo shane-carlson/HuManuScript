@@ -71,6 +71,22 @@ module.exports = {
       { x: 410, y: 220, type: 'link', path: '/Applications' },
     ],
   },
+  // NSIS is the installer electron-updater installs on Windows (latest.yml).
+  win: {
+    icon: fs.existsSync(roundedPng) ? 'build/icon.png' : undefined,
+    artifactName,
+    target: [{ target: 'nsis', arch: ['x64'] }],
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    allowElevation: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'HuManuScript',
+    artifactName,
+  },
   // GitHub Releases feed (latest-mac.yml). Uploaded only when the pack publishes.
   publish: {
     provider: 'github',
