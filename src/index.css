@@ -1734,16 +1734,18 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   background: var(--text);
   color: var(--bg);
 }
-.ms-divider-block__label-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 180px;
+.ms-divider-block__label {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
 }
-.ms-divider-block__label-field input {
+.ms-divider-block__label input {
+  width: 9rem;
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 @media (max-width: 980px) {
