@@ -1,9 +1,12 @@
 /**
- * Browser storage for session-capture settings and thumbnail files.
+ * Browser storage for session-capture settings and composite pictures.
  *
- * The on/off setting is localStorage (`humanuscript.sessionCapture.v1`).
- * Thumbnail JPEGs and session rows are IndexedDB (`humanuscript.sessionCaptures.v1`).
- * Neither is written into the manuscript library.
+ * The on/off setting and permission duration are localStorage
+ * (`humanuscript.sessionCapture.v1`).
+ * Each composite JPEG, and the session rows, are IndexedDB
+ * (`humanuscript.sessionCaptures.v1`, object stores `thumbnails` and `sessions`).
+ * The `thumbnails` store holds one composite per capture, not separate camera
+ * and screenshot files. Neither store is written into the manuscript library.
  */
 
 import {
@@ -15,7 +18,7 @@ import {
   normalizeSessionCaptureSettings,
   readSessionCaptureSettings,
   readWritingSession,
-  type CaptureKind,
+  type StoredCaptureKind,
   type CaptureReason,
   type SessionCaptureSettings,
   type WritingSessionState,
@@ -28,7 +31,7 @@ export interface StoredThumbnailRecord {
   manuscriptId: string;
   at: string;
   reason: CaptureReason;
-  kind: CaptureKind;
+  kind: StoredCaptureKind;
   windowStart: string;
   windowEnd: string;
   mime: 'image/jpeg';
@@ -41,7 +44,7 @@ export function loadSessionCaptureSettings(): SessionCaptureSettings {
   try {
     return readSessionCaptureSettings(localStorage.getItem(SESSION_CAPTURE_SETTINGS_KEY));
   } catch {
-    return { camera: false, screenshot: false };
+    return { camera: false, screenshot: false, permission: 'session' };
   }
 }
 

@@ -19,6 +19,16 @@ const {
   readBackupFile,
   writeBackupFile,
 } = require('./cloudFolders.cjs');
+const {
+  decideCameraAccess,
+  decideScreenSource,
+  emptyCaptureGrantFile,
+  nextCaptureGrantFile,
+  normalizeCaptureGrant,
+  promoteRememberedGrant,
+  rememberCameraAllow,
+  rememberScreenSource,
+} = require('./captureGrant.cjs');
 
 const CLOUD_LABELS = {
   'google-drive': 'Google Drive',
@@ -111,6 +121,36 @@ ipcMain.handle('humanuscript:device-name', () => {
   return typeof name === 'string' ? name.trim() : '';
 });
 
+let captureGrant = { camera: 'off', screen: 'off' };
+let captureGrantFile = emptyCaptureGrantFile();
+/** Allows given during this app run, including a this-session grant later switched to permanent. */
+let captureGrantMemory = { camera: false, screenSourceId: '' };
+
+function captureGrantPath() {
+  return path.join(app.getPath('userData'), 'capture-grants.json');
+}
+
+function loadCaptureGrantFile() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(captureGrantPath(), 'utf8'));
+    captureGrantFile = nextCaptureGrantFile(
+      { camera: 'permanent', screen: 'permanent' },
+      parsed && typeof parsed === 'object' ? parsed : emptyCaptureGrantFile(),
+    );
+  } catch {
+    captureGrantFile = emptyCaptureGrantFile();
+  }
+}
+
+function persistCaptureGrantFile() {
+  try {
+    fs.mkdirSync(path.dirname(captureGrantPath()), { recursive: true });
+    fs.writeFileSync(captureGrantPath(), JSON.stringify(captureGrantFile));
+  } catch (error) {
+    console.error('Session-picture permission could not be saved.', error);
+  }
+}
+
 function askConsent(parent, message, detail) {
   const options = {
     type: 'question',
@@ -193,6 +233,18 @@ ipcMain.handle('humanuscript:cloud-read', async (_event, provider, filename) => 
   return readBackupFile({ fs, root, filename: cloudFilename(filename) });
 });
 
+ipcMain.handle('humanuscript:capture-grant', (_event, next) => {
+  captureGrant = normalizeCaptureGrant(next);
+  captureGrantFile = promoteRememberedGrant(captureGrant, captureGrantFile, captureGrantMemory);
+  persistCaptureGrantFile();
+  return {
+    camera: captureGrant.camera,
+    screen: captureGrant.screen,
+    cameraRemembered: captureGrantFile.camera === true,
+    screenRemembered: Boolean(captureGrantFile.screenSourceId),
+  };
+});
+
 function startAutoUpdate(baked) {
   if (!shouldCheckForUpdates({ isPackaged: app.isPackaged, build: baked.build })) return;
   let autoUpdater;
@@ -209,20 +261,41 @@ function startAutoUpdate(baked) {
 
 app.whenReady().then(() => {
   const ses = session.defaultSession;
-  // Camera: the permission request is the consent dialog. Screen capture uses the
-  // system picker when the OS has one, otherwise a chooser that never auto-selects.
+  loadCaptureGrantFile();
+  // The page asks once per permission span, then reuses the stream. A remembered
+  // allow skips this dialog. The screen handler passes a saved source itself, so
+  // the system picker stays off and a later session can reuse that source.
   ses.setPermissionRequestHandler((webContents, permission, callback) => {
     if (permission === 'media') {
+      const decision = decideCameraAccess(captureGrant, captureGrantFile);
+      if (decision === 'deny') {
+        callback(false);
+        return;
+      }
+      if (decision === 'allow') {
+        callback(true);
+        return;
+      }
       const parent = BrowserWindow.fromWebContents(webContents) ?? undefined;
+      const remembered = captureGrant.camera === 'permanent';
       void askConsent(
         parent,
-        'Allow HuManuScript to take a picture with the camera?',
-        'This prompt appears only while camera pictures are turned on. The picture is stored as a low-resolution thumbnail.',
-      ).then(callback, () => callback(false));
+        'Allow HuManuScript to use the camera for session pictures?',
+        remembered
+          ? 'You chose Remember on this device. HuManuScript asks now, then reuses the camera for later pictures and later writing sessions until you turn it off.'
+          : 'You chose this writing session only. HuManuScript asks now, keeps the camera until you end the session, and asks again next time.',
+      ).then((allowed) => {
+        if (allowed) {
+          captureGrantMemory = { ...captureGrantMemory, camera: true };
+          captureGrantFile = rememberCameraAllow(captureGrant, captureGrantFile);
+          persistCaptureGrantFile();
+        }
+        callback(allowed);
+      }, () => callback(false));
       return;
     }
     if (permission === 'display-capture') {
-      callback(true);
+      callback(captureGrant.screen !== 'off');
       return;
     }
     if (permission === 'clipboard-sanitized-write' || permission === 'fullscreen' || permission === 'pointerLock') {
@@ -237,11 +310,21 @@ app.whenReady().then(() => {
     desktopCapturer
       .getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } })
       .then(async (sources) => {
+        const decision = decideScreenSource(captureGrant, captureGrantFile, sources);
+        if (decision.action === 'deny') {
+          callback(null);
+          return;
+        }
+        if (decision.action === 'reuse') {
+          callback({ video: decision.source });
+          return;
+        }
         if (!sources.length) {
           callback(null);
           return;
         }
         const shown = sources.slice(0, 6);
+        const remembered = captureGrant.screen === 'permanent';
         const options = {
           type: 'question',
           buttons: ["Don't share", ...shown.map((source) => (source.name || 'Untitled').slice(0, 48))],
@@ -249,18 +332,24 @@ app.whenReady().then(() => {
           cancelId: 0,
           noLink: true,
           title: 'Screenshot',
-          message: 'Share a screen or window for this session thumbnail?',
-          detail: "HuManuScript only asks because screenshots are turned on. Don't share stores nothing.",
+          message: 'Share a screen or window for session pictures?',
+          detail: remembered
+            ? 'You chose Remember on this device. HuManuScript asks now, then reuses this screen for later pictures and later writing sessions until you turn screenshots off.'
+            : 'You chose this writing session only. HuManuScript asks now and keeps this share until you end the session.',
         };
         const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
-        if (response <= 0 || !shown[response - 1]) {
+        const chosen = response > 0 ? shown[response - 1] : null;
+        if (!chosen) {
           callback(null);
           return;
         }
-        callback({ video: shown[response - 1] });
+        captureGrantMemory = { ...captureGrantMemory, screenSourceId: chosen.id };
+        captureGrantFile = rememberScreenSource(captureGrant, captureGrantFile, chosen.id);
+        persistCaptureGrantFile();
+        callback({ video: chosen });
       })
       .catch(() => callback(null));
-  }, { useSystemPicker: true });
+  });
 
   const baked = readBakedVersion();
   createWindow(baked);

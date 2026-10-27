@@ -4,13 +4,15 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { publishCaptureGrant } from '../captureGrant.ts';
 import { createSessionMedia, type SessionMedia } from '../captureStill.ts';
 import {
   buildSessionCaptureSchema,
-  captureEnabledStills,
+  captureSessionComposite,
   nextCaptureAt,
   nextIntervalDue,
   sessionCaptureConfigured,
+  type CapturePermissionDuration,
   type SealSource,
   type SessionCaptureSchema,
   type SessionCaptureSettings,
@@ -43,6 +45,7 @@ interface SessionCaptureApi {
   settings: SessionCaptureSettings;
   setCamera: (on: boolean) => void;
   setScreenshot: (on: boolean) => void;
+  setPermission: (permission: CapturePermissionDuration) => void;
   session: WritingSessionState | null;
   busy: boolean;
   notice: { tone: 'ok' | 'error'; text: string } | null;
@@ -101,6 +104,10 @@ export function SessionCaptureProvider({
     manuscriptRef.current = manuscriptId;
   });
 
+  useEffect(() => {
+    void publishCaptureGrant(settings);
+  }, [settings]);
+
   const refreshThumbnails = useCallback(async () => {
     try {
       const rows = await listStoredThumbnails(manuscriptRef.current);
@@ -154,10 +161,10 @@ export function SessionCaptureProvider({
       const windowStart = live.lastWindowEnd;
       try {
         if (!mediaRef.current) mediaRef.current = createSessionMedia(() => settingsRef.current);
-        const grabbed = await captureEnabledStills(() => settingsRef.current, mediaRef.current);
+        const grabbed = await captureSessionComposite(() => settingsRef.current, () => mediaRef.current!.composite());
         const windowEnd = new Date().toISOString();
-        let stored = 0;
-        for (const shot of grabbed.stills) {
+        const stored = Boolean(grabbed.image);
+        if (grabbed.image) {
           await saveStoredThumbnail({
             id: captureIds.current(),
             sessionId: live.id,
@@ -165,33 +172,29 @@ export function SessionCaptureProvider({
             manuscriptId: live.manuscriptId,
             at: windowEnd,
             reason,
-            kind: shot.kind,
+            kind: 'composite',
             windowStart,
             windowEnd,
             mime: 'image/jpeg',
-            width: shot.image.width,
-            height: shot.image.height,
-            blob: shot.image.blob,
+            width: grabbed.image.width,
+            height: grabbed.image.height,
+            blob: grabbed.image.blob,
           });
-          stored += 1;
         }
         const updated: WritingSessionState = {
           ...live,
           lastAttemptAt: windowEnd,
-          lastWindowEnd: stored > 0 ? windowEnd : live.lastWindowEnd,
+          lastWindowEnd: stored ? windowEnd : live.lastWindowEnd,
         };
         await persistSession(updated);
-        if (stored > 0) {
-          setNotice({
-            tone: 'ok',
-            text: stored === 1 ? 'Stored one low-resolution thumbnail.' : `Stored ${stored} low-resolution thumbnails.`,
-          });
+        if (stored) {
+          setNotice({ tone: 'ok', text: 'Stored one session picture.' });
         } else if (!sessionCaptureConfigured(settingsRef.current)) {
           setNotice({ tone: 'ok', text: 'Pictures are off, so nothing was captured.' });
         } else {
           setNotice({
             tone: 'error',
-            text: grabbed.failures[0] ?? 'No thumbnail was stored. Allow the camera or screen prompt, or leave the setting off.',
+            text: grabbed.failure ?? 'No picture was stored. Allow the camera or screen for the span you chose, or leave the setting off.',
           });
         }
         await refreshThumbnails();
@@ -200,7 +203,7 @@ export function SessionCaptureProvider({
         await persistSession({ ...live, lastAttemptAt: windowEnd }).catch(() => undefined);
         setNotice({
           tone: 'error',
-          text: error instanceof Error ? error.message : 'The thumbnail could not be saved in this browser.',
+          text: error instanceof Error ? error.message : 'The session picture could not be saved in this browser.',
         });
       } finally {
         setBusy(false);
@@ -235,19 +238,24 @@ export function SessionCaptureProvider({
 
   useEffect(() => () => mediaRef.current?.release(), []);
 
-  const setCamera = (camera: boolean) => {
-    const next = { ...settingsRef.current, camera };
+  const applySettings = (next: SessionCaptureSettings) => {
     settingsRef.current = next;
     setSettings(next);
     saveSessionCaptureSettings(next);
+    mediaRef.current?.sync();
+    void publishCaptureGrant(next);
+  };
+
+  const setCamera = (camera: boolean) => {
+    applySettings({ ...settingsRef.current, camera });
   };
 
   const setScreenshot = (screenshot: boolean) => {
-    const next = { ...settingsRef.current, screenshot };
-    settingsRef.current = next;
-    setSettings(next);
-    saveSessionCaptureSettings(next);
-    if (!screenshot) mediaRef.current?.release();
+    applySettings({ ...settingsRef.current, screenshot });
+  };
+
+  const setPermission = (permission: CapturePermissionDuration) => {
+    applySettings({ ...settingsRef.current, permission });
   };
 
   const startSession = () => {
@@ -280,7 +288,11 @@ export function SessionCaptureProvider({
         setNotice({ tone: 'ok', text: 'Writing session started. Pictures are off, so nothing is captured.' });
         return;
       }
-      setNotice({ tone: 'ok', text: 'Writing session started. Allow the camera or screen prompt to store a thumbnail.' });
+      const span = settingsRef.current.permission === 'permanent' ? 'remembered on this device' : 'this writing session';
+      setNotice({
+        tone: 'ok',
+        text: `Writing session started. Allow the camera and screen once for ${span}. Later pictures in that span reuse the allow.`,
+      });
       await takeCapture(next, 'start');
     });
   };
@@ -309,6 +321,7 @@ export function SessionCaptureProvider({
       setSession(null);
       saveWritingSession(null);
       mediaRef.current?.release();
+      if (settingsRef.current.permission === 'session') await publishCaptureGrant(settingsRef.current);
       setNotice((current) =>
         current?.tone === 'error'
           ? { tone: 'error', text: `${current.text} The writing session has ended.` }
@@ -385,6 +398,7 @@ export function SessionCaptureProvider({
     settings,
     setCamera,
     setScreenshot,
+    setPermission,
     session,
     busy,
     notice,
@@ -409,10 +423,10 @@ export function SessionCapturePanel() {
     <section className="session-capture" aria-label="Session pictures">
       <h3>Session pictures</h3>
       <p className="session-capture__lead">
-        Off until you turn them on. A writing session can keep a low-resolution thumbnail from the camera, the screen, or both:
-        when you start, every five minutes, and when you end. The browser or system asks before either is used. The camera
-        turns off after each picture. A screenshot share stays on until you end the session or turn screenshots off, and only
-        those moments are stored. With both off, nothing is captured.
+        Off until you turn them on. A writing session stores one picture at the start, every five minutes, and at the end.
+        That picture is the screen, with the camera in the upper left when the camera is on. HuManuScript asks once for
+        the span you choose, then reuses that allow for every later picture. This writing session drops it when you end
+        the session. Remember on this device keeps it for later sessions. With both off, nothing is captured.
       </p>
       <label className="session-capture__toggle">
         <input
@@ -420,7 +434,7 @@ export function SessionCapturePanel() {
           checked={api.settings.camera}
           onChange={(event) => api.setCamera(event.target.checked)}
         />
-        <span>Camera picture</span>
+        <span>Camera</span>
       </label>
       <label className="session-capture__toggle">
         <input
@@ -428,11 +442,32 @@ export function SessionCapturePanel() {
           checked={api.settings.screenshot}
           onChange={(event) => api.setScreenshot(event.target.checked)}
         />
-        <span>Screenshot</span>
+        <span>Screen</span>
       </label>
+      <fieldset className="session-capture__permission">
+        <legend>Permission</legend>
+        <label className="session-capture__toggle">
+          <input
+            type="radio"
+            name="session-capture-permission"
+            checked={api.settings.permission === 'session'}
+            onChange={() => api.setPermission('session')}
+          />
+          <span>This writing session</span>
+        </label>
+        <label className="session-capture__toggle">
+          <input
+            type="radio"
+            name="session-capture-permission"
+            checked={api.settings.permission === 'permanent'}
+            onChange={() => api.setPermission('permanent')}
+          />
+          <span>Remember on this device</span>
+        </label>
+      </fieldset>
       {api.session && !api.ownsSession && (
         <p className="session-capture__status">
-          A writing session is still open on another book. Switch back to that book to end it and take the closing thumbnail.
+          A writing session is still open on another book. Switch back to that book to end it and take the closing picture.
         </p>
       )}
       <div className="session-capture__actions">
@@ -449,7 +484,7 @@ export function SessionCapturePanel() {
       {mine && nextAt && (
         <p className="session-capture__status">
           {sessionCaptureConfigured(api.settings)
-            ? `Session started ${formatWhen(mine.startedAt)}. Next thumbnail at ${formatWhen(nextAt)}.`
+            ? `Session started ${formatWhen(mine.startedAt)}. Next picture at ${formatWhen(nextAt)}.`
             : `Session started ${formatWhen(mine.startedAt)}. Pictures are off, so nothing is being captured.`}
         </p>
       )}
@@ -462,8 +497,8 @@ export function SessionCapturePanel() {
         <ul className="session-capture__thumbs">
           {api.previews.map((thumb) => (
             <li key={thumb.id}>
-              <img src={thumb.url} alt={thumb.kind === 'camera' ? 'Camera thumbnail from this writing session' : 'Screenshot thumbnail from this writing session'} />
-              <span>{thumb.kind === 'camera' ? 'Camera' : 'Screen'} · {formatWhen(thumb.at)}</span>
+              <img src={thumb.url} alt="Session picture: screenshot with the camera in the upper left" />
+              <span>Picture · {formatWhen(thumb.at)}</span>
             </li>
           ))}
         </ul>
@@ -506,9 +541,8 @@ export function SessionCaptureExport({
     <section className="session-capture-export" aria-label="Session capture document">
       <h3>Session capture record</h3>
       <p>
-        A separate PDF from the certification summary that leads the manuscript download. Each page fits four thumbnails
-        across and as many rows as the page holds, with the seal id, content hash, origin, and times for passages written
-        in that window.
+        A separate PDF from the certification summary that leads the manuscript download. Each page shows two pictures
+        across and three down, with the certification details for that window under each picture.
       </p>
       {!enabled && (
         <p className="session-capture-export__hint">
@@ -518,12 +552,12 @@ export function SessionCaptureExport({
       )}
       {enabled && api.thumbnailCount === 0 && (
         <p className="session-capture-export__hint">
-          No thumbnails yet. Start a writing session on the manuscript. The PDF will say so until a picture is stored.
+          No pictures yet. Start a writing session on the manuscript. The PDF will say so until a picture is stored.
         </p>
       )}
       {enabled && api.thumbnailCount > 0 && (
         <p className="session-capture-export__hint">
-          {api.thumbnailCount} thumbnail{api.thumbnailCount === 1 ? '' : 's'} stored for this manuscript.
+          {api.thumbnailCount} session picture{api.thumbnailCount === 1 ? '' : 's'} stored for this manuscript.
         </p>
       )}
       {api.ownsSession && (
