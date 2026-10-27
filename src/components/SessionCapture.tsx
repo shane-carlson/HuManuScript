@@ -414,6 +414,53 @@ export function SessionCaptureProvider({
   return <SessionCaptureContext.Provider value={api}>{children}</SessionCaptureContext.Provider>;
 }
 
+/** Camera, screen, and how long the allow lasts. Off until the writer turns a device on. */
+export function SessionCaptureControls() {
+  const api = useSessionCapture();
+  return (
+    <div className="session-capture-controls" aria-label="Session pictures">
+      <span className="session-capture-controls__label">Pictures</span>
+      <label className="session-capture-controls__check">
+        <input
+          type="checkbox"
+          checked={api.settings.camera}
+          onChange={(event) => api.setCamera(event.target.checked)}
+        />
+        <span>Camera</span>
+      </label>
+      <label className="session-capture-controls__check">
+        <input
+          type="checkbox"
+          checked={api.settings.screenshot}
+          onChange={(event) => api.setScreenshot(event.target.checked)}
+        />
+        <span>Screen</span>
+      </label>
+      <fieldset className="session-capture-controls__permission">
+        <legend className="sr-only">How long camera and screen permission lasts</legend>
+        <label>
+          <input
+            type="radio"
+            name="session-capture-permission"
+            checked={api.settings.permission === 'session'}
+            onChange={() => api.setPermission('session')}
+          />
+          <span>This session</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="session-capture-permission"
+            checked={api.settings.permission === 'permanent'}
+            onChange={() => api.setPermission('permanent')}
+          />
+          <span>Remember</span>
+        </label>
+      </fieldset>
+    </div>
+  );
+}
+
 export function SessionCapturePanel() {
   const api = useSessionCapture();
   const mine = api.ownsSession ? api.session : null;
@@ -423,48 +470,9 @@ export function SessionCapturePanel() {
     <section className="session-capture" aria-label="Session pictures">
       <h3>Session pictures</h3>
       <p className="session-capture__lead">
-        Off until you turn them on. A writing session stores one picture at the start, every five minutes, and at the end.
-        That picture is the screen, with the camera in the upper left when the camera is on. HuManuScript asks once for
-        the span you choose, then reuses that allow for every later picture. This writing session drops it when you end
-        the session. Remember on this device keeps it for later sessions. With both off, nothing is captured.
+        Camera, screen, and permission are in the session bar with the word goal and timer. They stay off until you
+        turn them on. A writing session then stores one picture at the start, every five minutes, and at the end.
       </p>
-      <label className="session-capture__toggle">
-        <input
-          type="checkbox"
-          checked={api.settings.camera}
-          onChange={(event) => api.setCamera(event.target.checked)}
-        />
-        <span>Camera</span>
-      </label>
-      <label className="session-capture__toggle">
-        <input
-          type="checkbox"
-          checked={api.settings.screenshot}
-          onChange={(event) => api.setScreenshot(event.target.checked)}
-        />
-        <span>Screen</span>
-      </label>
-      <fieldset className="session-capture__permission">
-        <legend>Permission</legend>
-        <label className="session-capture__toggle">
-          <input
-            type="radio"
-            name="session-capture-permission"
-            checked={api.settings.permission === 'session'}
-            onChange={() => api.setPermission('session')}
-          />
-          <span>This writing session</span>
-        </label>
-        <label className="session-capture__toggle">
-          <input
-            type="radio"
-            name="session-capture-permission"
-            checked={api.settings.permission === 'permanent'}
-            onChange={() => api.setPermission('permanent')}
-          />
-          <span>Remember on this device</span>
-        </label>
-      </fieldset>
       {api.session && !api.ownsSession && (
         <p className="session-capture__status">
           A writing session is still open on another book. Switch back to that book to end it and take the closing picture.
@@ -546,8 +554,8 @@ export function SessionCaptureExport({
       </p>
       {!enabled && (
         <p className="session-capture-export__hint">
-          Camera pictures and screenshots are off. Turn them on in the certification pane. Nothing is captured, and this
-          document stays out of the certification record, until you do.
+          Camera and screen are off. Turn them on in the session bar, next to the word goal and timer. Nothing is
+          captured, and this document stays out of the certification record, until you do.
         </p>
       )}
       {enabled && api.thumbnailCount === 0 && (

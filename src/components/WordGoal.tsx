@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ManuscriptDocument } from '../core/document.ts';
+import { SessionCaptureControls } from './SessionCapture.tsx';
 import { WritingTimer } from './WritingTimer.tsx';
 import { manuscriptStats } from '../core/manuscript.ts';
 import {
@@ -192,6 +193,7 @@ export function WordGoal({
           )}
         </form>
       )}
+      <SessionCaptureControls />
       <div hidden={scope !== 'session'}>
         <WritingTimer bookId={bookId} doc={doc} sessionGoal={sessionGoal} />
       </div>
