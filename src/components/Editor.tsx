@@ -1233,9 +1233,6 @@ export function Editor({
           </div>
         </div>
 
-        {viewMode === 'raw' && (
-          <p className="raw-write-hint">Type on the blank page. Highlight a passage, then choose chapter, section, paragraph, block quote, or a format above.</p>
-        )}
         {showHighlights && (
           <ul className="legend legend--inline" aria-label="Passage origins">
             <li><i className="swatch prov-keyboard" /> Keyboard, sealed</li>
