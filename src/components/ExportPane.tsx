@@ -95,7 +95,7 @@ const TARGETS: TargetInfo[] = [
     id: 'pdf',
     name: 'PDF',
     icon: '📕',
-    blurb: 'A letter-size reading PDF. The certification summary is page one. The trim-size file is the Print interior tab.',
+    blurb: 'A letter-size reading PDF. The certification summary is page one. The trim-size file is the Format for Print tab.',
     format: 'pdf',
     steps: ['Download the .pdf below.', 'Share or print. The summary is page one; the manuscript starts on the next page.'],
   },
@@ -214,7 +214,7 @@ export function ExportPane({
       <div className="export-pane__head">
         <div>
           <h2>Export</h2>
-          <p>Writer files keep the certification summary. EPUB is the reflowable ebook. Print interior is the trim-size PDF.</p>
+          <p>Writer files keep the certification summary. EPUB is the reflowable ebook. Format for Print is the trim-size PDF.</p>
         </div>
         <BookGrid
           title={title}
@@ -266,7 +266,7 @@ export function ExportPane({
             setPanel('print');
           }}
         >
-          Print interior
+          Format for Print
         </button>
       </div>
 

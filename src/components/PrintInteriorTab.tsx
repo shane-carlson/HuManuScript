@@ -229,7 +229,7 @@ export function PrintInteriorTab({
       <div className="print-interior__stage">
         <div className="print-interior__proof" aria-busy={viewStatus === 'working'}>
           {previewUrl && viewStatus === 'ready' ? (
-            <img src={previewUrl} alt={`Print interior of ${title}, ${trim.fileLabel}`} />
+            <img src={previewUrl} alt={`Format for Print of ${title}, ${trim.fileLabel}`} />
           ) : (
             <p className="print-interior__wait">{viewStatus === 'working' ? 'Setting the type…' : 'The proof appears here when the interior can be set.'}</p>
           )}
