@@ -11,15 +11,18 @@ import {
   captureSessionComposite,
   nextCaptureAt,
   nextIntervalDue,
+  SESSION_CAPTURE_REPORTS,
   sessionCaptureConfigured,
   type CapturePermissionDuration,
   type SealSource,
+  type SessionCaptureReportKind,
   type SessionCaptureSchema,
   type SessionCaptureSettings,
   type WritingSessionState,
 } from '../core/sessionCapture.ts';
+import { buildCertificationPageModel, type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { certificationExport, type ManuscriptDocument } from '../core/document.ts';
-import { renderSessionCapturePdf, sessionCaptureFilename } from '../core/sessionCaptureExport.ts';
+import { renderSessionCaptureReport, sessionCaptureReportFilename } from '../core/sessionCaptureExport.ts';
 import { createIdFactory } from '../core/uid.ts';
 import {
   blobToDataUrl,
@@ -56,7 +59,13 @@ interface SessionCaptureApi {
   startSession: () => void;
   endSession: () => void;
   certificationRecord: (doc: ManuscriptDocument) => Promise<ReturnType<typeof certificationExport>>;
-  capturePdf: (doc: ManuscriptDocument, title: string) => Promise<{ filename: string; blob: Blob }>;
+  captureReport: (
+    doc: ManuscriptDocument,
+    title: string,
+    kind: SessionCaptureReportKind,
+    identity: CertificationPageIdentity,
+    liveDevice?: string | null,
+  ) => Promise<{ filename: string; blob: Blob }>;
 }
 
 const SessionCaptureContext = createContext<SessionCaptureApi | null>(null);
@@ -376,22 +385,70 @@ export function SessionCaptureProvider({
     [schemaFor],
   );
 
-  const capturePdf = useCallback(
-    async (doc: ManuscriptDocument, title: string) => {
-      if (!sessionCaptureConfigured(settingsRef.current)) {
-        throw new Error('Turn on camera pictures or screenshots before downloading the session capture.');
+  const captureReport = useCallback(
+    async (
+      doc: ManuscriptDocument,
+      title: string,
+      kind: SessionCaptureReportKind,
+      identity: CertificationPageIdentity,
+      liveDevice?: string | null,
+    ) => {
+      const [sessions, thumbs] = await Promise.all([
+        listStoredSessions(doc.manuscriptId),
+        listStoredThumbnails(doc.manuscriptId),
+      ]);
+      const thumbnails = await Promise.all(
+        thumbs.map(async (thumb) => ({
+          id: thumb.id,
+          sessionId: thumb.sessionId,
+          at: thumb.at,
+          reason: thumb.reason,
+          kind: thumb.kind,
+          windowStart: thumb.windowStart,
+          windowEnd: thumb.windowEnd,
+          mime: 'image/jpeg' as const,
+          width: thumb.width,
+          height: thumb.height,
+          dataUrl: kind === 'seals' ? '' : await blobToDataUrl(thumb.blob),
+        })),
+      );
+      const points: SealSource[] = doc.points.map((point) => ({
+        id: point.id,
+        blockId: point.blockId,
+        contentHash: point.contentHash,
+        origin: point.origin,
+        sealedAt: point.sealedAt,
+        updatedAt: point.updatedAt,
+      }));
+      const schema = buildSessionCaptureSchema({
+        settings: settingsRef.current,
+        manuscriptId: doc.manuscriptId,
+        sessions,
+        thumbnails,
+        points,
+        includeStored: true,
+      });
+      const stored = schema?.sessions.reduce((count, session) => count + session.captures.length, 0) ?? 0;
+      if (!schema || stored === 0) {
+        throw new Error('No session pictures are stored for this manuscript yet.');
       }
-      const schema = await schemaFor(doc);
-      if (!schema) throw new Error('Session pictures are off.');
-      const bytes = renderSessionCapturePdf({ title, manuscriptId: doc.manuscriptId, schema });
+      const summary = buildCertificationPageModel(doc, new Date().toISOString(), identity, liveDevice);
+      const bytes = renderSessionCaptureReport({
+        kind,
+        title,
+        manuscriptId: doc.manuscriptId,
+        schema,
+        points: doc.points,
+        summary,
+      });
       const buffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buffer).set(bytes);
       return {
-        filename: sessionCaptureFilename(title),
+        filename: sessionCaptureReportFilename(title, kind),
         blob: new Blob([buffer], { type: 'application/pdf' }),
       };
     },
-    [schemaFor],
+    [],
   );
 
   const api: SessionCaptureApi = {
@@ -408,7 +465,7 @@ export function SessionCaptureProvider({
     startSession,
     endSession,
     certificationRecord,
-    capturePdf,
+    captureReport,
   };
 
   return <SessionCaptureContext.Provider value={api}>{children}</SessionCaptureContext.Provider>;
@@ -516,20 +573,38 @@ export function SessionCapturePanel() {
 export function SessionCaptureExport({
   doc,
   title,
+  bookTitle,
+  seriesLabel = null,
+  liveDevice = null,
 }: {
   doc: ManuscriptDocument;
   title: string;
+  bookTitle?: string;
+  seriesLabel?: string | null;
+  liveDevice?: string | null;
 }) {
   const api = useSessionCapture();
+  const [kind, setKind] = useState<SessionCaptureReportKind | null>(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
-  const enabled = sessionCaptureConfigured(api.settings);
+  const ready = api.thumbnailCount > 0;
+  const picturesOn = sessionCaptureConfigured(api.settings);
 
   const download = async () => {
+    if (!kind) {
+      setError('Choose one report.');
+      return;
+    }
     setExporting(true);
     setError('');
     try {
-      const file = await api.capturePdf(doc, title);
+      const file = await api.captureReport(
+        doc,
+        title,
+        kind,
+        { bookTitle: bookTitle || title, seriesLabel },
+        liveDevice,
+      );
       const url = URL.createObjectURL(file.blob);
       const link = document.createElement('a');
       link.href = url;
@@ -544,36 +619,45 @@ export function SessionCaptureExport({
   };
 
   return (
-    <section className="session-capture-export" aria-label="Session capture document">
+    <section className="session-capture-export" aria-label="Session capture record">
       <h3>Session capture record</h3>
-      <p>
-        A separate PDF from the certification summary that leads the manuscript download. Each page shows two pictures
-        across and three down, with the certification details for that window under each picture.
-      </p>
-      {!enabled && (
-        <p className="session-capture-export__hint">
-          Camera and screen are off. Open Session options on the session bar and turn them on. Nothing is
-          captured, and this document stays out of the certification record, until you do.
+      {!ready ? (
+        <p className="session-capture-export__empty">
+          {picturesOn
+            ? 'No session pictures yet. Press Start on the session bar. A report waits until a picture is stored.'
+            : 'No session pictures yet. Turn on the camera or the screen under Session options, then press Start. A report waits until a picture is stored.'}
         </p>
+      ) : (
+        <>
+          <p className="session-capture-export__count">
+            {api.thumbnailCount} session picture{api.thumbnailCount === 1 ? '' : 's'} stored for this manuscript.
+          </p>
+          <fieldset className="session-capture-export__choices">
+            <legend>Choose one report</legend>
+            {SESSION_CAPTURE_REPORTS.map((option) => (
+              <label key={option.kind} data-report-kind={option.kind}>
+                <input
+                  type="radio"
+                  name="session-capture-report"
+                  value={option.kind}
+                  checked={kind === option.kind}
+                  onChange={() => {
+                    setKind(option.kind);
+                    setError('');
+                  }}
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  <span className="session-capture-export__detail">{option.detail}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <button type="button" className="primary" disabled={kind == null || exporting} onClick={() => void download()}>
+            {exporting ? 'Preparing…' : 'Download'}
+          </button>
+        </>
       )}
-      {enabled && api.thumbnailCount === 0 && (
-        <p className="session-capture-export__hint">
-          No pictures yet. Press Start on the session bar. The PDF will say so until a picture is stored.
-        </p>
-      )}
-      {enabled && api.thumbnailCount > 0 && (
-        <p className="session-capture-export__hint">
-          {api.thumbnailCount} session picture{api.thumbnailCount === 1 ? '' : 's'} stored for this manuscript.
-        </p>
-      )}
-      {api.ownsSession && (
-        <button type="button" onClick={api.endSession} disabled={api.busy}>
-          {api.busy ? 'Capturing…' : 'End writing session'}
-        </button>
-      )}
-      <button type="button" className="primary" disabled={!enabled || exporting} onClick={() => void download()}>
-        {exporting ? 'Preparing…' : 'Download session capture PDF'}
-      </button>
       {error && (
         <p className="session-capture__notice is-error" role="alert">
           {error}

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { SessionCaptureExport } from './SessionCapture.tsx';
 import { type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
 import { PrintInteriorTab } from './PrintInteriorTab.tsx';
@@ -351,8 +350,6 @@ export function ExportPane({
           />
         </div>
       ) : null}
-
-      <SessionCaptureExport doc={doc} title={title} />
     </div>
   );
 }

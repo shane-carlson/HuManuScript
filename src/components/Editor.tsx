@@ -79,7 +79,7 @@ import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wor
 import { typewriterScrollDelta } from '../core/typewriter.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { CertificationMark } from './CertificationMark.tsx';
-import { SessionCapturePanel, useSessionCapture } from './SessionCapture.tsx';
+import { SessionCaptureExport, SessionCapturePanel, useSessionCapture } from './SessionCapture.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptStatsBar } from './ManuscriptStatsBar.tsx';
 import { NotesRail } from './NotesRail.tsx';
@@ -1852,6 +1852,13 @@ export function Editor({
               </div>
             </div>
           </div>
+          <SessionCaptureExport
+            doc={doc}
+            title={displayTitle(doc)}
+            bookTitle={bookTitle}
+            seriesLabel={seriesLabel}
+            liveDevice={liveDevice}
+          />
           <SessionCapturePanel />
           {doc.points.length === 0 && (
             <p className="points-empty">Nothing is sealed yet. Keyboard and dictated text land here with a content hash and the input events behind them. Pasted text never will.</p>

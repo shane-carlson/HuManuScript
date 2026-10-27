@@ -354,6 +354,10 @@ function momentKey(thumb: CaptureThumbnailInput): string {
  * Returns null when neither the camera nor the screen is turned on, so the
  * downloaded certification record omits the field entirely.
  * Separate camera or screenshot files are ignored. Only a composite is included.
+ *
+ * PDF reports pass `includeStored` so pictures already in IndexedDB can be
+ * downloaded after the setting is turned off. That flag does not change the
+ * stored JPEG, the hash, or the seal fields copied into each window.
  */
 export function buildSessionCaptureSchema(args: {
   settings: SessionCaptureSettings;
@@ -361,9 +365,10 @@ export function buildSessionCaptureSchema(args: {
   sessions: CaptureSessionInput[];
   thumbnails: CaptureThumbnailInput[];
   points: SealSource[];
+  includeStored?: boolean;
 }): SessionCaptureSchema | null {
   const settings = normalizeSessionCaptureSettings(args.settings);
-  if (!sessionCaptureConfigured(settings)) return null;
+  if (!sessionCaptureConfigured(settings) && args.includeStored !== true) return null;
 
   const sessions = args.sessions
     .filter((session) => session.manuscriptId === args.manuscriptId)
@@ -552,4 +557,38 @@ export function readWritingSession(raw: string | null): WritingSessionState | nu
   } catch {
     return null;
   }
+}
+
+/** One download from the certification pane. The writer picks exactly one. */
+export type SessionCaptureReportKind = 'detailed' | 'summary' | 'seals';
+
+export const SESSION_CAPTURE_REPORTS: readonly {
+  kind: SessionCaptureReportKind;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    kind: 'detailed',
+    label: 'Detailed certification report',
+    detail:
+      'All pictures in time order, with every certification field for the passages in each window. A one-page summary leads.',
+  },
+  {
+    kind: 'summary',
+    label: 'High-level summary',
+    detail: 'Pictures and seal summaries only. Shorter than the detailed report.',
+  },
+  {
+    kind: 'seals',
+    label: 'Seal summaries only',
+    detail: 'Seal summaries for each window. No pictures.',
+  },
+];
+
+export function sessionCaptureReportShowsImages(kind: SessionCaptureReportKind): boolean {
+  return kind !== 'seals';
+}
+
+export function sessionCaptureReportLeadsWithSummary(kind: SessionCaptureReportKind): boolean {
+  return kind === 'detailed';
 }

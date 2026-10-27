@@ -3062,18 +3062,73 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   color: var(--text-faint);
 }
 .session-capture-export {
-  margin-top: 18px;
-  padding: 16px;
-  border-radius: 16px;
-  border: 1px solid var(--border-strong);
+  margin: 12px 0 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+}
+.session-capture-export p.session-capture-export__count {
+  margin: 0 0 10px;
+}
+.session-capture-export p.session-capture-export__empty {
+  margin: 0;
+}
+.session-capture-export__choices {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 6px;
+}
+.session-capture-export__choices legend {
+  margin: 0 0 2px;
+  padding: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.session-capture-export__choices label {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 8px;
+  align-items: start;
+  margin: 0;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
   background: var(--bg-elev);
+  cursor: pointer;
+}
+.session-capture-export__choices label:has(input:checked) {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.session-capture-export__choices label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.session-capture-export__choices input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--good);
+}
+.session-capture-export__choices strong {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.session-capture-export__detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 .session-capture-export .primary {
-  margin-top: 8px;
-}
-.session-capture-export button + .primary,
-.session-capture-export .primary {
-  margin-right: 8px;
+  width: 100%;
+  margin-top: 2px;
 }
 
 @media (max-width: 980px) {
