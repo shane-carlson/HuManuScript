@@ -61,6 +61,8 @@ module.exports = {
     extendInfo: {
       CFBundleDisplayName: 'HuManuScript',
       CFBundleName: 'HuManuScript',
+      NSCameraUsageDescription:
+        'HuManuScript takes an optional session picture only after you turn on camera pictures and allow the prompt. The picture is stored as a low-resolution thumbnail.',
     },
   },
   dmg: {
