@@ -6,6 +6,7 @@ export function ToolbarIconButton({
   disabled,
   active,
   expanded,
+  essential = false,
   children,
 }: {
   label: string;
@@ -13,6 +14,8 @@ export function ToolbarIconButton({
   disabled?: boolean;
   active?: boolean;
   expanded?: boolean;
+  /** Stays on the one-row rail when the rest of the tools are collapsed. */
+  essential?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -22,6 +25,7 @@ export function ToolbarIconButton({
       onClick={onClick}
       disabled={disabled}
       data-tooltip={label}
+      data-rail-essential={essential ? 'true' : undefined}
       aria-label={label}
       aria-expanded={expanded}
       aria-haspopup={expanded == null ? undefined : 'dialog'}

@@ -196,6 +196,7 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
   const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
@@ -818,7 +819,7 @@ export function Editor({
       <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
         <div
-          className="toolbar"
+          className={`toolbar${railCollapsed ? ' is-collapsed' : ''}`}
           role="toolbar"
           aria-label="Manuscript tools"
           onMouseDown={(event) => {
@@ -827,6 +828,17 @@ export function Editor({
             event.preventDefault();
           }}
         >
+          <button
+            type="button"
+            className="toolbar-rail-toggle"
+            aria-pressed={railCollapsed}
+            aria-label={railCollapsed ? 'Expand editor tools' : 'Collapse editor tools'}
+            data-tooltip={railCollapsed ? 'Expand editor tools' : 'Collapse editor tools to one row'}
+            data-rail-essential="true"
+            onClick={() => setRailCollapsed((value) => !value)}
+          >
+            {railCollapsed ? 'Expand' : 'Collapse'}
+          </button>
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
@@ -874,8 +886,11 @@ export function Editor({
               <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
                 <IconParagraph />
               </ToolbarIconButton>
+                </>
+              )}
               <ToolbarIconButton
                 label="Table"
+                essential
                 onClick={(event) => {
                   const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
                   openTablePicker(rect.left, rect.bottom + 4, docRef.current.blocks.length);
@@ -883,11 +898,49 @@ export function Editor({
               >
                 <IconTable />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Image" onClick={() => commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()))}>
+              <ToolbarIconButton
+                label="Image"
+                essential
+                onClick={() => {
+                  commit((current) => insertStructure(current, 'image', current.blocks.length, ids.current()));
+                  if (viewMode === 'raw') setViewMode('manuscript');
+                }}
+              >
                 <IconImage />
               </ToolbarIconButton>
-                </>
-              )}
+            </div>
+          </div>
+          <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-history">History</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-history">
+                <ToolbarIconButton
+                  label="Undo"
+                  essential
+                  disabled={!undo.length}
+                onClick={() => {
+                  const previous = undo[undo.length - 1];
+                  if (!previous) return;
+                  setUndo(undo.slice(0, -1));
+                  setRedo([doc, ...redo]);
+                  replace(previous);
+                }}
+              >
+                <IconUndo />
+              </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Redo"
+                  essential
+                  disabled={!redo.length}
+                onClick={() => {
+                  const next = redo[0];
+                  if (!next) return;
+                  setRedo(redo.slice(1));
+                  setUndo([...undo, doc]);
+                  replace(next);
+                }}
+              >
+                <IconRedo />
+              </ToolbarIconButton>
             </div>
           </div>
           <div className="toolbar-group">
@@ -902,18 +955,45 @@ export function Editor({
             </div>
           </div>
           <div className="toolbar-group">
+            <span className="toolbar-group__label" id="toolbar-lists">Lists</span>
+            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-lists">
+              <ToolbarIconButton
+                label="Bullet list"
+                essential
+                disabled={!selection}
+                onClick={() => {
+                  if (!selection) return;
+                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
+                }}
+              >
+                <IconBulletList />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                label="Numbered list"
+                essential
+                disabled={!selection}
+                onClick={() => {
+                  if (!selection) return;
+                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
+                }}
+              >
+                <IconNumberList />
+              </ToolbarIconButton>
+            </div>
+          </div>
+          <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-formatting">Formatting</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-formatting">
-              <ToolbarIconButton label="Bold" onClick={() => onFormat('bold')}>
+              <ToolbarIconButton label="Bold" essential onClick={() => onFormat('bold')}>
                 <IconBold />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Italic" onClick={() => onFormat('italic')}>
+              <ToolbarIconButton label="Italic" essential onClick={() => onFormat('italic')}>
                 <IconItalic />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Underline" onClick={() => onFormat('underline')}>
+              <ToolbarIconButton label="Underline" essential onClick={() => onFormat('underline')}>
                 <IconUnderline />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Strikethrough" onClick={() => onFormat('strike')}>
+              <ToolbarIconButton label="Strikethrough" essential onClick={() => onFormat('strike')}>
                 <IconStrikethrough />
               </ToolbarIconButton>
               {focusMode ? (
@@ -1042,63 +1122,7 @@ export function Editor({
               />
             </div>
           </div>
-          <div className="toolbar-group">
-            <span className="toolbar-group__label" id="toolbar-lists">Lists</span>
-            <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-lists">
-              <ToolbarIconButton
-                label="Bullet list"
-                disabled={!selection}
-                onClick={() => {
-                  if (!selection) return;
-                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'bullet' }));
-                }}
-              >
-                <IconBulletList />
-              </ToolbarIconButton>
-              <ToolbarIconButton
-                label="Numbered list"
-                disabled={!selection}
-                onClick={() => {
-                  if (!selection) return;
-                  commit((c) => updateParagraphMeta(c, selection.blockId, { listStyle: 'number' }));
-                }}
-              >
-                <IconNumberList />
-              </ToolbarIconButton>
-            </div>
-          </div>
           <div className="toolbar-history-find">
-            <div className="toolbar-group">
-              <span className="toolbar-group__label" id="toolbar-history">History</span>
-              <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-history">
-                <ToolbarIconButton
-                  label="Undo"
-                  disabled={!undo.length}
-                  onClick={() => {
-                    const previous = undo[undo.length - 1];
-                    if (!previous) return;
-                    setUndo(undo.slice(0, -1));
-                    setRedo([doc, ...redo]);
-                    replace(previous);
-                  }}
-                >
-                  <IconUndo />
-                </ToolbarIconButton>
-                <ToolbarIconButton
-                  label="Redo"
-                  disabled={!redo.length}
-                  onClick={() => {
-                    const next = redo[0];
-                    if (!next) return;
-                    setRedo(redo.slice(1));
-                    setUndo([...undo, doc]);
-                    replace(next);
-                  }}
-                >
-                  <IconRedo />
-                </ToolbarIconButton>
-              </div>
-            </div>
             {!showPreview && (
               <div
                 className="find"
@@ -1187,6 +1211,7 @@ export function Editor({
               <div className="view-toggle" role="group" aria-label="Editor view">
                 <ToolbarIconButton
                   label="Raw write"
+                  essential
                   active={viewMode === 'raw'}
                   onClick={() => setViewMode('raw')}
                 >
@@ -1194,6 +1219,7 @@ export function Editor({
                 </ToolbarIconButton>
                 <ToolbarIconButton
                   label="Manuscript view"
+                  essential
                   active={viewMode === 'manuscript'}
                   onClick={() => setViewMode('manuscript')}
                 >
@@ -1201,6 +1227,7 @@ export function Editor({
                 </ToolbarIconButton>
                 <ToolbarIconButton
                   label="Certification highlights"
+                  essential
                   active={viewMode === 'highlights'}
                   onClick={() => setViewMode('highlights')}
                 >
@@ -1208,6 +1235,7 @@ export function Editor({
                 </ToolbarIconButton>
                 <ToolbarIconButton
                   label="Export preview"
+                  essential
                   active={viewMode === 'preview'}
                   onClick={openPreview}
                 >
@@ -1215,7 +1243,7 @@ export function Editor({
                 </ToolbarIconButton>
               </div>
               {!focusMode ? (
-                <button type="button" className="focus-enter" data-tooltip="Full screen" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
+                <button type="button" className="focus-enter" data-tooltip="Full screen" data-rail-essential="true" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
                   Full screen
                 </button>
               ) : null}
@@ -1769,6 +1797,7 @@ export function Editor({
           const at = tablePicker.at;
           setTablePicker(null);
           commit((current) => insertStructure(current, 'table', at, ids.current(), { rows, cols }));
+          if (viewMode === 'raw') setViewMode('manuscript');
         }}
       />
     )}
