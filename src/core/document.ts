@@ -46,6 +46,7 @@ import {
 } from './manuscript.ts';
 import { clearFormatting, expandCollapsedRange, normalizeMarks, toggleMark } from './richText.ts';
 import type { BookNotes } from './notes.ts';
+import type { SessionCaptureSchema } from './sessionCapture.ts';
 import type { ManuscriptFontId } from './typography.ts';
 import { isProseBlock, type BlockType, type DividerStyle, type InlineMarkKind, type ManuscriptBlock } from './types.ts';
 
@@ -984,8 +985,12 @@ export async function acceptGrammarSuggestion(args: {
   };
 }
 
-export function certificationExport(doc: ManuscriptDocument, exportedAt: string) {
-  return {
+export function certificationExport(
+  doc: ManuscriptDocument,
+  exportedAt: string,
+  sessionCaptures?: SessionCaptureSchema | null,
+) {
+  const record = {
     product: 'HuManuScript',
     recordVersion: 1,
     manuscriptId: doc.manuscriptId,
@@ -1002,6 +1007,8 @@ export function certificationExport(doc: ManuscriptDocument, exportedAt: string)
       spans: (isProseBlock(block.type) ? doc.provenance[block.id]?.text : doc.provenance[block.id]?.title) ?? [],
     })),
   };
+  if (!sessionCaptures) return record;
+  return { ...record, sessionCaptures };
 }
 
 /**

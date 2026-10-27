@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AppVersionLabel } from './AppVersionLabel.tsx';
 import {
-  certificationExport,
   chapterOrder,
   clearBlockFormatting,
   combineParagraphs,
@@ -80,6 +79,7 @@ import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wor
 import { typewriterScrollDelta } from '../core/typewriter.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { CertificationMark } from './CertificationMark.tsx';
+import { SessionCapturePanel, useSessionCapture } from './SessionCapture.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptStatsBar } from './ManuscriptStatsBar.tsx';
 import { NotesRail } from './NotesRail.tsx';
@@ -233,6 +233,7 @@ export function Editor({
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const editorLayoutRef = useRef<HTMLDivElement>(null);
+  const sessionCapture = useSessionCapture();
 
   useEffect(() => {
     saveEditorView(viewMode);
@@ -1807,6 +1808,7 @@ export function Editor({
               </div>
             </div>
           </div>
+          <SessionCapturePanel />
           {doc.points.length === 0 && (
             <p className="points-empty">Nothing is sealed yet. Keyboard and dictated text land here with a content hash and the input events behind them. Pasted text never will.</p>
           )}
@@ -1862,7 +1864,18 @@ export function Editor({
               </ul>
             </div>
           )}
-          <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              void sessionCapture.certificationRecord(doc).then(
+                (record) => downloadJson(`${name}.certification.json`, record),
+                () => window.alert('The certification record could not be prepared.'),
+              );
+            }}
+          >
+            Download certification record
+          </button>
         </div>
       </aside>
     </div>

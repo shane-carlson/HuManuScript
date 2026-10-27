@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { SessionCaptureExport } from './SessionCapture.tsx';
 import { type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
 import {
@@ -190,6 +191,8 @@ export function ExportPane({
           {exporting ? 'Exporting…' : `Download for ${target.name}`}
         </button>
       </div>
+
+      <SessionCaptureExport doc={doc} title={title} />
     </div>
   );
 }

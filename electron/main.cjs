@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, screen, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, screen, shell, ipcMain, session, desktopCapturer } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -111,6 +111,21 @@ ipcMain.handle('humanuscript:device-name', () => {
   return typeof name === 'string' ? name.trim() : '';
 });
 
+function askConsent(parent, message, detail) {
+  const options = {
+    type: 'question',
+    buttons: ["Don't allow", 'Allow'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'HuManuScript',
+    message,
+    detail,
+  };
+  const pending = parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
+  return pending.then(({ response }) => response === 1);
+}
+
 function cloudChoicesPath() {
   return path.join(app.getPath('userData'), 'cloud-folders.json');
 }
@@ -193,6 +208,60 @@ function startAutoUpdate(baked) {
 }
 
 app.whenReady().then(() => {
+  const ses = session.defaultSession;
+  // Camera: the permission request is the consent dialog. Screen capture uses the
+  // system picker when the OS has one, otherwise a chooser that never auto-selects.
+  ses.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') {
+      const parent = BrowserWindow.fromWebContents(webContents) ?? undefined;
+      void askConsent(
+        parent,
+        'Allow HuManuScript to take a picture with the camera?',
+        'This prompt appears only while camera pictures are turned on. The picture is stored as a low-resolution thumbnail.',
+      ).then(callback, () => callback(false));
+      return;
+    }
+    if (permission === 'display-capture') {
+      callback(true);
+      return;
+    }
+    if (permission === 'clipboard-sanitized-write' || permission === 'fullscreen' || permission === 'pointerLock') {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
+
+  ses.setDisplayMediaRequestHandler((_request, callback) => {
+    const parent = BrowserWindow.getFocusedWindow() ?? undefined;
+    desktopCapturer
+      .getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } })
+      .then(async (sources) => {
+        if (!sources.length) {
+          callback(null);
+          return;
+        }
+        const shown = sources.slice(0, 6);
+        const options = {
+          type: 'question',
+          buttons: ["Don't share", ...shown.map((source) => (source.name || 'Untitled').slice(0, 48))],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+          title: 'Screenshot',
+          message: 'Share a screen or window for this session thumbnail?',
+          detail: "HuManuScript only asks because screenshots are turned on. Don't share stores nothing.",
+        };
+        const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+        if (response <= 0 || !shown[response - 1]) {
+          callback(null);
+          return;
+        }
+        callback({ video: shown[response - 1] });
+      })
+      .catch(() => callback(null));
+  }, { useSystemPicker: true });
+
   const baked = readBakedVersion();
   createWindow(baked);
   startAutoUpdate(baked);

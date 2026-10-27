@@ -3,6 +3,7 @@ import { appVersion } from 'virtual:app-version';
 import { AppVersionLabel } from './components/AppVersionLabel.tsx';
 import { Editor } from './components/Editor.tsx';
 import { PaneGrab } from './components/PaneGrab.tsx';
+import { SessionCaptureProvider } from './components/SessionCapture.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
@@ -333,6 +334,7 @@ export default function App() {
         </section>
       )}
       {phase === 'ready' && library && doc && (
+        <SessionCaptureProvider bookId={library.activeBookId} manuscriptId={doc.manuscriptId}>
         <div
           className={`workspace-layout${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
           style={{ '--pane-sidebar': `${sidebarWidth}px` } as CSSProperties}
@@ -415,6 +417,7 @@ export default function App() {
             )}
           </div>
         </div>
+        </SessionCaptureProvider>
       )}
     </div>
   );
