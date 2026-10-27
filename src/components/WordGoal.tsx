@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ManuscriptDocument } from '../core/document.ts';
+import { WritingTimer } from './WritingTimer.tsx';
 import { manuscriptStats } from '../core/manuscript.ts';
 import {
   activeChapter,
@@ -191,6 +192,9 @@ export function WordGoal({
           )}
         </form>
       )}
+      <div hidden={scope !== 'session'}>
+        <WritingTimer bookId={bookId} doc={doc} sessionGoal={sessionGoal} />
+      </div>
     </div>
   );
 }

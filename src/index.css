@@ -386,6 +386,81 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   background: var(--bg-input);
 }
 .word-goal__form button { padding: 4px 10px; font-size: 0.8rem; }
+.writing-timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.writing-timer__mode,
+.writing-timer__controls {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.writing-timer__mode button,
+.writing-timer__controls button {
+  border: none;
+  border-radius: 0;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  background: transparent;
+}
+.writing-timer__mode button[aria-pressed='true'] {
+  background: var(--text);
+  color: var(--bg);
+}
+.writing-timer__minutes input {
+  width: 4.5rem;
+  height: 32px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+}
+.writing-timer__clock {
+  margin: 0;
+  min-width: 4.2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.writing-timer__error {
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.78rem;
+}
+.writing-timer__summary {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.writing-timer__summary p {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.writing-timer__summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+}
+.writing-timer__summary div { display: flex; gap: 6px; align-items: baseline; }
+.writing-timer__summary dt {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.writing-timer__summary dd { margin: 0; font-size: 0.84rem; }
+.manuscript-stats-bar .writing-timer__mode button,
+.manuscript-stats-bar .writing-timer__controls button { padding: 2px 8px; font-size: 0.7rem; }
+.manuscript-stats-bar .writing-timer__minutes input { height: 26px; }
+.app.is-manuscript-focus .writing-timer__mode button,
+.app.is-manuscript-focus .writing-timer__controls button { padding: 1px 6px; font-size: 0.66rem; }
+.app.is-manuscript-focus .writing-timer__minutes input { height: 22px; }
+.app.is-manuscript-focus .writing-timer__clock { font-size: 0.82rem; }
+.app.is-manuscript-focus .writing-timer__summary dd { font-size: 0.74rem; }
 .notes-rail {
   background: var(--bg-elev);
   border: 1px solid var(--border);
