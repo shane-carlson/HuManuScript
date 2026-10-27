@@ -224,6 +224,16 @@ export function IconManuscriptView() {
   );
 }
 
+export function IconPublication() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <rect x="6" y="3" width="12" height="18" rx="1.2" />
+      <path d="M6 6.5h12" />
+      <path d="M9 10.5h6M9 13.5h6M9 16.5h4" />
+    </svg>
+  );
+}
+
 export function IconExportPreview() {
   return (
     <svg {...iconProps} aria-hidden="true">

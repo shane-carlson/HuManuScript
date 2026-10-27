@@ -14,12 +14,12 @@ export const CERTIFICATION_COLLAPSED_KEY = 'humanuscript.certificationCollapsed'
 export const NOTES_COLLAPSED_KEY = 'humanuscript.notesCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
-export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview';
+export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview' | 'publication';
 export type WorkspaceTab = 'manuscript' | 'export' | 'history';
 
 /** A new session opens on the blank raw-write page. A choice made in this session stays. */
 export function editorViewFromStored(value: string | null | undefined): EditorViewMode {
-  if (value === 'manuscript' || value === 'highlights' || value === 'preview' || value === 'raw') return value;
+  if (value === 'manuscript' || value === 'highlights' || value === 'preview' || value === 'publication' || value === 'raw') return value;
   return 'raw';
 }
 
