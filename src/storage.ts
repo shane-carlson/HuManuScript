@@ -1,5 +1,6 @@
 import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from './core/document.ts';
 import type { Book, Library, Series } from './core/library.ts';
+import { readStoredEpubFields } from './core/epubSettings.ts';
 import { readGrammarUsage, type CertificationPoint, type MoveRecord, type ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 import { readBookNotes } from './core/notes.ts';
@@ -241,7 +242,16 @@ function isBook(value: unknown): value is Book {
 
 function hydrateBook(raw: Book): Book {
   const doc = parseDocument(raw.document as StoredManuscript)!;
-  return { ...raw, document: doc };
+  const book: Book = { ...raw, document: doc };
+  delete book.epubUuid;
+  delete book.epubIsbn;
+  delete book.epubAuthor;
+  delete book.epubLanguage;
+  delete book.epubChapterBreaks;
+  delete book.epubParagraphStyle;
+  delete book.epubTextAlign;
+  delete book.epubBodySize;
+  return { ...book, ...readStoredEpubFields(raw) };
 }
 
 export function loadLibrary(): LoadResult {

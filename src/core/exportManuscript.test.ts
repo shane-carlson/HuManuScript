@@ -154,7 +154,8 @@ test('word, rtf, odt, and pdf carry the book font and size; plain exports stay p
   assert.match(markdown, /Before the break/);
 });
 
-test('every exporter is covered by the page-break checks', () => {
-  const covered: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
-  assert.deepEqual(covered.sort(), (Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).sort());
+test('writer exports that lead with the certification page are every format except epub', () => {
+  const leading: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
+  const all = Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[];
+  assert.deepEqual([...leading, 'epub'].sort(), all.slice().sort());
 });

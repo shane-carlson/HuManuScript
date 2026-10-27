@@ -4,7 +4,7 @@ A manuscript editor for writers who want a record of how the prose got onto the 
 
 HuManuScript adds a certification layer. As you type, dictate, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text and dictated text are each sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Dictation is its own origin: sealed, and not counted as keyboard, paste, or other. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as a spellcheck replacement or an untrusted scripted edit.
 
-This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated on the certification summary that leads every export.
+This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated on the certification summary that leads the Word, RTF, ODT, Markdown, text, and PDF exports. The EPUB ebook does not include it.
 
 ## Run it
 
@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). **Version history** in the left navigation opens snapshots and backup as tabs. Snapshots save named versions per book (with auto-save checkpoints and a safety copy before restore). **Backup & restore** downloads JSON for selected books (all selected by default) or merges a backup file back in. On the manuscript toolbar, **View → Export preview** shows the one-page certification summary, the page break, and the manuscript without certification highlights. Use the left **Export** workspace to download that same file. Every writer format (Word, RTF, Scrivener, ODT, Markdown, plain text, PDF) uses that same summary and starts the manuscript on the next page. The certification panel still offers a certification JSON download per book.
+The library (books, optional series, and each book’s manuscript with its own certification seals) is saved in this browser (`localStorage`). **Version history** in the left navigation opens snapshots and backup as tabs. Snapshots save named versions per book (with auto-save checkpoints and a safety copy before restore). **Backup & restore** downloads JSON for selected books (all selected by default) or merges a backup file back in. On the manuscript toolbar, **View → Export preview** shows the one-page certification summary, the page break, and the manuscript without certification highlights. Use the left **Export** workspace to download that same file. Word, RTF, Scrivener, ODT, Markdown, plain text, and PDF use that same summary and start the manuscript on the next page. EPUB is a separate reflowable ebook: the export form asks for the author, language, ISBN or saved id, cover, and a few Kindle-safe text choices, and the certification summary is left out. Print-on-demand stays PDF. The certification panel still offers a certification JSON download per book.
 
 ### Desktop
 

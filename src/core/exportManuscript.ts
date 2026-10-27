@@ -1,5 +1,7 @@
 /**
- * Manuscript export for writers. Every format leads with the certification page, then the body.
+ * Manuscript export for writers.
+ * Word, RTF, ODT, Markdown, plain text, and PDF lead with the certification page.
+ * EPUB is a reflowable ebook and does not include that page.
  * Body text comes from blocks only; provenance is summarized on the certification page.
  */
 
@@ -28,6 +30,7 @@ import { markedToMarkdown, markedToRtf, styledSpans } from './richText.ts';
 import { dividerDisplayText } from './manuscript.ts';
 import { isProseBlock, type ManuscriptBlock } from './types.ts';
 import { resolveManuscriptTypography, type ManuscriptTypography } from './typography.ts';
+import { buildEpubBlob, type EpubBuildOptions } from './epubExport.ts';
 
 export const SCRIVENER_SPLIT_SEPARATOR = '#';
 const SCENE_BREAK = '* * *';
@@ -46,7 +49,8 @@ export type ExportFormat =
   | 'odt'
   | 'markdown'
   | 'plain'
-  | 'pdf';
+  | 'pdf'
+  | 'epub';
 
 export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
   docx: 'Microsoft Word (.docx)',
@@ -56,6 +60,7 @@ export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
   markdown: 'Markdown (.md)',
   plain: 'Plain text (.txt)',
   pdf: 'PDF (.pdf)',
+  epub: 'EPUB 3 (.epub)',
 };
 
 function chapterHeading(block: ManuscriptBlock, index: number): string {
@@ -623,7 +628,12 @@ export async function exportManuscriptBlob(
   format: ExportFormat,
   exportedAt: string = new Date().toISOString(),
   identity: CertificationPageIdentity = {},
+  epub?: EpubBuildOptions,
 ): Promise<Blob> {
+  if (format === 'epub') {
+    if (!epub) throw new Error('EPUB export needs the author, language, and identifier from the export form.');
+    return buildEpubBlob(doc, epub, exportedAt);
+  }
   const liveDevice = await getTypingDeviceLabel();
   const model = buildCertificationPageModel(doc, exportedAt, identity, liveDevice);
   const type = resolveManuscriptTypography(doc);
@@ -678,11 +688,14 @@ export async function exportManuscriptBlob(
   }
 }
 
-export function exportFilename(title: string, format: ExportFormat): string {
-  const base = title
+export function exportBasename(title: string): string {
+  return title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'untitled-manuscript';
+}
+
+export function exportFilename(title: string, format: ExportFormat): string {
   const ext: Record<ExportFormat, string> = {
     docx: 'docx',
     rtf: 'rtf',
@@ -691,6 +704,12 @@ export function exportFilename(title: string, format: ExportFormat): string {
     markdown: 'md',
     plain: 'txt',
     pdf: 'pdf',
+    epub: 'epub',
   };
-  return `${base}.${ext[format]}`;
+  return `${exportBasename(title)}.${ext[format]}`;
+}
+
+/** Storefront cover saved beside the EPUB. This is the file the author picked, not a generated cover. */
+export function exportCoverFilename(title: string, extension: 'jpg' | 'png'): string {
+  return `${exportBasename(title)}-cover.${extension}`;
 }

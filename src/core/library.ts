@@ -3,6 +3,16 @@
  */
 
 import { emptyDocument, type ManuscriptDocument } from './document.ts';
+import {
+  canonicalBcp47,
+  isEpubUuid,
+  mintEpubUuid,
+  normalizeIsbn,
+  type EpubBodySize,
+  type EpubChoicePatch,
+  type EpubParagraphStyle,
+  type EpubTextAlign,
+} from './epubSettings.ts';
 
 export interface Series {
   id: string;
@@ -15,6 +25,16 @@ export interface Book {
   seriesId?: string;
   seriesBookNumber?: number;
   document: ManuscriptDocument;
+  /** Stable EPUB id. Minted once. A download does not replace it. */
+  epubUuid?: string;
+  /** ISBN-10 or ISBN-13. When set, this is the EPUB identifier instead of epubUuid. */
+  epubIsbn?: string;
+  epubAuthor?: string;
+  epubLanguage?: string;
+  epubChapterBreaks?: boolean;
+  epubParagraphStyle?: EpubParagraphStyle;
+  epubTextAlign?: EpubTextAlign;
+  epubBodySize?: EpubBodySize;
 }
 
 export interface Library {
@@ -147,6 +167,60 @@ export function updateActiveBookDocument(library: Library, doc: ManuscriptDocume
 export function switchActiveBook(library: Library, bookId: string): Library | null {
   if (!library.books.some((b) => b.id === bookId)) return null;
   return { ...library, activeBookId: bookId };
+}
+
+/** Mint a UUID the first time this book is prepared for EPUB. Later calls keep it. */
+export function ensureBookEpubUuid(library: Library, bookId: string): { library: Library; uuid: string } {
+  const book = library.books.find((item) => item.id === bookId);
+  if (!book) return { library, uuid: '' };
+  if (book.epubUuid && isEpubUuid(book.epubUuid)) {
+    const uuid = book.epubUuid.toLowerCase();
+    if (uuid === book.epubUuid) return { library, uuid };
+    return {
+      uuid,
+      library: {
+        ...library,
+        books: library.books.map((item) => (item.id === bookId ? { ...item, epubUuid: uuid } : item)),
+      },
+    };
+  }
+  const uuid = mintEpubUuid();
+  return {
+    uuid,
+    library: {
+      ...library,
+      books: library.books.map((item) => (item.id === bookId ? { ...item, epubUuid: uuid } : item)),
+    },
+  };
+}
+
+/** Remember the export form on the book. An invalid ISBN or language is left unchanged. */
+export function saveBookEpubChoices(library: Library, bookId: string, patch: EpubChoicePatch): Library {
+  return {
+    ...library,
+    books: library.books.map((book) => {
+      if (book.id !== bookId) return book;
+      const next: Book = {
+        ...book,
+        epubChapterBreaks: patch.chapterPageBreaks,
+        epubParagraphStyle: patch.paragraphStyle,
+        epubTextAlign: patch.textAlign,
+        epubBodySize: patch.bodySize,
+      };
+      const author = patch.author.trim();
+      if (author) next.epubAuthor = author;
+      else delete next.epubAuthor;
+      const language = canonicalBcp47(patch.language);
+      if (language) next.epubLanguage = language;
+      const isbnRaw = patch.isbn.trim();
+      if (!isbnRaw) delete next.epubIsbn;
+      else {
+        const isbn = normalizeIsbn(isbnRaw);
+        if (isbn) next.epubIsbn = isbn;
+      }
+      return next;
+    }),
+  };
 }
 
 export function createBook(library: Library, newBookId: string, title = 'Untitled book'): Library {
