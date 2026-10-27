@@ -80,6 +80,7 @@ import { HeadingRemoveControl } from './HeadingRemoveControl.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptSelectBanner } from './ManuscriptSelectBanner.tsx';
 import { ManuscriptTable } from './ManuscriptTable.tsx';
+import { PublicationView } from './PublicationView.tsx';
 import { RawWriteView, type RawEdit } from './RawWriteView.tsx';
 import { TableGridPicker } from './TableGridPicker.tsx';
 import { FieldContextMenu, type ContextMenuState, type MenuAnchor } from './FieldContextMenu.tsx';
@@ -98,6 +99,7 @@ import {
   IconManuscriptView,
   IconNumberList,
   IconPageBreak,
+  IconPublication,
   IconParagraph,
   IconRawWrite,
   IconRedo,
@@ -715,6 +717,8 @@ export function Editor({
 
   const showHighlights = viewMode === 'highlights';
   const showPreview = viewMode === 'preview';
+  const showPublication = viewMode === 'publication';
+  const showReading = showPreview || showPublication;
   const noteBlockId = viewMode === 'raw'
     ? (rawRange ? rawSegmentAt(flattenRaw(doc), rawRange.start)?.blockId ?? null : null)
     : (selection?.blockId ?? null);
@@ -734,7 +738,7 @@ export function Editor({
   useEffect(() => subscribeExtraFaces(() => setFontEpoch((epoch) => epoch + 1)), []);
   const typography = useMemo(() => resolveManuscriptTypography(doc), [doc, fontEpoch]);
   const manuscriptStyle = manuscriptTypographyStyle(doc) as CSSProperties;
-  const showReplace = replaceOpen && !showPreview;
+  const showReplace = replaceOpen && !showReading;
   const openCards = useMemo(
     () => (showHighlights ? openPassageCards(doc) : []),
     [doc, showHighlights],
@@ -816,7 +820,7 @@ export function Editor({
           <span className="focus-hint">Esc</span>
         </div>
       )}
-      <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}`}>
+      <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}${showPublication ? ' is-publication' : ''}`}>
         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
         <div
           className={`toolbar${railCollapsed ? ' is-collapsed' : ''}`}
@@ -1113,7 +1117,7 @@ export function Editor({
             <span className="toolbar-group__label" id="toolbar-grammar">Grammar</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-grammar">
               <GrammarMenu
-                disabled={showPreview}
+                disabled={showReading}
                 busy={grammarBusy}
                 iconOnly={focusMode}
                 hasSelection={viewMode === 'raw' ? Boolean(rawRange && rawRange.end > rawRange.start) : Boolean(selection && selection.end > selection.start)}
@@ -1123,7 +1127,7 @@ export function Editor({
             </div>
           </div>
           <div className="toolbar-history-find">
-            {!showPreview && (
+            {!showReading && (
               <div
                 className="find"
                 role="search"
@@ -1241,6 +1245,14 @@ export function Editor({
                 >
                   <IconExportPreview />
                 </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Publication"
+                  essential
+                  active={viewMode === 'publication'}
+                  onClick={() => setViewMode('publication')}
+                >
+                  <IconPublication />
+                </ToolbarIconButton>
               </div>
               {!focusMode ? (
                 <button type="button" className="focus-enter" data-tooltip="Full screen" data-rail-essential="true" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
@@ -1261,7 +1273,7 @@ export function Editor({
             <li><i className="swatch prov-grammar" /> Grammar checked, still sealed</li>
           </ul>
         )}
-        {!showPreview && (
+        {!showReading && (
           <GrammarResults
             doc={doc}
             lints={grammarLints}
@@ -1283,6 +1295,8 @@ export function Editor({
         >
         {showPreview ? (
           <ExportPreview model={previewModel} doc={doc} />
+        ) : showPublication ? (
+          <PublicationView doc={doc} bookTitle={bookTitle} seriesLabel={seriesLabel} />
         ) : viewMode === 'raw' ? (
           <RawWriteView
             doc={doc}
@@ -1680,7 +1694,7 @@ export function Editor({
             <div className="ms-page-tail" data-page-tail="true" />
           </div>
         )}
-        {!focusMode && !showPreview && (
+        {!focusMode && !showReading && (
           <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
         )}
         </div>
@@ -1696,7 +1710,7 @@ export function Editor({
           onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
           onChange={publish}
           onShowBlock={(blockId) => {
-            if (viewMode === 'raw' || viewMode === 'preview') setViewMode('manuscript');
+            if (viewMode === 'raw' || viewMode === 'preview' || viewMode === 'publication') setViewMode('manuscript');
             setSelection({ blockId, start: 0, end: 0 });
             window.requestAnimationFrame(() => {
               window.requestAnimationFrame(() => {

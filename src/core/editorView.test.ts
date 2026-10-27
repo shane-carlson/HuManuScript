@@ -9,5 +9,6 @@ test('a new session opens raw write, and a stored choice is kept', () => {
   assert.equal(editorViewFromStored('raw'), 'raw');
   assert.equal(editorViewFromStored('highlights'), 'highlights');
   assert.equal(editorViewFromStored('preview'), 'preview');
+  assert.equal(editorViewFromStored('publication'), 'publication');
   assert.equal(editorViewFromStored('notes'), 'raw');
 });
