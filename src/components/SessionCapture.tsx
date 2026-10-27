@@ -419,7 +419,6 @@ export function SessionCaptureControls() {
   const api = useSessionCapture();
   return (
     <div className="session-capture-controls" aria-label="Session pictures">
-      <span className="session-capture-controls__label">Pictures</span>
       <label className="session-capture-controls__check">
         <input
           type="checkbox"
@@ -443,18 +442,20 @@ export function SessionCaptureControls() {
             type="radio"
             name="session-capture-permission"
             checked={api.settings.permission === 'session'}
+            aria-label="This writing session"
             onChange={() => api.setPermission('session')}
           />
-          <span>This session</span>
+          <span title="Ask again next session">Now</span>
         </label>
         <label>
           <input
             type="radio"
             name="session-capture-permission"
             checked={api.settings.permission === 'permanent'}
+            aria-label="Remember on this device"
             onChange={() => api.setPermission('permanent')}
           />
-          <span>Remember</span>
+          <span title="Remember on this device">Keep</span>
         </label>
       </fieldset>
     </div>
@@ -470,25 +471,13 @@ export function SessionCapturePanel() {
     <section className="session-capture" aria-label="Session pictures">
       <h3>Session pictures</h3>
       <p className="session-capture__lead">
-        Camera, screen, and permission are in the session bar with the word goal and timer. They stay off until you
-        turn them on. A writing session then stores one picture at the start, every five minutes, and at the end.
+        Start and End on the session bar begin and finish pictures. Camera and screen stay off until you turn them on.
       </p>
       {api.session && !api.ownsSession && (
         <p className="session-capture__status">
-          A writing session is still open on another book. Switch back to that book to end it and take the closing picture.
+          A writing session is still open on another book. Switch back to that book and press End to take the closing picture.
         </p>
       )}
-      <div className="session-capture__actions">
-        {mine ? (
-          <button type="button" onClick={api.endSession} disabled={api.busy}>
-            {api.busy ? 'Capturing…' : 'End writing session'}
-          </button>
-        ) : (
-          <button type="button" className="primary" onClick={api.startSession} disabled={api.busy || Boolean(api.session)}>
-            Start writing session
-          </button>
-        )}
-      </div>
       {mine && nextAt && (
         <p className="session-capture__status">
           {sessionCaptureConfigured(api.settings)
@@ -560,7 +549,7 @@ export function SessionCaptureExport({
       )}
       {enabled && api.thumbnailCount === 0 && (
         <p className="session-capture-export__hint">
-          No pictures yet. Start a writing session on the manuscript. The PDF will say so until a picture is stored.
+          No pictures yet. Press Start on the session bar. The PDF will say so until a picture is stored.
         </p>
       )}
       {enabled && api.thumbnailCount > 0 && (

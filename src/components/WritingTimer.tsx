@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useSessionCapture } from './SessionCapture.tsx';
 import { certificationSummary, type ManuscriptDocument } from '../core/document.ts';
 import { manuscriptStats } from '../core/manuscript.ts';
 import {
@@ -24,11 +26,15 @@ export function WritingTimer({
   bookId,
   doc,
   sessionGoal,
+  noteRoot,
 }: {
   bookId: string;
   doc: ManuscriptDocument;
   sessionGoal: SessionGoal | null;
+  /** Errors and the session summary render here so the control row stays one line. */
+  noteRoot: HTMLElement | null;
 }) {
+  const capture = useSessionCapture();
   const [mode, setMode] = useState<TimerMode>('up');
   const [minutes, setMinutes] = useState('25');
   const [timer, setTimer] = useState<WritingTimer>(() => idleWritingTimer('up'));
@@ -102,6 +108,7 @@ export function WritingTimer({
     timerRef.current = next;
     setTimer(next);
     setNow(tick);
+    capture.startSession();
   };
 
   const onPause = () => {
@@ -113,6 +120,8 @@ export function WritingTimer({
   };
 
   const onEnd = () => {
+    if (capture.ownsSession) capture.endSession();
+    if (!locked) return;
     const tick = Date.now();
     const next = endTimer(timerRef.current, tick);
     timerRef.current = next;
@@ -124,11 +133,11 @@ export function WritingTimer({
   return (
     <div className="writing-timer" data-timer-phase={timer.phase} data-timer-mode={timer.mode}>
       <div className="writing-timer__mode" role="group" aria-label="Writing timer">
-        <button type="button" aria-pressed={mode === 'up'} disabled={locked} onClick={() => chooseMode('up')}>
-          Count up
+        <button type="button" aria-pressed={mode === 'up'} aria-label="Count up" disabled={locked} title="Count up" onClick={() => chooseMode('up')}>
+          Up
         </button>
-        <button type="button" aria-pressed={mode === 'down'} disabled={locked} onClick={() => chooseMode('down')}>
-          Countdown
+        <button type="button" aria-pressed={mode === 'down'} aria-label="Countdown" disabled={locked} title="Countdown" onClick={() => chooseMode('down')}>
+          Down
         </button>
       </div>
       {mode === 'down' && (
@@ -155,10 +164,19 @@ export function WritingTimer({
         {formatClock(clockMs)}
       </p>
       <div className="writing-timer__controls">
-        <button type="button" onClick={onStart} disabled={timer.phase === 'running'}>Start</button>
+        <button type="button" onClick={onStart} disabled={timer.phase === 'running' || capture.busy} aria-label="Start session" title="Start the timer and the picture session">Start</button>
         <button type="button" onClick={onPause} disabled={timer.phase !== 'running'}>Pause</button>
-        <button type="button" onClick={onEnd} disabled={!locked}>End session</button>
+        <button type="button" onClick={onEnd} disabled={capture.busy || (!locked && !capture.ownsSession)} aria-label="End session" title="End the timer and the picture session">End</button>
       </div>
+      {noteRoot ? createPortal(timerNotes(error, summary), noteRoot) : null}
+    </div>
+  );
+}
+
+function timerNotes(error: string, summary: SessionSummary | null): ReactNode {
+  if (!error && !summary) return null;
+  return (
+    <>
       {error && <p className="writing-timer__error" role="alert">{error}</p>}
       {summary && (
         <div className="writing-timer__summary" data-session-summary="true" aria-label="Session summary">
@@ -197,7 +215,7 @@ export function WritingTimer({
           </dl>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

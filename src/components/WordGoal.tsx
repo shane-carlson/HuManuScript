@@ -59,6 +59,7 @@ export function WordGoal({
   const [storageError, setStorageError] = useState('');
   const [sessionGoal, setSessionGoal] = useState<SessionGoal | null>(() => loadSessionGoal(bookId));
   const [readyId, setReadyId] = useState<string | null>(null);
+  const [noteRoot, setNoteRoot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSessionGoal(loadSessionGoal(bookId));
@@ -123,8 +124,7 @@ export function WordGoal({
 
   return (
     <div className="word-goal" data-word-goal={phase} data-word-goal-scope={scope}>
-      <div className="word-goal__head">
-        <span className="toolbar-group__label">Word goal</span>
+      <div className="word-goal__line">
         <div className="word-goal__scope" role="group" aria-label="Goal scope">
           <button type="button" aria-pressed={scope === 'session'} onClick={() => { setScope('session'); setInputError(''); }}>
             Session
@@ -133,40 +133,24 @@ export function WordGoal({
             Chapter
           </button>
         </div>
-      </div>
-      {phase === 'loading' && <p className="word-goal__status">Counting words…</p>}
-      {phase === 'error' && (
-        <p className="word-goal__status word-goal__status--error" role="alert">{error}</p>
-      )}
-      {phase === 'empty' && (
-        <p className="word-goal__status">
-          {scope === 'chapter' && !chapter
-            ? 'Start a chapter, then set how many words it should hold.'
-            : scope === 'session'
-              ? 'No session goal yet. Set how many new words you want before you stop.'
-              : 'No chapter goal yet. Set how many words this chapter should hold.'}
-        </p>
-      )}
-      {phase === 'ready' && target != null && current != null && (
-        <div className="word-goal__progress">
-          <p>
-            <strong>{current.toLocaleString()}</strong>
-            <span> of {target.toLocaleString()}</span>
-            <span className="word-goal__scope-label">{scope === 'session' ? ' this session' : ' in this chapter'}</span>
-          </p>
-          <div
-            className="word-goal__meter"
-            role="meter"
-            aria-label={scope === 'session' ? 'Session word goal' : 'Chapter word goal'}
-            aria-valuemin={0}
-            aria-valuemax={target}
-            aria-valuenow={Math.min(current, target)}
-          >
-            <span style={{ width: `${ratio}%` }} />
+        {phase === 'ready' && target != null && current != null && (
+          <div className="word-goal__progress">
+            <p>
+              <strong>{current.toLocaleString()}</strong>
+              <span>/{target.toLocaleString()}</span>
+            </p>
+            <div
+              className="word-goal__meter"
+              role="meter"
+              aria-label={scope === 'session' ? 'Session word goal' : 'Chapter word goal'}
+              aria-valuemin={0}
+              aria-valuemax={target}
+              aria-valuenow={Math.min(current, target)}
+            >
+              <span style={{ width: `${ratio}%` }} />
+            </div>
           </div>
-        </div>
-      )}
-      {phase !== 'loading' && (
+        )}
         <form
           className="word-goal__form"
           onSubmit={(event) => {
@@ -179,23 +163,27 @@ export function WordGoal({
             <input
               inputMode="numeric"
               value={draft}
-              placeholder={scope === 'session' ? 'Words this session' : 'Words in this chapter'}
+              placeholder="Words"
               aria-label={scope === 'session' ? 'Words this session' : 'Words in this chapter'}
+              aria-invalid={phase === 'error' || undefined}
               onChange={(event) => {
                 setDraft(event.target.value);
                 if (inputError) setInputError('');
               }}
             />
           </label>
-          <button type="submit" className="primary">Set goal</button>
+          <button type="submit" className="primary" title={scope === 'session' ? 'Set session word goal' : 'Set chapter word goal'}>Set</button>
           {target != null && (
-            <button type="button" className="ghost" onClick={clearGoal}>Clear</button>
+            <button type="button" className="ghost" onClick={clearGoal} title="Clear goal">Clear</button>
           )}
         </form>
-      )}
-      <SessionCaptureControls />
-      <div hidden={scope !== 'session'}>
-        <WritingTimer bookId={bookId} doc={doc} sessionGoal={sessionGoal} />
+        <SessionCaptureControls />
+        <WritingTimer bookId={bookId} doc={doc} sessionGoal={sessionGoal} noteRoot={noteRoot} />
+      </div>
+      <div className="word-goal__notes" ref={setNoteRoot}>
+        {phase === 'error' && (
+          <p className="word-goal__status word-goal__status--error" role="alert">{error}</p>
+        )}
       </div>
     </div>
   );
