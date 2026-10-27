@@ -193,9 +193,8 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 0;
 }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact {
-  width: 30%;
-  min-width: min(100%, 18rem);
-  align-self: flex-start;
+  width: 100%;
+  align-self: stretch;
   box-sizing: border-box;
   border-radius: 0;
   border-left: none;
@@ -220,9 +219,6 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal__status {
   font-size: 0.72rem;
-}
-.app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal__form {
-  width: 100%;
 }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal__form input {
   width: auto;
