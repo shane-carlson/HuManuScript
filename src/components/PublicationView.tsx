@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { ManuscriptDocument } from '../core/document.ts';
 import {
   layoutPublication,
+  packPublication,
   otherBindingSizes,
   publicationFormat,
   PUBLICATION_FORMATS,
   type PublicationFormat,
   type PublicationFormatId,
+  type PublicationLayout,
   type PublicationNode,
   type PublicationPage,
 } from '../core/publication.ts';
+import { flowFitsBody, renderPublicationFlow } from './publicationMeasure.ts';
 import { styledSpans } from '../core/richText.ts';
 import { manuscriptTypographyStyle } from '../core/typography.ts';
 import type { InlineMark } from '../core/types.ts';
@@ -42,6 +45,21 @@ function saveFormat(id: PublicationFormatId): void {
   } catch {
     /* session storage may be unavailable */
   }
+}
+
+function pagesKey(layout: PublicationLayout): string {
+  return layout.pages.map((page) => {
+    const body = page.nodes.map((node) => {
+      if (node.kind === 'paragraph' || node.kind === 'blockquote') return `${node.kind}:${node.id}:${node.text}`;
+      if (node.kind === 'chapter') return `chapter:${node.kicker}:${node.title}`;
+      if (node.kind === 'section' || node.kind === 'scene') return `${node.kind}:${node.title}`;
+      if (node.kind === 'ornament' || node.kind === 'note') return `${node.kind}:${node.text}`;
+      if (node.kind === 'table') return `table:${node.id}:${node.rows.length}`;
+      if (node.kind === 'image') return `image:${node.id}:${node.caption}:${node.src.length}`;
+      return node.kind;
+    }).join('\n');
+    return `${page.kind}|${page.number ?? ''}|${page.header}|${body}`;
+  }).join('\f');
 }
 
 export function PublicationView({
@@ -84,20 +102,99 @@ export function PublicationView({
   }, [openSizes]);
   const format = publicationFormat(formatId);
   const bodyPt = format.kind === 'reader' ? readerSize : format.bodyPt;
-  const layout = useMemo(
-    () => layoutPublication(doc, format, { bookTitle, seriesLabel }, bodyPt),
-    [doc, format, bookTitle, seriesLabel, bodyPt],
-  );
-  const textPages = layout.pages.filter((page) => page.kind === 'text').length;
+  const typography = manuscriptTypographyStyle(doc);
   const typeStyle = {
-    ...manuscriptTypographyStyle(doc),
+    ...typography,
     fontFamily: 'var(--ms-font)',
-    fontSize: `${format.bodyPt}pt`,
+    fontSize: `${bodyPt}pt`,
     lineHeight: String(format.lineHeight),
   } as CSSProperties;
+  const [packed, setPacked] = useState<{ layout: PublicationLayout; mode: 'measured' | 'estimated' }>(() => ({
+    layout: layoutPublication(doc, format, { bookTitle, seriesLabel }, bodyPt),
+    mode: 'estimated',
+  }));
+  const pageRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLParagraphElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const flowRef = useRef<HTMLDivElement>(null);
+  const folioRef = useRef<HTMLParagraphElement>(null);
+  const packing = useRef(false);
+  const measureKey = [
+    format.id,
+    format.widthIn,
+    format.heightIn,
+    format.marginXIn,
+    format.marginYIn,
+    format.lineHeight,
+    bodyPt,
+    typography['--ms-font'],
+    bookTitle ?? '',
+    seriesLabel ?? '',
+  ].join('|');
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const apply = (layout: PublicationLayout, mode: 'measured' | 'estimated') => {
+      if (cancelled) return;
+      setPacked((prev) => (prev.mode === mode && pagesKey(prev.layout) === pagesKey(layout) ? prev : { layout, mode }));
+    };
+    const measure = () => {
+      if (cancelled || packing.current) return;
+      const body = bodyRef.current;
+      const flow = flowRef.current;
+      const header = headerRef.current;
+      const folio = folioRef.current;
+      const estimated = layoutPublication(doc, format, { bookTitle, seriesLabel }, bodyPt);
+      if (!body || !flow || !header || !folio || body.clientHeight < 40 || body.clientWidth < 40) {
+        apply(estimated, 'estimated');
+        return;
+      }
+      packing.current = true;
+      try {
+        const layout = packPublication(doc, format, { bookTitle, seriesLabel }, (nodes, slot) => {
+          header.textContent = slot.header;
+          folio.textContent = String(slot.number);
+          renderPublicationFlow(flow, nodes);
+          return flowFitsBody(body, flow);
+        });
+        apply(layout, 'measured');
+      } finally {
+        packing.current = false;
+      }
+    };
+    measure();
+    const fonts = document.fonts;
+    const onFonts = () => measure();
+    fonts?.addEventListener('loadingdone', onFonts);
+    void fonts?.ready.then(onFonts);
+    const body = bodyRef.current;
+    const observer = body ? new ResizeObserver(() => measure()) : null;
+    if (body) observer?.observe(body);
+    const root = pageRef.current?.closest('.publication');
+    const onLoad = (event: Event) => {
+      if (event.target instanceof HTMLImageElement) measure();
+    };
+    root?.addEventListener('load', onLoad, true);
+    return () => {
+      cancelled = true;
+      fonts?.removeEventListener('loadingdone', onFonts);
+      observer?.disconnect();
+      root?.removeEventListener('load', onLoad, true);
+    };
+  }, [doc, format, bookTitle, seriesLabel, bodyPt, measureKey]);
+  const layout = packed.layout;
+  const textPages = layout.pages.filter((page) => page.kind === 'text').length;
 
   return (
-    <section className="publication" aria-label="Publication">
+    <section className="publication" data-pack={packed.mode} aria-label="Publication">
+      <div className="pub-measure" aria-hidden="true">
+        <article ref={pageRef} className="pub-page" style={{ ...typeStyle, ...pageBox(format) }}>
+          <p className="pub-page__header" ref={headerRef} />
+          <div className="pub-page__body" ref={bodyRef}>
+            <div className="pub-page__flow" ref={flowRef} />
+          </div>
+          <p className="pub-page__folio" ref={folioRef} />
+        </article>
+      </div>
       <div className="export-preview__head">
         <h3>Publication</h3>
         <p>{format.blurb}</p>
