@@ -1410,27 +1410,6 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .ms-insert-gap { position: relative; height: 10px; border-radius: 6px; }
 .manuscript.is-dragging .ms-insert-gap { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ms-insert-gap.is-hot { background: color-mix(in srgb, var(--accent) 45%, transparent); height: 16px; }
-.manuscript.is-picking-insert .ms-insert-gap { height: 22px; cursor: pointer; }
-.manuscript.is-picking-insert .ms-insert-gap:hover::before,
-.ms-insert-gap.is-insert-selected::before {
-  content: attr(data-insert-label);
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent, #fff);
-  font-family: var(--sans);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.ms-insert-gap.is-insert-selected { height: 28px; }
 .manuscript.is-dragging .ms-insert-gap.is-drop-over { height: 28px; }
 .manuscript.is-dragging .ms-insert-gap.is-drop-over::before {
   content: attr(data-drop-label);

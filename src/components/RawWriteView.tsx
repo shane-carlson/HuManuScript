@@ -23,10 +23,6 @@ export function RawWriteView({
   style,
   onEdit,
   onSelection,
-  canInsertDictation = false,
-  onInsertDictation,
-  canUnselectInsert = false,
-  onUnselectInsert,
   onInsertPageBreak,
   onInsertDivider,
   onInsertBlockquote,
@@ -40,10 +36,6 @@ export function RawWriteView({
   style?: CSSProperties;
   onEdit: (edit: RawEdit) => void;
   onSelection: (range: { start: number; end: number }) => void;
-  canInsertDictation?: boolean;
-  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
-  canUnselectInsert?: boolean;
-  onUnselectInsert?: () => void;
   onInsertPageBreak?: (blockId: string | null) => void;
   onInsertDivider?: (blockId: string | null) => void;
   onInsertBlockquote?: (blockId: string | null) => void;
@@ -60,7 +52,6 @@ export function RawWriteView({
   const replaceRef = useRef<{ start: number; end: number } | null>(null);
   const clipRef = useRef<{ start: number; end: number } | null>(null);
   const menuBlockRef = useRef<string | null>(null);
-  const menuAtRef = useRef(0);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [headingKind, setHeadingKind] = useState<'chapter' | 'scene' | 'section' | null>(null);
   const flat = flattenRaw(doc);
@@ -250,7 +241,6 @@ export function RawWriteView({
           : [];
         replaceRef.current = word ? { start: word.start, end: word.end } : null;
         clipRef.current = selected ? { start: sel.start, end: sel.end } : word ? { start: word.start, end: word.end } : null;
-        menuAtRef.current = at;
         menuBlockRef.current = segment?.blockId ?? null;
         setHeadingKind(segment && isHeadingType(segment.kind) ? segment.kind : null);
         onSelection(selected ? sel : { start: at, end: at });
@@ -280,25 +270,7 @@ export function RawWriteView({
       state={menu}
       anchorRef={anchorRef}
       headingKind={headingKind}
-      canInsertDictation={canInsertDictation}
-      canUnselectInsert={canUnselectInsert}
       onClose={closeMenu}
-      onUnselectInsert={onUnselectInsert}
-      onInsertDictation={() => {
-        const blockId = menuBlockRef.current;
-        const segment = blockId ? rawSegmentAt(flattenRaw(doc), menuAtRef.current) : null;
-        if (segment && (segment.kind === 'paragraph' || segment.kind === 'blockquote')) {
-          const offset = Math.max(0, Math.min(menuAtRef.current - segment.start, segment.text.length));
-          onInsertDictation?.({ blockId: segment.blockId, splitOffset: offset });
-          return;
-        }
-        if (!segment) {
-          onInsertDictation?.({ atIndex: 0 });
-          return;
-        }
-        const index = doc.blocks.findIndex((block) => block.id === segment.blockId);
-        onInsertDictation?.({ atIndex: index < 0 ? doc.blocks.length : index + 1 });
-      }}
       onCut={() => {
         const clip = clipRef.current;
         if (!clip) return;

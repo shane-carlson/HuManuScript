@@ -36,8 +36,6 @@ import {
   findMatches,
   firstProseAfter,
   headingLabels,
-  insertGapHoverLabel,
-  insertGapSelectedLabel,
   isHeadingType,
   matchIndexAtOrAfter,
   nearestValidDropIndex,
@@ -96,7 +94,6 @@ import {
   IconFindNext,
   IconFindPrevious,
   IconImage,
-  IconInsertionPoint,
   IconItalic,
   IconManuscriptView,
   IconNumberList,
@@ -163,10 +160,6 @@ export function Editor({
   onFocusModeChange,
   bookTitle,
   seriesLabel = null,
-  canInsertDictation = false,
-  onDictationTarget,
-  onInsertDictation,
-  insertAt,
 }: {
   doc: ManuscriptDocument;
   bookId: string;
@@ -176,13 +169,6 @@ export function Editor({
   onFocusModeChange?: (focus: boolean) => void;
   bookTitle?: string;
   seriesLabel?: string | null;
-  /** True when a dictation take is waiting to land in the manuscript. */
-  canInsertDictation?: boolean;
-  /** Gap index, or a caret split inside a paragraph or block quote. */
-  onDictationTarget?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
-  onInsertDictation?: (target: { atIndex?: number; blockId?: string; splitOffset?: number }) => void;
-  /** When set, the parent owns the marked insertion gap. `null` means none. */
-  insertAt?: number | null;
 }) {
   const ids = useRef(createIdFactory('hm'));
   const docRef = useRef(doc);
@@ -199,16 +185,12 @@ export function Editor({
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null);
   const [renderToken, setRenderToken] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
-  const [pickingInsert, setPickingInsert] = useState(false);
-  const [selectedGap, setSelectedGap] = useState<number | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [tablePicker, setTablePicker] = useState<{ x: number; y: number; at: number } | null>(null);
   const [gapMenu, setGapMenu] = useState<(ContextMenuState & { atIndex: number }) | null>(null);
   const gapAnchorRef = useRef<MenuAnchor | null>(null);
   const lastSelectedRef = useRef<string | null>(null);
-  const dictationTargetRef = useRef(onDictationTarget);
-  dictationTargetRef.current = onDictationTarget;
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>(() => loadEditorView());
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
@@ -574,39 +556,6 @@ export function Editor({
     }
     if (!selection) return;
     commit((current) => clearBlockFormatting(current, selection.blockId, selection));
-  };
-
-  const markedGap = insertAt !== undefined ? insertAt : selectedGap;
-
-  useEffect(() => {
-    const report = dictationTargetRef.current;
-    if (!report) return;
-    if (markedGap != null) {
-      if (insertAt === undefined) report({ atIndex: Math.min(markedGap, doc.blocks.length) });
-      return;
-    }
-    if (!selection) return;
-    const block = doc.blocks.find((item) => item.id === selection.blockId);
-    if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
-      report({ blockId: block.id, splitOffset: selection.start });
-    }
-  }, [markedGap, insertAt, selection, doc.blocks]);
-
-  const selectGap = (atIndex: number) => {
-    const next = Math.max(0, Math.min(atIndex, docRef.current.blocks.length));
-    setSelectedGap(next);
-    setPickingInsert(false);
-    dictationTargetRef.current?.({ atIndex: next });
-  };
-
-  const clearGap = () => {
-    setSelectedGap(null);
-    setPickingInsert(false);
-    if (!selection) return;
-    const block = docRef.current.blocks.find((item) => item.id === selection.blockId);
-    if (block && (block.type === 'paragraph' || block.type === 'blockquote')) {
-      dictationTargetRef.current?.({ blockId: block.id, splitOffset: selection.start });
-    }
   };
 
   const paragraphIds = doc.blocks.filter((block) => block.type === 'paragraph').map((block) => block.id);
@@ -1051,29 +1000,6 @@ export function Editor({
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-arrange">
               {focusMode ? (
                 <ToolbarIconButton
-                  label="Choose insertion point"
-                  active={pickingInsert}
-                  onClick={() => setPickingInsert((value) => !value)}
-                >
-                  <IconInsertionPoint />
-                </ToolbarIconButton>
-              ) : (
-              <button
-                type="button"
-                className={`toolbar-text-btn${pickingInsert ? ' is-active' : ''}`}
-                aria-pressed={pickingInsert}
-                title={
-                  pickingInsert
-                    ? 'Click a gap in the manuscript, or click again to cancel'
-                    : 'Turn on, then click a gap to mark where dictation lands'
-                }
-                onClick={() => setPickingInsert((value) => !value)}
-              >
-                Choose insertion point
-              </button>
-              )}
-              {focusMode ? (
-                <ToolbarIconButton
                   label="Select paragraphs"
                   active={selecting}
                   onClick={() => {
@@ -1338,10 +1264,6 @@ export function Editor({
             style={manuscriptStyle}
             onEdit={editRaw}
             onSelection={setRawRange}
-            canInsertDictation={canInsertDictation}
-            canUnselectInsert={markedGap != null}
-            onUnselectInsert={clearGap}
-            onInsertDictation={onInsertDictation}
             onGrammarCheck={checkGrammar}
             onUnwrapHeading={(blockId) => commit((current) => removeBlock(current, blockId))}
             onDeleteHeading={(blockId) => {
@@ -1367,7 +1289,7 @@ export function Editor({
           </div>
         ) : (
           <div
-            className={`manuscript${dragging != null ? ' is-dragging' : ''}${pickingInsert ? ' is-picking-insert' : ''}`}
+            className={`manuscript${dragging != null ? ' is-dragging' : ''}`}
             style={manuscriptStyle}
             data-manuscript-font={typography.font.id}
             data-manuscript-size={typography.sizePt}
@@ -1429,33 +1351,10 @@ export function Editor({
               return (
                 <div key={block.id}>
                   <div
-                    className={`ms-insert-gap${dropAt === index ? ' is-hot is-drop-over' : ''}${markedGap === index ? ' is-insert-selected' : ''}`}
+                    className={`ms-insert-gap${dropAt === index ? ' is-hot is-drop-over' : ''}`}
                     data-insert-index={index}
                     data-drop-label={dragging != null && dropAt === index ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
-                    data-insert-label={
-                      markedGap === index ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
-                    }
-                    role={pickingInsert || markedGap === index ? 'button' : undefined}
-                    tabIndex={pickingInsert || markedGap === index ? 0 : -1}
-                    aria-label={
-                      markedGap === index
-                        ? insertGapSelectedLabel()
-                        : pickingInsert
-                          ? insertGapHoverLabel()
-                          : 'Insertion gap'
-                    }
-                    onClick={(event) => {
-                      if (!pickingInsert) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      selectGap(index);
-                    }}
-                    onKeyDown={(event) => {
-                      if (!pickingInsert) return;
-                      if (event.key !== 'Enter' && event.key !== ' ') return;
-                      event.preventDefault();
-                      selectGap(index);
-                    }}
+                    aria-label={dragging != null && dropAt === index ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       setGapMenu({
@@ -1636,13 +1535,6 @@ export function Editor({
                         onInsertPageBreak={() => insertAfter(block.id, 'pageBreak')}
                         onInsertDivider={() => insertAfter(block.id, 'divider')}
                         onInsertBlockquote={() => insertAfter(block.id, 'blockquote')}
-                        canInsertDictation={canInsertDictation}
-                        onInsertDictation={() => {
-                          const offset = selection?.blockId === block.id ? selection.start : (isProseBlock(block.type) ? block.text.length : 0);
-                          onInsertDictation?.({ blockId: block.id, splitOffset: offset });
-                        }}
-                        canUnselectInsert={markedGap != null}
-                        onUnselectInsert={clearGap}
                         headingKind={isHeadingType(block.type) ? block.type : null}
                         onUnwrapHeading={() => commit((current) => removeBlock(current, block.id))}
                         onDeleteHeading={() => {
@@ -1729,26 +1621,10 @@ export function Editor({
               );
             })}
             <div
-              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot is-drop-over' : ''}${markedGap === doc.blocks.length ? ' is-insert-selected' : ''}`}
+              className={`ms-insert-gap${dropAt === doc.blocks.length ? ' is-hot is-drop-over' : ''}`}
               data-insert-index={doc.blocks.length}
               data-drop-label={dragging != null && dropAt === doc.blocks.length ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
-              data-insert-label={
-                markedGap === doc.blocks.length ? insertGapSelectedLabel() : pickingInsert ? insertGapHoverLabel() : undefined
-              }
-              role={pickingInsert || markedGap === doc.blocks.length ? 'button' : undefined}
-              tabIndex={pickingInsert || markedGap === doc.blocks.length ? 0 : -1}
-              aria-label={
-                markedGap === doc.blocks.length
-                  ? insertGapSelectedLabel()
-                  : pickingInsert
-                    ? insertGapHoverLabel()
-                    : 'Insertion gap'
-              }
-              onClick={(event) => {
-                if (!pickingInsert) return;
-                event.preventDefault();
-                selectGap(doc.blocks.length);
-              }}
+              aria-label={dragging != null && dropAt === doc.blocks.length ? dropPlaceLabel(doc.blocks[dragging]) : undefined}
               onContextMenu={(event) => {
                 event.preventDefault();
                 setGapMenu({
@@ -1915,13 +1791,6 @@ export function Editor({
       onInsertTable={(x, y) => {
         if (!gapMenu) return;
         openTablePicker(x, y, gapMenu.atIndex);
-      }}
-      canInsertDictation={canInsertDictation}
-      canUnselectInsert={markedGap != null}
-      onUnselectInsert={clearGap}
-      onInsertDictation={() => {
-        if (!gapMenu) return;
-        onInsertDictation?.({ atIndex: gapMenu.atIndex });
       }}
     />
     </>

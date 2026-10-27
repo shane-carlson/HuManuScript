@@ -37,10 +37,6 @@ export function FieldContextMenu({
   onInsertBlockquote,
   onReplaceWord,
   variant = 'field',
-  canInsertDictation = false,
-  onInsertDictation,
-  canUnselectInsert = false,
-  onUnselectInsert,
   headingKind = null,
   onUnwrapHeading,
   onDeleteHeading,
@@ -60,10 +56,6 @@ export function FieldContextMenu({
   onInsertBlockquote: () => void;
   onReplaceWord?: (word: string) => void;
   variant?: 'field' | 'gap' | 'spell';
-  canInsertDictation?: boolean;
-  onInsertDictation?: () => void;
-  canUnselectInsert?: boolean;
-  onUnselectInsert?: () => void;
   headingKind?: 'chapter' | 'scene' | 'section' | null;
   onUnwrapHeading?: () => void;
   onDeleteHeading?: () => void;
@@ -146,22 +138,6 @@ export function FieldContextMenu({
         <>
           <button type="button" role="menuitem" onClick={() => { onUnwrapHeading?.(); onClose(); }}>{heading.unwrap}</button>
           <button type="button" role="menuitem" onClick={() => { onDeleteHeading?.(); onClose(); }}>{heading.delete}</button>
-          <div className="field-context-menu__sep" />
-        </>
-      )}
-      {(variant !== 'spell' || canUnselectInsert || onInsertDictation) && variant !== 'spell' && (
-        <>
-          {canUnselectInsert && (
-            <button type="button" role="menuitem" onClick={() => { onUnselectInsert?.(); onClose(); }}>Unselect insertion point</button>
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!canInsertDictation}
-            onClick={() => { onInsertDictation?.(); onClose(); }}
-          >
-            Insert dictation here
-          </button>
           <div className="field-context-menu__sep" />
         </>
       )}
