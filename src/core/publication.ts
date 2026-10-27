@@ -7,7 +7,24 @@ import { displayTitle, type ManuscriptDocument } from './document.ts';
 import { dividerDisplayText, wordsInBlock } from './manuscript.ts';
 import type { InlineMark, ListStyle } from './types.ts';
 
-export type PublicationFormatId = 'trade' | 'hardcover' | 'mass-market' | 'ereader' | 'tablet';
+export type PublicationFormatId =
+  | 'trade'
+  | 'hardcover'
+  | 'mass-market'
+  | 'ereader'
+  | 'tablet'
+  | 'paperback-5x8'
+  | 'paperback-5-25x8'
+  | 'paperback-5-5x8-5'
+  | 'paperback-6-14x9-21'
+  | 'paperback-7x10'
+  | 'hardcover-5-5x8-5'
+  | 'hardcover-6x9'
+  | 'hardcover-6-14x9-21'
+  | 'hardcover-7x10'
+  | 'hardcover-8-5x11';
+
+export type PublicationBinding = 'paperback' | 'hardcover' | 'mass-market' | 'reader';
 
 export interface PublicationFormat {
   id: PublicationFormatId;
@@ -18,6 +35,9 @@ export interface PublicationFormat {
   trim: string;
   /** Print stack, or a reader that turns one fixed page at a time. */
   kind: 'print' | 'reader';
+  binding: PublicationBinding;
+  /** Shown as its own format button. Other sizes of that binding open from the chevron. */
+  button: boolean;
   /** Trim width in inches. Every page of this format uses this size. */
   widthIn: number;
   heightIn: number;
@@ -30,6 +50,43 @@ export interface PublicationFormat {
   lineHeight: number;
 }
 
+/** Same density as the tuned 6 × 9 trade page, scaled by text area and type size. */
+function pageWords(widthIn: number, heightIn: number, marginXIn: number, marginYIn: number, bodyPt: number): number {
+  const area = (widthIn - 2 * marginXIn) * (heightIn - 2 * marginYIn);
+  const tradeArea = (6 - 1.5) * (9 - 1.4);
+  const scale = (11 / bodyPt) ** 2;
+  return Math.max(40, Math.round(120 * (area / tradeArea) * scale));
+}
+
+function printSize(
+  id: PublicationFormatId,
+  binding: 'paperback' | 'hardcover',
+  trim: string,
+  widthIn: number,
+  heightIn: number,
+  marginXIn: number,
+  marginYIn: number,
+  bodyPt: number,
+): PublicationFormat {
+  const name = binding === 'paperback' ? 'trade paperback' : 'hardcover';
+  return {
+    id,
+    label: trim,
+    blurb: `A ${trim} ${name}. A chapter continues onto the next page when the page is full.`,
+    trim,
+    kind: 'print',
+    binding,
+    button: false,
+    widthIn,
+    heightIn,
+    marginXIn,
+    marginYIn,
+    wordsPerPage: pageWords(widthIn, heightIn, marginXIn, marginYIn, bodyPt),
+    bodyPt,
+    lineHeight: 1.35,
+  };
+}
+
 export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
   {
     id: 'trade',
@@ -37,6 +94,8 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     blurb: 'A 6 × 9 in trade paperback. A chapter continues onto the next page when the page is full.',
     trim: '6 × 9 in',
     kind: 'print',
+    binding: 'paperback',
+    button: true,
     widthIn: 6,
     heightIn: 9,
     marginXIn: 0.75,
@@ -51,6 +110,8 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     blurb: 'A 6.125 × 9.25 in hardcover. The same fixed page, filled until the page is full.',
     trim: '6.125 × 9.25 in',
     kind: 'print',
+    binding: 'hardcover',
+    button: true,
     widthIn: 6.125,
     heightIn: 9.25,
     marginXIn: 0.8,
@@ -65,6 +126,8 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     blurb: 'A 4.25 × 6.87 in mass-market paperback. Narrow margins so the text fills the page.',
     trim: '4.25 × 6.87 in',
     kind: 'print',
+    binding: 'mass-market',
+    button: true,
     widthIn: 4.25,
     heightIn: 6.87,
     marginXIn: 0.42,
@@ -79,6 +142,8 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     blurb: 'A fixed e-reader page. Scroll or turn to the next page, and change the text size.',
     trim: '4.25 × 6.4 in',
     kind: 'reader',
+    binding: 'reader',
+    button: true,
     widthIn: 4.25,
     heightIn: 6.4,
     marginXIn: 0.36,
@@ -93,6 +158,8 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     blurb: 'A 6 × 8 in tablet page. Scroll or turn the page, and change the text size.',
     trim: '6 × 8 in',
     kind: 'reader',
+    binding: 'reader',
+    button: true,
     widthIn: 6,
     heightIn: 8,
     marginXIn: 0.55,
@@ -101,7 +168,22 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
     bodyPt: 14,
     lineHeight: 1.42,
   },
+  printSize('paperback-5x8', 'paperback', '5 × 8 in', 5, 8, 0.65, 0.6, 11),
+  printSize('paperback-5-25x8', 'paperback', '5.25 × 8 in', 5.25, 8, 0.65, 0.6, 11),
+  printSize('paperback-5-5x8-5', 'paperback', '5.5 × 8.5 in', 5.5, 8.5, 0.7, 0.65, 11),
+  printSize('paperback-6-14x9-21', 'paperback', '6.14 × 9.21 in', 6.14, 9.21, 0.75, 0.7, 11),
+  printSize('paperback-7x10', 'paperback', '7 × 10 in', 7, 10, 0.8, 0.75, 11.5),
+  printSize('hardcover-5-5x8-5', 'hardcover', '5.5 × 8.5 in', 5.5, 8.5, 0.7, 0.65, 11),
+  printSize('hardcover-6x9', 'hardcover', '6 × 9 in', 6, 9, 0.75, 0.7, 11.5),
+  printSize('hardcover-6-14x9-21', 'hardcover', '6.14 × 9.21 in', 6.14, 9.21, 0.8, 0.75, 11.5),
+  printSize('hardcover-7x10', 'hardcover', '7 × 10 in', 7, 10, 0.85, 0.8, 12),
+  printSize('hardcover-8-5x11', 'hardcover', '8.5 × 11 in', 8.5, 11, 1, 0.9, 12),
 ];
+
+/** Sizes that open from a binding's chevron. The button itself keeps the original trim. */
+export function otherBindingSizes(binding: 'paperback' | 'hardcover'): readonly PublicationFormat[] {
+  return PUBLICATION_FORMATS.filter((format) => format.binding === binding && !format.button);
+}
 
 export function publicationFormat(id: string | null | undefined): PublicationFormat {
   return PUBLICATION_FORMATS.find((format) => format.id === id) ?? PUBLICATION_FORMATS[0]!;
