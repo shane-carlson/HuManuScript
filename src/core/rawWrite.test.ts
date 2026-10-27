@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { emptyDocument, insertStructure } from './document.ts';
 import { sequenceIds } from './uid.ts';
-import { applyRawFormat, assignRawKind, flattenRaw, rawHighlightFields, rawSegmentAt, replaceRawRange } from './rawWrite.ts';
+import { applyRawFormat, assignRawKind, flattenRaw, rawDomSyncIsSafe, rawHighlightFields, rawSegmentAt, replaceRawRange } from './rawWrite.ts';
 
 const now = '2026-10-25T12:00:00.000Z';
 
@@ -58,6 +58,65 @@ test('enter splits a paragraph and backspace joins it again', async () => {
   });
   assert.equal(flattenRaw(joined).text, 'Hello');
   assert.equal(joined.blocks.filter((block) => block.type === 'paragraph').length, 1);
+});
+
+test('two enters keep the words and leave the caret on a new line', async () => {
+  const ids = sequenceIds('id');
+  let doc = await replaceRawRange({
+    doc: emptyDocument('ms'),
+    start: 0,
+    end: 0,
+    insert: 'Test Scene\nwhat',
+    origin: 'keyboard',
+    now,
+    newId: ids,
+  });
+  doc = await assignRawKind({
+    doc,
+    start: 0,
+    end: 'Test Scene'.length,
+    kind: 'scene',
+    now,
+    newId: ids,
+  });
+  const written = flattenRaw(doc).text;
+  assert.equal(written, 'Test Scene\nwhat');
+  const firstBreak = written.length;
+  doc = await replaceRawRange({
+    doc,
+    start: firstBreak,
+    end: firstBreak,
+    insert: '\n',
+    origin: 'keyboard',
+    now,
+    newId: ids,
+  });
+  const secondBreak = flattenRaw(doc).text.length;
+  doc = await replaceRawRange({
+    doc,
+    start: secondBreak,
+    end: secondBreak,
+    insert: '\n',
+    origin: 'keyboard',
+    now,
+    newId: ids,
+  });
+  assert.equal(doc.blocks[0]?.type, 'scene');
+  assert.equal(doc.blocks[0]?.title, 'Test Scene');
+  assert.equal(flattenRaw(doc).text, 'Test Scene\nwhat\n\n');
+  assert.deepEqual(
+    doc.blocks.filter((block) => block.type === 'paragraph').map((block) => block.text),
+    ['what', '', ''],
+  );
+});
+
+test('a shredded raw page is not saved back over the manuscript', () => {
+  const model = 'Test Scene\nwhat';
+  const shredded = 'Test Scene\nwhat\nwhat\nwha\nwh\nw';
+  assert.equal(rawDomSyncIsSafe(model, shredded, 'insertParagraph'), false);
+  assert.equal(rawDomSyncIsSafe(model, shredded, 'insertText'), false);
+  assert.equal(rawDomSyncIsSafe(model, model, 'insertText'), true);
+  assert.equal(rawDomSyncIsSafe('Test Scene\nwhat\n', 'Test Scene\nwhat', 'deleteContentBackward'), true);
 });
 
 test('a highlight becomes a chapter and the rest stays a paragraph', async () => {

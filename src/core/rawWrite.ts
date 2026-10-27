@@ -75,6 +75,34 @@ export function flattenRaw(doc: ManuscriptDocument): RawFlat {
   return { text, segments };
 }
 
+/**
+ * Enter is applied by the editor. Reading the page after the browser splits a
+ * block must not replace the manuscript: that read is the shredded page
+ * (a scene kept, then "what", "what", "wha", "wh", "w") that was saved
+ * when the window blanked.
+ */
+export function rawDomSyncIsSafe(model: string, domText: string, inputType: string): boolean {
+  if (inputType === 'insertParagraph' || inputType === 'insertLineBreak') return false;
+  if (
+    inputType.startsWith('delete') ||
+    inputType === 'deleteByCut' ||
+    inputType === 'deleteByDrag' ||
+    inputType.includes('Paste') ||
+    inputType.includes('Drop') ||
+    inputType === 'insertReplacementText'
+  ) {
+    return true;
+  }
+  if (domText === model) return true;
+  return lineBreakCount(model) === lineBreakCount(domText);
+}
+
+function lineBreakCount(text: string): number {
+  let count = 0;
+  for (const ch of text) if (ch === '\n') count += 1;
+  return count;
+}
+
 /** Segment that owns a caret, including the caret sitting on that segment's end. */
 export function rawSegmentAt(flat: RawFlat, offset: number): RawSegment | null {
   if (!flat.segments.length) return null;

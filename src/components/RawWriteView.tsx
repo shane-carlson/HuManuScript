@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { InsertionOrigin } from '../core/certification.ts';
 import { menuSpellSuggestions, spellcheckReplacement, wordAroundOffset } from '../core/contextMenu.ts';
 import type { GrammarScope } from '../core/grammar.ts';
 import { isHeadingType } from '../core/manuscript.ts';
-import { flattenRaw, rawSegmentAt, type RawSegment } from '../core/rawWrite.ts';
+import { flattenRaw, rawDomSyncIsSafe, rawSegmentAt, type RawSegment } from '../core/rawWrite.ts';
 import type { ManuscriptDocument } from '../core/document.ts';
 import { styledSpans } from '../core/richText.ts';
 import { suggestSpellings } from '../core/spellSuggest.ts';
@@ -64,7 +64,10 @@ export function RawWriteView({
   useLayoutEffect(() => {
     if (seenDoc.current !== doc) {
       seenDoc.current = doc;
-      modelText.current = flattenRaw(doc).text;
+      const next = flattenRaw(doc).text;
+      const pending =
+        ownEdit.current && modelText.current.startsWith(next) && modelText.current.length > next.length;
+      if (!pending) modelText.current = next;
     }
     const caret = caretRef.current;
     const root = rootRef.current;
@@ -77,7 +80,14 @@ export function RawWriteView({
     ownEdit.current = false;
   }, [doc]);
 
+  const editingRange = (): { start: number; end: number } | null => {
+    if (ownEdit.current && caretRef.current) return caretRef.current;
+    const root = rootRef.current;
+    return (root ? readRange(root) : null) ?? caretRef.current;
+  };
+
   const report = () => {
+    if (ownEdit.current) return;
     const root = rootRef.current;
     if (!root) return;
     const range = readRange(root);
@@ -97,6 +107,10 @@ export function RawWriteView({
     const current = modelText.current;
     const from = Math.max(0, Math.min(start, current.length));
     const to = Math.max(from, Math.min(end, current.length));
+    if (insert === '' && from === to) return;
+    // A paragraph break is one newline. The shredded page called this with the
+    // torn DOM text and that is what got saved when the window blanked.
+    if ((inputType === 'insertParagraph' || inputType === 'insertLineBreak') && insert !== '\n') return;
     modelText.current = current.slice(0, from) + insert + current.slice(to);
     const next = from + insert.length;
     caretRef.current = { start: next, end: next };
@@ -111,6 +125,7 @@ export function RawWriteView({
     const text = readFlat(root);
     const current = modelText.current;
     if (text === current) return;
+    if (!rawDomSyncIsSafe(current, text, inputType)) return;
     let prefix = 0;
     const limit = Math.min(text.length, current.length);
     while (prefix < limit && text[prefix] === current[prefix]) prefix += 1;
@@ -124,6 +139,63 @@ export function RawWriteView({
     }
     edit(prefix, current.length - suffix, text.slice(prefix, text.length - suffix), origin, inputType);
   };
+
+  const onNativeBeforeInput = (event: InputEvent) => {
+    if (event.isComposing || event.inputType === 'insertCompositionText') return;
+    const type = event.inputType || '';
+    if (type.startsWith('history') || type.startsWith('format')) {
+      event.preventDefault();
+      return;
+    }
+    const structural =
+      type === 'insertText' ||
+      type === 'insertParagraph' ||
+      type === 'insertLineBreak' ||
+      type === 'insertFromPaste' ||
+      type === 'insertFromDrop' ||
+      type.startsWith('delete') ||
+      type === 'deleteByCut';
+    if (!structural) return;
+    // React's onBeforeInput is not the native beforeinput event, so canceling
+    // it does not stop Enter. The browser splits the block, Raw write saves
+    // that torn text, and reconciling it blanks the page.
+    event.preventDefault();
+    const range = editingRange();
+    if (!range) return;
+    if (type === 'insertText') {
+      edit(range.start, range.end, event.data ?? '', 'keyboard', type);
+      return;
+    }
+    if (type === 'insertParagraph' || type === 'insertLineBreak') {
+      edit(range.start, range.end, '\n', 'keyboard', type);
+      return;
+    }
+    if (type === 'insertFromPaste' || type === 'insertFromDrop') return;
+    if (type === 'deleteContentBackward' || type === 'deleteWordBackward') {
+      const start =
+        range.start === range.end
+          ? Math.max(0, range.start - (type === 'deleteWordBackward' ? wordSpan(modelText.current, range.start) : 1))
+          : range.start;
+      edit(start, range.end, '', null, type);
+      return;
+    }
+    if (type === 'deleteContentForward' || type === 'deleteWordForward') {
+      const end = range.start === range.end ? Math.min(modelText.current.length, range.start + 1) : range.end;
+      edit(range.start, end, '', null, type);
+      return;
+    }
+    if (type.startsWith('delete')) edit(range.start, range.end, '', null, type);
+  };
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const listener = (event: Event) => {
+      if (event instanceof InputEvent) onNativeBeforeInput(event);
+    };
+    root.addEventListener('beforeinput', listener, true);
+    return () => root.removeEventListener('beforeinput', listener, true);
+  });
 
   const closeMenu = () => {
     anchorRef.current = null;
@@ -153,44 +225,6 @@ export function RawWriteView({
       aria-multiline="true"
       spellCheck
       data-placeholder="The page is blank. Write now, and give the words a structure when you are ready."
-      onBeforeInput={(event) => {
-        const native = event.nativeEvent;
-        if (native.isComposing) return;
-        const root = rootRef.current;
-        const range = root ? readRange(root) : null;
-        if (!range) return;
-        const type = typeof native.inputType === 'string' ? native.inputType : '';
-        if (type === 'insertText') {
-          event.preventDefault();
-          edit(range.start, range.end, native.data ?? '', 'keyboard', type);
-          return;
-        }
-        if (type === 'insertParagraph' || type === 'insertLineBreak') {
-          event.preventDefault();
-          edit(range.start, range.end, '\n', 'keyboard', type);
-          return;
-        }
-        if (type === 'insertFromPaste' || type === 'insertFromDrop') {
-          event.preventDefault();
-          return;
-        }
-        if (type === 'deleteContentBackward' || type === 'deleteWordBackward') {
-          event.preventDefault();
-          const start = range.start === range.end ? Math.max(0, range.start - (type === 'deleteWordBackward' ? wordSpan(modelText.current, range.start) : 1)) : range.start;
-          edit(start, range.end, '', null, type);
-          return;
-        }
-        if (type === 'deleteContentForward' || type === 'deleteWordForward') {
-          event.preventDefault();
-          const end = range.start === range.end ? Math.min(modelText.current.length, range.start + 1) : range.end;
-          edit(range.start, end, '', null, type);
-          return;
-        }
-        if (type.startsWith('delete') || type === 'insertReplacementText') {
-          event.preventDefault();
-          edit(range.start, range.end, native.data ?? '', native.data ? 'keyboard' : null, type);
-        }
-      }}
       onInput={(event) => {
         const native = event.nativeEvent;
         if (native instanceof InputEvent && native.isComposing) return;
@@ -202,8 +236,7 @@ export function RawWriteView({
       }}
       onPaste={(event) => {
         event.preventDefault();
-        const root = rootRef.current;
-        const range = root ? readRange(root) : null;
+        const range = editingRange();
         if (!range) return;
         const text = event.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
         edit(range.start, range.end, text, 'paste', 'insertFromPaste');
@@ -431,12 +464,16 @@ function placeRange(root: HTMLElement, start: number, end: number) {
   const selection = window.getSelection();
   if (!selection) return;
   const range = document.createRange();
-  const from = pointIn(root, start);
-  const to = pointIn(root, end);
-  range.setStart(from.node, from.offset);
-  range.setEnd(to.node, to.offset);
-  selection.removeAllRanges();
-  selection.addRange(range);
+  try {
+    const from = pointIn(root, start);
+    const to = pointIn(root, end);
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  } catch {
+    // A stale caret offset must not unmount the page.
+  }
 }
 
 function pointIn(root: HTMLElement, position: number): { node: Node; offset: number } {
