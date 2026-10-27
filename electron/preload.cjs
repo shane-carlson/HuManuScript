@@ -1,13 +1,27 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
+const UPDATE_PHASES = new Set(['available', 'downloading', 'downloaded', 'failed']);
+
+/** Sandbox cannot load autoUpdate.cjs, so the same notice check lives here. */
 function readAvailableUpdate(payload) {
-  const version = payload && typeof payload.version === 'string' ? payload.version.trim() : '';
-  return { version: /^[0-9]+(?:\.[0-9A-Za-z]+){1,3}$/.test(version) ? version : '' };
+  if (!payload || typeof payload !== 'object') return null;
+  const version = typeof payload.version === 'string' ? payload.version.trim() : '';
+  const safeVersion = /^[0-9]+(?:\.[0-9A-Za-z]+){1,3}$/.test(version) ? version : '';
+  let phase = payload.phase;
+  if (phase == null) phase = 'available';
+  if (!UPDATE_PHASES.has(phase)) return null;
+  let percent = 0;
+  if (phase === 'downloading') {
+    const value = Number(payload.percent);
+    percent = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+  }
+  return { phase, version: safeVersion, percent };
 }
 
 let availableUpdate = null;
 ipcRenderer.on('humanuscript:update-available', (_event, payload) => {
-  availableUpdate = readAvailableUpdate(payload);
+  const next = readAvailableUpdate(payload);
+  if (next) availableUpdate = next;
 });
 
 contextBridge.exposeInMainWorld('humanuscript', {
@@ -15,10 +29,15 @@ contextBridge.exposeInMainWorld('humanuscript', {
   getUpdateAvailable: () => availableUpdate,
   onUpdateAvailable: (listener) => {
     if (typeof listener !== 'function') return () => {};
-    const wrapped = (_event, payload) => listener(readAvailableUpdate(payload));
+    const wrapped = (_event, payload) => {
+      const next = readAvailableUpdate(payload);
+      if (next) listener(next);
+    };
     ipcRenderer.on('humanuscript:update-available', wrapped);
     return () => ipcRenderer.removeListener('humanuscript:update-available', wrapped);
   },
+  downloadUpdate: () => ipcRenderer.invoke('humanuscript:update-download'),
+  installUpdate: () => ipcRenderer.invoke('humanuscript:update-install'),
   cloudBackup: {
     save: (provider, filename, contents) => ipcRenderer.invoke('humanuscript:cloud-save', provider, filename, contents),
     list: (provider) => ipcRenderer.invoke('humanuscript:cloud-list', provider),

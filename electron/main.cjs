@@ -2,7 +2,7 @@ const { app, BrowserWindow, dialog, screen, shell, ipcMain, session, desktopCapt
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
+const { readUpdateState, shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
 const {
   boundsForLaunch,
   stateFromWindow,
@@ -110,7 +110,7 @@ function createWindow(baked) {
   });
 
   win.webContents.on('did-finish-load', () => {
-    sendAvailableUpdate(win);
+    sendUpdateNotice(win);
   });
 
   if (isDev) {
@@ -121,17 +121,28 @@ function createWindow(baked) {
   }
 }
 
-let availableUpdate = null;
+let updateNotice = null;
+let updateControls = null;
 
-function sendAvailableUpdate(win) {
-  if (!availableUpdate || win.isDestroyed()) return;
-  win.webContents.send('humanuscript:update-available', availableUpdate);
+function sendUpdateNotice(win) {
+  if (!updateNotice || win.isDestroyed()) return;
+  win.webContents.send('humanuscript:update-available', updateNotice);
 }
 
-function publishAvailableUpdate(version) {
-  availableUpdate = { version: typeof version === 'string' ? version : '' };
-  for (const win of BrowserWindow.getAllWindows()) sendAvailableUpdate(win);
+function publishUpdateNotice(notice) {
+  const safe = readUpdateState(notice);
+  if (!safe) return;
+  updateNotice = safe;
+  for (const win of BrowserWindow.getAllWindows()) sendUpdateNotice(win);
 }
+
+ipcMain.handle('humanuscript:update-download', () => {
+  updateControls?.download();
+});
+
+ipcMain.handle('humanuscript:update-install', () => {
+  updateControls?.install();
+});
 
 ipcMain.handle('humanuscript:device-name', () => {
   const name = os.hostname();
@@ -275,17 +286,16 @@ function startAutoUpdate(baked) {
     console.error('Auto-update is unavailable.');
     return;
   }
-  // Packaged numeric builds ask GitHub Releases as soon as the app is ready.
+  // Packaged numeric builds ask GitHub Releases on launch and about once an hour.
   // electron-updater reads latest-mac.yml on macOS and latest.yml on Windows.
-  watchForUpdates(
+  // The download and the restart wait until the person confirms each one.
+  updateControls = watchForUpdates(
     autoUpdater,
     (line) => {
       console.log(line);
     },
     {},
-    ({ version }) => {
-      publishAvailableUpdate(version);
-    },
+    publishUpdateNotice,
   );
 }
 

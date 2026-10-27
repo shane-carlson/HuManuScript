@@ -4,13 +4,23 @@ import type { LicenseActivateResult, LicenseStatus } from './license.ts';
 
 export type CloudBackupEntry = { name: string; modified: string };
 
-export type AvailableUpdate = { version: string };
+export type UpdateFeedPhase = 'available' | 'downloading' | 'downloaded' | 'failed';
+
+export type AvailableUpdate = {
+  version: string;
+  phase?: UpdateFeedPhase;
+  percent?: number;
+};
 
 export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
   /** Newer GitHub Release, if the packaged app found one. Absent in a browser. */
   getUpdateAvailable?: () => AvailableUpdate | null;
   onUpdateAvailable?: (listener: (update: AvailableUpdate) => void) => () => void;
+  /** Starts the GitHub Release download after the person confirms. */
+  downloadUpdate?: () => Promise<unknown> | void;
+  /** Restarts into the downloaded update after the person confirms. */
+  installUpdate?: () => Promise<unknown> | void;
   /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
   getSpellSuggestions?: (word: string) => string[];
   /**
