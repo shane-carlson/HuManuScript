@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { HOUR_MS, safeUpdateError, shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
+const { HOUR_MS, releasedVersion, safeUpdateError, shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
 
 test('only a packaged numeric build checks for a newer release', () => {
   assert.equal(shouldCheckForUpdates({ isPackaged: true, build: '15' }), true);
@@ -9,6 +9,13 @@ test('only a packaged numeric build checks for a newer release', () => {
   assert.equal(shouldCheckForUpdates({ isPackaged: true, build: 'dev' }), false);
   assert.equal(shouldCheckForUpdates({ isPackaged: true, build: '' }), false);
   assert.equal(shouldCheckForUpdates({ isPackaged: true, build: '1.2' }), false);
+});
+
+test('a release version is the only string shown for an update', () => {
+  assert.equal(releasedVersion({ version: '0.1.32' }), '0.1.32');
+  assert.equal(releasedVersion({ version: ' 0.1.32 ' }), '0.1.32');
+  assert.equal(releasedVersion({ version: 'latest-mac.yml?token=secret' }), '');
+  assert.equal(releasedVersion(null), '');
 });
 
 test('update errors drop query strings', () => {
@@ -21,6 +28,7 @@ test('update errors drop query strings', () => {
 
 test('a downloaded update is installed without a manual prompt', async () => {
   const lines = [];
+  const shown = [];
   const calls = [];
   const handlers = {};
   let scheduled = 0;
@@ -48,13 +56,14 @@ test('a downloaded update is installed without a manual prompt', async () => {
       fn();
       return { unref() {} };
     },
-  });
+  }, (info) => shown.push(info));
   assert.equal(fake.autoDownload, true);
   assert.equal(fake.autoInstallOnAppQuit, true);
   assert.equal(scheduled, HOUR_MS);
   assert.deepEqual(calls, ['check']);
 
   handlers['update-available']({ version: '0.1.16' });
+  assert.deepEqual(shown, [{ version: '0.1.16' }]);
   handlers['update-downloaded']({ version: '0.1.16' });
   handlers['update-downloaded']({ version: '0.1.16' });
   assert.deepEqual(calls, ['check', 'install']);
@@ -62,4 +71,8 @@ test('a downloaded update is installed without a manual prompt', async () => {
 
   handlers.error(new Error('https://updates.example/latest-mac.yml?access_token=secret'));
   assert.equal(lines.at(-1), 'Update check failed: https://updates.example/latest-mac.yml');
+
+  handlers['update-available']({ version: 'latest.yml?access_token=secret' });
+  assert.deepEqual(shown, [{ version: '0.1.16' }, { version: '' }]);
+  assert.equal(lines.at(-1), 'Update available.');
 });

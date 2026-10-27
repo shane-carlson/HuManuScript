@@ -1,7 +1,24 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
+function readAvailableUpdate(payload) {
+  const version = payload && typeof payload.version === 'string' ? payload.version.trim() : '';
+  return { version: /^[0-9]+(?:\.[0-9A-Za-z]+){1,3}$/.test(version) ? version : '' };
+}
+
+let availableUpdate = null;
+ipcRenderer.on('humanuscript:update-available', (_event, payload) => {
+  availableUpdate = readAvailableUpdate(payload);
+});
+
 contextBridge.exposeInMainWorld('humanuscript', {
   getDeviceName: () => ipcRenderer.invoke('humanuscript:device-name'),
+  getUpdateAvailable: () => availableUpdate,
+  onUpdateAvailable: (listener) => {
+    if (typeof listener !== 'function') return () => {};
+    const wrapped = (_event, payload) => listener(readAvailableUpdate(payload));
+    ipcRenderer.on('humanuscript:update-available', wrapped);
+    return () => ipcRenderer.removeListener('humanuscript:update-available', wrapped);
+  },
   cloudBackup: {
     save: (provider, filename, contents) => ipcRenderer.invoke('humanuscript:cloud-save', provider, filename, contents),
     list: (provider) => ipcRenderer.invoke('humanuscript:cloud-list', provider),
