@@ -1,8 +1,15 @@
-const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, screen, shell, ipcMain } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
+const {
+  boundsForLaunch,
+  stateFromWindow,
+  windowStatePath,
+  writeWindowState,
+  readWindowState,
+} = require('./windowBounds.cjs');
 const {
   chooseCloudRoot,
   discoverCloudRoots,
@@ -44,12 +51,22 @@ function readBakedVersion() {
   }
 }
 
+const DEFAULT_WINDOW = { width: 1280, height: 860 };
+
 function createWindow(baked) {
+  const saved = readWindowState(fs, windowStatePath(app.getPath('userData')));
+  const launch = boundsForLaunch(
+    saved,
+    DEFAULT_WINDOW,
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
   const win = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: launch.width,
+    height: launch.height,
+    ...(launch.x == null || launch.y == null ? {} : { x: launch.x, y: launch.y }),
     minWidth: 900,
     minHeight: 600,
+    show: false,
     title: `HuManuScript ${baked.label}`,
     webPreferences: {
       contextIsolation: true,
@@ -58,6 +75,22 @@ function createWindow(baked) {
       spellcheck: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
+  });
+  const restoreWindow = () => {
+    if (launch.maximized) win.maximize();
+    else if (launch.minimized) win.minimize();
+    win.show();
+  };
+  win.once('ready-to-show', restoreWindow);
+  win.on('close', () => {
+    const normal = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
+    const state = stateFromWindow({
+      bounds: win.getBounds(),
+      normalBounds: normal,
+      maximized: win.isMaximized(),
+      minimized: win.isMinimized(),
+    });
+    if (state) writeWindowState(fs, windowStatePath(app.getPath('userData')), state);
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {

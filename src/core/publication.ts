@@ -16,11 +16,15 @@ export interface PublicationFormat {
   blurb: string;
   /** Trim or device, shown beside the page count. */
   trim: string;
-  kind: 'print' | 'reflow';
-  /** Trim width in inches. Reflow uses this only as a column hint. */
+  /** Print stack, or a reader that turns one fixed page at a time. */
+  kind: 'print' | 'reader';
+  /** Trim width in inches. Every page of this format uses this size. */
   widthIn: number;
   heightIn: number;
-  /** Body words that fit one print page. Ignored for reflow. */
+  /** Side and top margins, in inches of the trim. */
+  marginXIn: number;
+  marginYIn: number;
+  /** Body words that fit one page at bodyPt. */
   wordsPerPage: number;
   bodyPt: number;
   lineHeight: number;
@@ -30,60 +34,70 @@ export const PUBLICATION_FORMATS: readonly PublicationFormat[] = [
   {
     id: 'trade',
     label: 'Trade paperback',
-    blurb: 'A 6 × 9 in trade paperback. Justified type, indented paragraphs, and each chapter on a new page.',
+    blurb: 'A 6 × 9 in trade paperback. A chapter continues onto the next page when the page is full.',
     trim: '6 × 9 in',
     kind: 'print',
     widthIn: 6,
     heightIn: 9,
-    wordsPerPage: 300,
+    marginXIn: 0.75,
+    marginYIn: 0.7,
+    wordsPerPage: 120,
     bodyPt: 11,
     lineHeight: 1.35,
   },
   {
     id: 'hardcover',
     label: 'Hardcover',
-    blurb: 'A 6.125 × 9.25 in hardcover. The same book pages, with a slightly larger trim.',
+    blurb: 'A 6.125 × 9.25 in hardcover. The same fixed page, filled until the page is full.',
     trim: '6.125 × 9.25 in',
     kind: 'print',
     widthIn: 6.125,
     heightIn: 9.25,
-    wordsPerPage: 320,
+    marginXIn: 0.8,
+    marginYIn: 0.75,
+    wordsPerPage: 130,
     bodyPt: 11.5,
     lineHeight: 1.35,
   },
   {
     id: 'mass-market',
     label: 'Mass market',
-    blurb: 'A 4.25 × 6.87 in mass-market paperback. Smaller type and a narrower page.',
+    blurb: 'A 4.25 × 6.87 in mass-market paperback. Narrow margins so the text fills the page.',
     trim: '4.25 × 6.87 in',
     kind: 'print',
     widthIn: 4.25,
     heightIn: 6.87,
-    wordsPerPage: 200,
+    marginXIn: 0.42,
+    marginYIn: 0.4,
+    wordsPerPage: 85,
     bodyPt: 10,
     lineHeight: 1.32,
   },
   {
     id: 'ereader',
     label: 'E-reader',
-    blurb: 'A reflowable e-reader. The same words in one column, without paper pages.',
-    trim: 'E-reader',
-    kind: 'reflow',
-    widthIn: 4.2,
+    blurb: 'A fixed e-reader page. Scroll or turn to the next page, and change the text size.',
+    trim: '4.25 × 6.4 in',
+    kind: 'reader',
+    widthIn: 4.25,
     heightIn: 6.4,
-    wordsPerPage: 0,
+    marginXIn: 0.36,
+    marginYIn: 0.32,
+    wordsPerPage: 40,
     bodyPt: 13,
     lineHeight: 1.45,
   },
   {
     id: 'tablet',
     label: 'Tablet',
-    blurb: 'A tablet reader. A wider reflowing column, as on a book app.',
-    trim: 'Tablet',
-    kind: 'reflow',
-    widthIn: 7.5,
-    heightIn: 5.5,
-    wordsPerPage: 0,
+    blurb: 'A 6 × 8 in tablet page. Scroll or turn the page, and change the text size.',
+    trim: '6 × 8 in',
+    kind: 'reader',
+    widthIn: 6,
+    heightIn: 8,
+    marginXIn: 0.55,
+    marginYIn: 0.5,
+    wordsPerPage: 65,
     bodyPt: 14,
     lineHeight: 1.42,
   },
@@ -111,8 +125,9 @@ export type PublicationNode =
       listStyle: ListStyle;
       listIndex: number | null;
       indentLevel: number;
+      continued?: boolean;
     }
-  | { kind: 'blockquote'; id: string; text: string; marks: InlineMark[] }
+  | { kind: 'blockquote'; id: string; text: string; marks: InlineMark[]; continued?: boolean }
   | { kind: 'table'; id: string; rows: string[][] }
   | { kind: 'image'; id: string; src: string; alt: string; caption: string }
   | { kind: 'gap' }
@@ -229,9 +244,84 @@ function nodeWords(node: PublicationNode | { kind: 'break' }): number {
   if (node.kind === 'paragraph' || node.kind === 'blockquote') {
     return wordsInBlock({ id: '', type: 'paragraph', title: '', text: node.text, marks: [] });
   }
+  if (node.kind === 'chapter') return Math.max(36, wordsInBlock({ id: '', type: 'paragraph', title: '', text: `${node.kicker} ${node.title}`, marks: [] }));
+  if (node.kind === 'section' || node.kind === 'scene') return 10;
+  if (node.kind === 'ornament') return 6;
   if (node.kind === 'table') return tableWords(node.rows);
   if (node.kind === 'image') return node.src ? 40 : 12;
+  if (node.kind === 'note') return 12;
   return 0;
+}
+
+function wordEnds(text: string): number[] {
+  const ends: number[] = [];
+  const re = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) ends.push(match.index + match[0].length);
+  return ends;
+}
+
+function sliceMarks(marks: InlineMark[], start: number, end: number): InlineMark[] {
+  const sliced: InlineMark[] = [];
+  for (const mark of marks) {
+    const from = Math.max(mark.start, start);
+    const to = Math.min(mark.end, end);
+    if (to > from) sliced.push({ kind: mark.kind, start: from - start, end: to - start });
+  }
+  return sliced;
+}
+
+function proseSlice(
+  node: Extract<PublicationNode, { kind: 'paragraph' | 'blockquote' }>,
+  start: number,
+  end: number,
+  piece: number,
+): PublicationNode {
+  const text = node.text.slice(start, end).trim();
+  const lead = node.text.slice(start, end).length - node.text.slice(start, end).trimStart().length;
+  const trimmedStart = start + lead;
+  const marks = sliceMarks(node.marks, trimmedStart, trimmedStart + text.length);
+  if (node.kind === 'blockquote') {
+    return {
+      kind: 'blockquote',
+      id: piece === 0 ? node.id : `${node.id}~${piece}`,
+      text,
+      marks,
+      continued: piece > 0,
+    };
+  }
+  return {
+    kind: 'paragraph',
+    id: piece === 0 ? node.id : `${node.id}~${piece}`,
+    text,
+    marks,
+    listStyle: piece === 0 ? node.listStyle : null,
+    listIndex: piece === 0 ? node.listIndex : null,
+    indentLevel: node.indentLevel,
+    continued: piece > 0,
+  };
+}
+
+/** Take the first `maxWords` words. The tail keeps the rest for the next page. */
+function splitOnce(
+  node: Extract<PublicationNode, { kind: 'paragraph' | 'blockquote' }>,
+  maxWords: number,
+): [PublicationNode, PublicationNode | null] {
+  const ends = wordEnds(node.text);
+  if (ends.length <= maxWords) return [node, null];
+  const cut = ends[maxWords - 1]!;
+  const head = proseSlice(node, 0, cut, 0);
+  const tail = proseSlice(node, cut, node.text.length, 1);
+  if (tail.kind !== 'paragraph' && tail.kind !== 'blockquote') return [head, null];
+  if (!tail.text.trim()) return [head, null];
+  return [head, tail];
+}
+
+/** Words that fit one page at a reader-chosen type size. Larger type fits fewer words. */
+export function wordsForPage(format: PublicationFormat, bodyPt = format.bodyPt): number {
+  const size = bodyPt > 0 ? bodyPt : format.bodyPt;
+  const ratio = format.bodyPt / size;
+  return Math.max(24, Math.round(format.wordsPerPage * ratio * ratio));
 }
 
 function titles(doc: ManuscriptDocument, identity: PublicationIdentity | undefined): {
@@ -252,29 +342,11 @@ export function layoutPublication(
   doc: ManuscriptDocument,
   format: PublicationFormat = PUBLICATION_FORMATS[0]!,
   identity?: PublicationIdentity,
+  bodyPt = format.bodyPt,
 ): PublicationLayout {
   const { bookTitle, seriesLabel, subtitle } = titles(doc, identity);
   const nodes = flowWithBreaks(doc);
-  if (format.kind === 'reflow') {
-    const screenNodes = nodes.flatMap((node): PublicationNode[] => (
-      node.kind === 'break' ? [{ kind: 'gap' }] : [node]
-    ));
-    const readable = screenNodes.filter((node) => node.kind !== 'gap');
-    return {
-      format,
-      bookTitle,
-      pages: [{
-        kind: 'screen',
-        number: null,
-        header: '',
-        seriesLabel,
-        title: bookTitle,
-        subtitle,
-        nodes: readable.length ? screenNodes : [{ kind: 'note', text: 'The manuscript has no pages yet.' }],
-      }],
-    };
-  }
-
+  const limit = wordsForPage(format, bodyPt);
   const pages: PublicationPage[] = [{
     kind: 'title',
     number: null,
@@ -307,21 +379,33 @@ export function layoutPublication(
     bodyWords = 0;
   };
 
+  const place = (node: PublicationNode) => {
+    if (node.kind === 'chapter') runningHead = node.runningHead;
+    const words = nodeWords(node);
+    const room = bodyWords === 0 ? limit : limit - bodyWords;
+    if ((node.kind === 'paragraph' || node.kind === 'blockquote') && words > room && room >= 8) {
+      const [head, tail] = splitOnce(node, room);
+      if (tail) {
+        place(head);
+        place(tail);
+        return;
+      }
+    }
+    if (words > room && bodyWords > 0) {
+      seal();
+      place(node);
+      return;
+    }
+    bucket.push(node);
+    bodyWords += words;
+  };
+
   for (const node of nodes) {
     if (node.kind === 'break') {
       seal();
       continue;
     }
-    if (node.kind === 'chapter') {
-      seal();
-      runningHead = node.runningHead;
-      bucket.push(node);
-      continue;
-    }
-    const words = nodeWords(node);
-    if (bodyWords > 0 && words > 0 && bodyWords + words > format.wordsPerPage) seal();
-    bucket.push(node);
-    bodyWords += words;
+    place(node);
   }
   seal();
 
