@@ -13,7 +13,13 @@ function safeUpdateError(error) {
   return message.split('?')[0].slice(0, 300);
 }
 
-function watchForUpdates(autoUpdater, log = () => {}, timers = {}) {
+/** Release version from the feed. Anything else is dropped so the window never shows a URL. */
+function releasedVersion(info) {
+  const version = info && info.version ? String(info.version).trim() : '';
+  return /^[0-9]+(?:\.[0-9A-Za-z]+){1,3}$/.test(version) ? version : '';
+}
+
+function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () => {}) {
   const schedule = timers.schedule || setInterval;
   const delay = timers.delay || setTimeout;
   autoUpdater.autoDownload = true;
@@ -40,12 +46,12 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}) {
     log(`Update check failed: ${safeUpdateError(error)}`);
   });
   autoUpdater.on('update-available', (info) => {
-    const version = info && info.version ? String(info.version) : '';
+    const version = releasedVersion(info);
     log(`Update available${version ? `: ${version}` : ''}.`);
+    notify({ version });
   });
   autoUpdater.on('update-downloaded', (info) => {
-    const version = info && info.version ? String(info.version) : '';
-    install(version);
+    install(releasedVersion(info));
   });
   const check = () => {
     try {
@@ -65,4 +71,4 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}) {
   return { check };
 }
 
-module.exports = { HOUR_MS, shouldCheckForUpdates, safeUpdateError, watchForUpdates };
+module.exports = { HOUR_MS, releasedVersion, shouldCheckForUpdates, safeUpdateError, watchForUpdates };

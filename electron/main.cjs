@@ -108,12 +108,28 @@ function createWindow(baked) {
     return { action: 'deny' };
   });
 
+  win.webContents.on('did-finish-load', () => {
+    sendAvailableUpdate(win);
+  });
+
   if (isDev) {
     void win.loadURL('http://127.0.0.1:47321');
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
     void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+}
+
+let availableUpdate = null;
+
+function sendAvailableUpdate(win) {
+  if (!availableUpdate || win.isDestroyed()) return;
+  win.webContents.send('humanuscript:update-available', availableUpdate);
+}
+
+function publishAvailableUpdate(version) {
+  availableUpdate = { version: typeof version === 'string' ? version : '' };
+  for (const win of BrowserWindow.getAllWindows()) sendAvailableUpdate(win);
 }
 
 ipcMain.handle('humanuscript:device-name', () => {
@@ -254,9 +270,18 @@ function startAutoUpdate(baked) {
     console.error('Auto-update is unavailable.');
     return;
   }
-  watchForUpdates(autoUpdater, (line) => {
-    console.log(line);
-  });
+  // Packaged numeric builds ask GitHub Releases as soon as the app is ready.
+  // electron-updater reads latest-mac.yml on macOS and latest.yml on Windows.
+  watchForUpdates(
+    autoUpdater,
+    (line) => {
+      console.log(line);
+    },
+    {},
+    ({ version }) => {
+      publishAvailableUpdate(version);
+    },
+  );
 }
 
 app.whenReady().then(() => {

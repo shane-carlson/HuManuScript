@@ -89,7 +89,8 @@ module.exports = {
     shortcutName: 'HuManuScript',
     artifactName,
   },
-  // GitHub Releases feed (latest-mac.yml). Uploaded only when the pack publishes.
+  // GitHub Releases feed. macOS reads latest-mac.yml; Windows reads latest.yml.
+  // Uploaded only when the pack publishes.
   publish: {
     provider: 'github',
     owner: 'shane-carlson',

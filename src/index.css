@@ -129,6 +129,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   color: inherit;
   opacity: 0.85;
 }
+.update-available {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6px 22px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
 .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; }
 .book-identity {
   display: flex;
@@ -2830,6 +2840,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .stats--bar.stats--bar-one-row > div { padding: 8px 6px; }
   .stats--bar.stats--bar-one-row dd { font-size: 1.1rem; }
   .top { padding: 14px 14px 0; }
+  .update-available { padding: 6px 14px; }
   .empty, .status { margin-left: 14px; margin-right: 14px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }

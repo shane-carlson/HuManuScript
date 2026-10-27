@@ -2,8 +2,13 @@
 
 export type CloudBackupEntry = { name: string; modified: string };
 
+export type AvailableUpdate = { version: string };
+
 export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
+  /** Newer GitHub Release, if the packaged app found one. Absent in a browser. */
+  getUpdateAvailable?: () => AvailableUpdate | null;
+  onUpdateAvailable?: (listener: (update: AvailableUpdate) => void) => () => void;
   /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
   getSpellSuggestions?: (word: string) => string[];
   /**

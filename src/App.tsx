@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { appVersion } from 'virtual:app-version';
 import { AppVersionLabel } from './components/AppVersionLabel.tsx';
+import { UpdateAvailableNotice } from './components/UpdateAvailableNotice.tsx';
 import { Editor } from './components/Editor.tsx';
 import { PaneGrab } from './components/PaneGrab.tsx';
 import { SessionCaptureProvider } from './components/SessionCapture.tsx';
@@ -309,6 +310,7 @@ export default function App() {
           {theme === 'light' ? 'Dark paper' : 'Light paper'}
         </button>
       </header>
+      <UpdateAvailableNotice />
       {phase === 'loading' && (
         <section className="status" aria-live="polite">
           <h1>Opening the library…</h1>
