@@ -10,6 +10,30 @@
 }
 
 @font-face {
+  font-family: "Crimson Text";
+  src: url("./CrimsonText-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Crimson Text";
+  src: url("./CrimsonText-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Crimson Text";
+  src: url("./CrimsonText-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Cardo";
   src: url("./Cardo-Regular.ttf") format("truetype");
   font-weight: 400;

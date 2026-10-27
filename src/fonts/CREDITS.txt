@@ -4,7 +4,7 @@ Each file below is a TrueType font under the SIL Open Font License, Version 1.1.
 The license text is OFL.txt. Copyright notices are stored in each font file.
 Source: the Google Fonts collection.
 
-Crimson Text — CrimsonText-Regular.ttf
+Crimson Text — CrimsonText-Regular.ttf, CrimsonText-Italic.ttf, CrimsonText-Bold.ttf, CrimsonText-BoldItalic.ttf
 Cardo — Cardo-Regular.ttf
 Spectral — Spectral-Regular.ttf
 EB Garamond — EBGaramond.ttf

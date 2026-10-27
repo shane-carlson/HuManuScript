@@ -23,6 +23,9 @@
     "preview": "vite preview --host 127.0.0.1 --port 47321 --strictPort"
   },
   "dependencies": {
+    "@myriaddreamin/typst-ts-renderer": "0.7.0",
+    "@myriaddreamin/typst-ts-web-compiler": "0.7.0",
+    "@myriaddreamin/typst.ts": "0.7.0",
     "docx": "^9.11.0",
     "electron-updater": "^6.8.11",
     "harper.js": "^2.13.0",
