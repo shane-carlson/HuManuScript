@@ -1,7 +1,8 @@
-const { app, BrowserWindow, dialog, screen, shell, ipcMain, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, dialog, Menu, screen, shell, ipcMain, session, desktopCapturer } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { applicationMenuTemplate } = require('./appMenu.cjs');
 const { readUpdateState, shouldCheckForUpdates, watchForUpdates } = require('./autoUpdate.cjs');
 const {
   boundsForLaunch,
@@ -142,6 +143,18 @@ ipcMain.handle('humanuscript:update-download', () => {
 
 ipcMain.handle('humanuscript:update-install', () => {
   updateControls?.install();
+});
+
+function checkForUpdatesNow() {
+  if (typeof updateControls?.checkNow === 'function') {
+    updateControls.checkNow();
+    return;
+  }
+  publishUpdateNotice({ phase: 'check-failed' });
+}
+
+ipcMain.handle('humanuscript:update-check', () => {
+  checkForUpdatesNow();
 });
 
 ipcMain.handle('humanuscript:device-name', () => {
@@ -390,6 +403,10 @@ app.whenReady().then(() => {
       })
       .catch(() => callback(null));
   });
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate({
+    onCheckForUpdates: () => checkForUpdatesNow(),
+  })));
 
   const baked = readBakedVersion();
   createWindow(baked);

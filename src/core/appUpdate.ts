@@ -1,10 +1,18 @@
 /** Copy for the GitHub Release prompt. The feed itself stays in electron-updater. */
 
-import type { UpdateFeedPhase } from './deviceName.ts';
+import type { AvailableUpdate, UpdateFeedPhase } from './deviceName.ts';
 
 const RELEASE_VERSION = /^[0-9]+(?:\.[0-9A-Za-z]+){1,3}$/;
 
-export type UpdatePromptPhase = 'available' | 'confirm' | 'downloading' | 'downloaded' | 'failed';
+export type UpdatePromptPhase =
+  | 'available'
+  | 'confirm'
+  | 'downloading'
+  | 'downloaded'
+  | 'failed'
+  | 'checking'
+  | 'current'
+  | 'check-failed';
 
 export type UpdatePromptModel = {
   phase: UpdatePromptPhase;
@@ -31,6 +39,20 @@ export function updateAvailableMessage(version: string): string {
   return updatePromptModel({ phase: 'available', version })?.message ?? 'An update is available.';
 }
 
+const localListeners = new Set<(update: AvailableUpdate) => void>();
+
+/** Result of a check that never reached the desktop updater, such as the browser. */
+export function publishLocalUpdate(update: AvailableUpdate): void {
+  for (const listener of localListeners) listener(update);
+}
+
+export function subscribeLocalUpdate(listener: (update: AvailableUpdate) => void): () => void {
+  localListeners.add(listener);
+  return () => {
+    localListeners.delete(listener);
+  };
+}
+
 /**
  * Banner for one step of the update. Confirming is local: the download has
  * not started, and a restart has not been asked for, until the matching button.
@@ -43,6 +65,36 @@ export function updatePromptModel(input: {
 }): UpdatePromptModel | null {
   const version = releaseName(input.version);
   const phase = input.phase;
+  if (phase === 'checking') {
+    return {
+      phase: 'checking',
+      message: 'Checking for updates…',
+      detail: 'You can keep writing.',
+      percent: null,
+      primary: null,
+      secondary: null,
+    };
+  }
+  if (phase === 'current') {
+    return {
+      phase: 'current',
+      message: 'HuManuScript is up to date.',
+      detail: 'You can keep writing.',
+      percent: null,
+      primary: null,
+      secondary: 'Dismiss',
+    };
+  }
+  if (phase === 'check-failed') {
+    return {
+      phase: 'check-failed',
+      message: 'Could not check for updates.',
+      detail: 'You can keep writing.',
+      percent: null,
+      primary: null,
+      secondary: 'Dismiss',
+    };
+  }
   if (phase !== 'available' && phase !== 'downloading' && phase !== 'downloaded' && phase !== 'failed') return null;
 
   if ((phase === 'available' || phase === 'failed') && input.confirming) {

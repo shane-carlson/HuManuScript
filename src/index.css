@@ -101,6 +101,36 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   padding: 18px 22px 8px;
   flex-wrap: wrap;
 }
+.chrome-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.help-menu { position: relative; z-index: 50; }
+.help-menu__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 2px;
+}
+.help-menu__list button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+}
+.help-menu__list button:hover { background: var(--bg-hover); }
 .brand { display: flex; gap: 12px; align-items: center; min-width: 240px; }
 .mark {
   width: 40px;
@@ -216,6 +246,28 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   background: #fff8f2;
   color: #3d1c0c;
   border-color: #fff8f2;
+}
+.update-available--checking,
+.update-available--current,
+.update-available--check-failed {
+  background: var(--bg-elev);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.update-available--current .update-available__message { color: var(--good); }
+.update-available--check-failed {
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+}
+.update-available--checking button.ghost,
+.update-available--current button.ghost,
+.update-available--check-failed button.ghost {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.update-available--checking button.ghost:hover,
+.update-available--current button.ghost:hover,
+.update-available--check-failed button.ghost:hover {
+  background: var(--bg-hover);
 }
 .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; }
 .book-identity {

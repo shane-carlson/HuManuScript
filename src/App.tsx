@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { appVersion } from 'virtual:app-version';
 import { AppVersionLabel } from './components/AppVersionLabel.tsx';
+import { HelpMenu } from './components/HelpMenu.tsx';
 import { UpdateAvailableNotice } from './components/UpdateAvailableNotice.tsx';
 import { Editor } from './components/Editor.tsx';
 import { PaneGrab } from './components/PaneGrab.tsx';
@@ -324,9 +325,12 @@ export default function App() {
             ) : null}
           </div>
         )}
-        <button type="button" className="ghost" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
-          {theme === 'light' ? 'Dark paper' : 'Light paper'}
-        </button>
+        <div className="chrome-actions">
+          <HelpMenu />
+          <button type="button" className="ghost" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+            {theme === 'light' ? 'Dark paper' : 'Light paper'}
+          </button>
+        </div>
       </header>
       <UpdateAvailableNotice />
       {phase === 'loading' && (
