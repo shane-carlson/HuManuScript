@@ -5,12 +5,14 @@ export function ToolbarIconButton({
   onClick,
   disabled,
   active,
+  expanded,
   children,
 }: {
   label: string;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   active?: boolean;
+  expanded?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -21,6 +23,8 @@ export function ToolbarIconButton({
       disabled={disabled}
       data-tooltip={label}
       aria-label={label}
+      aria-expanded={expanded}
+      aria-haspopup={expanded == null ? undefined : 'dialog'}
     >
       {children}
     </button>
@@ -260,6 +264,66 @@ export function IconReplaceAll() {
       <path d="M4 16h10" />
       <path d="M15 5l3 3-3 3" />
       <path d="M15 13l3 3-3 3" />
+    </svg>
+  );
+}
+
+export function IconClearFormat() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M6 6h7" />
+      <path d="M8 6l3 12h2l3-12" />
+      <path d="M5 19h8" />
+      <path d="M15 15l5 5M20 15l-5 5" />
+    </svg>
+  );
+}
+
+export function IconInsertionPoint() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M12 3v18" />
+      <path d="M8 8h8M8 16h8" />
+    </svg>
+  );
+}
+
+export function IconSelectParagraphs() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <rect x="4" y="5" width="3.5" height="3.5" rx="0.6" />
+      <rect x="4" y="10.5" width="3.5" height="3.5" rx="0.6" />
+      <rect x="4" y="16" width="3.5" height="3.5" rx="0.6" />
+      <path d="M11 7h9M11 12.5h9M11 18h9" />
+    </svg>
+  );
+}
+
+export function IconGrammar() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 6h16M4 12h8M4 18h6" />
+      <path d="M15 16l2 2 4-5" />
+    </svg>
+  );
+}
+
+export function IconAddFont() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 6h8l2 2h6v3" />
+      <path d="M4 6v12h8" />
+      <path d="M16 14v6M13 17h6" />
+    </svg>
+  );
+}
+
+export function IconRemoveFont() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M4 6h8l2 2h6v3" />
+      <path d="M4 6v12h8" />
+      <path d="M14 15l6 6M20 15l-6 6" />
     </svg>
   );
 }

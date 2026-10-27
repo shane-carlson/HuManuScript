@@ -8,17 +8,20 @@ import {
   type GrammarSuggestionChoice,
 } from '../core/grammar.ts';
 import { isProseBlock } from '../core/types.ts';
+import { IconGrammar, ToolbarIconButton } from './ManuscriptToolbarIcons.tsx';
 
 export function GrammarMenu({
   disabled,
   busy,
   hasSelection,
+  iconOnly = false,
   onCheckSelection,
   onCheckScope,
 }: {
   disabled: boolean;
   busy: boolean;
   hasSelection: boolean;
+  iconOnly?: boolean;
   onCheckSelection: () => void;
   onCheckScope: (scope: Extract<GrammarScope, 'block' | 'manuscript'>) => void;
 }) {
@@ -48,6 +51,23 @@ export function GrammarMenu({
 
   return (
     <div className="grammar-menu" ref={ref}>
+      {iconOnly ? (
+        <ToolbarIconButton
+          label={busy ? 'Checking grammar' : 'Grammar check'}
+          disabled={disabled || busy}
+          expanded={hasSelection ? undefined : prompt}
+          onClick={() => {
+            if (hasSelection) {
+              setPrompt(false);
+              onCheckSelection();
+              return;
+            }
+            setPrompt((open) => !open);
+          }}
+        >
+          <IconGrammar />
+        </ToolbarIconButton>
+      ) : (
       <button
         type="button"
         className="grammar-menu__button"
@@ -66,6 +86,7 @@ export function GrammarMenu({
       >
         {busy ? 'Checking…' : 'Grammar check'}
       </button>
+      )}
       {prompt && !hasSelection && (
         <div className="grammar-menu__list grammar-prompt" role="dialog" aria-label="Grammar check">
           <p>Nothing is highlighted. What should be checked?</p>

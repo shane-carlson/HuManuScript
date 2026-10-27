@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { IconRemoveFont, ToolbarIconButton } from './ManuscriptToolbarIcons.tsx';
 import { addCustomFontFile, installCustomFonts, removeCustomFont } from '../core/customFonts.ts';
 import { APPROVED_FONT_TYPE_LABEL } from '../core/fontFile.ts';
 import {
@@ -14,9 +15,11 @@ const ADD_FONT = '__add-font__';
 export function FontFamilyControl({
   fontId,
   onChange,
+  compact = false,
 }: {
   fontId: string;
   onChange: (fontId: string) => void;
+  compact?: boolean;
 }) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -95,6 +98,7 @@ export function FontFamilyControl({
         accept=".ttf,.otf,.woff,.woff2"
         aria-label="Add a font file"
         tabIndex={-1}
+        disabled={busy}
         title={APPROVED_FONT_TYPE_LABEL}
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -103,6 +107,22 @@ export function FontFamilyControl({
         }}
       />
       {isCustomFontId(fontId) && (
+        compact ? (
+          <ToolbarIconButton
+            label="Remove font"
+            disabled={busy}
+            onClick={() => {
+              void removeCustomFont(fontId).then(() => {
+                setAdded(extraManuscriptFaces());
+                setMessageIsError(false);
+                setMessage('Removed the added font.');
+                onChange('palatino');
+              });
+            }}
+          >
+            <IconRemoveFont />
+          </ToolbarIconButton>
+        ) : (
         <button
           type="button"
           className="toolbar-text-btn"
@@ -118,6 +138,7 @@ export function FontFamilyControl({
         >
           Remove font
         </button>
+        )
       )}
       {message && (
         <p className={`toolbar-font-note${messageIsError ? ' is-error' : ''}`} role="status">
