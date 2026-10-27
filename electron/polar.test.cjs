@@ -81,7 +81,9 @@ await t.test('activate calls the customer-portal endpoint and remembers the key'
     assert.equal(stored.benefitId, BENEFIT);
     assert.equal(stored.lastValidatedStatus, 'granted');
     assert.equal(license.getStoredKey(), 'HM-TEST-KEY-123456');
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    }
   } finally {
     global.fetch = original;
     fs.rmSync(file, { force: true });
