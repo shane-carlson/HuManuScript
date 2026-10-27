@@ -1341,12 +1341,6 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .toolbar-text-btn.is-active { background: color-mix(in srgb, var(--accent) 18%, var(--bg-elev)); border-color: var(--accent); }
 .toolbar-text-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.raw-write-hint {
-  margin: 8px 0 0;
-  color: var(--text-dim);
-  font-family: var(--sans);
-  font-size: 0.82rem;
-}
 .raw-page {
   font-family: var(--ms-font, var(--serif));
   font-size: var(--ms-size, 12pt);
