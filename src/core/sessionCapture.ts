@@ -1,35 +1,59 @@
 /**
  * Optional writing-session pictures.
  *
- * Camera stills and screenshots stay off until the writer turns the setting on.
- * Capture runs at session start, every five minutes, and session end.
- * Thumbnails are low-resolution JPEGs. The certification record includes them
- * only while that setting is on. The manuscript export does not.
+ * Camera and screen stay off until the writer turns the setting on.
+ * A capture runs at session start, every five minutes, and session end.
+ * The stored file is one JPEG: a moderate-resolution screenshot with the
+ * camera drawn in the upper left. The certification record includes that
+ * composite only while the setting is on. The manuscript export does not.
+ *
+ * The writer chooses how long the allow lasts. This writing session keeps
+ * the devices open until the session ends, then asks again next time.
+ * Remember on this device keeps the allow for later sessions. Neither
+ * choice asks again for every picture.
  */
 
 export const SESSION_CAPTURE_SETTINGS_KEY = 'humanuscript.sessionCapture.v1';
 export const WRITING_SESSION_KEY = 'humanuscript.writingSession.v1';
 export const SESSION_CAPTURE_DB = 'humanuscript.sessionCaptures.v1';
 export const SESSION_STORE = 'sessions';
+/** IndexedDB object store. Each record is one composite JPEG, not a separate thumbnail. */
 export const THUMBNAIL_STORE = 'thumbnails';
 
 export const CAPTURE_INTERVAL_MS = 5 * 60 * 1000;
 export const CAPTURE_INTERVAL_MINUTES = 5;
-export const THUMBNAIL_MAX_WIDTH = 240;
-export const THUMBNAIL_MAX_HEIGHT = 135;
-export const THUMBNAIL_JPEG_QUALITY = 0.55;
+export const COMPOSITE_MAX_WIDTH = 1280;
+export const COMPOSITE_MAX_HEIGHT = 720;
+export const COMPOSITE_JPEG_QUALITY = 0.72;
+export const CAMERA_OVERLAY_MAX_WIDTH = 240;
+export const CAMERA_OVERLAY_MAX_HEIGHT = 135;
+export const CAMERA_OVERLAY_MARGIN = 12;
+export const CAMERA_OVERLAY_WIDTH_RATIO = 0.28;
+export const CAMERA_OVERLAY_HEIGHT_RATIO = 0.34;
 
 export const SESSION_CAPTURE_CONSENT =
-  'Camera and screen thumbnails are stored only after the writer turns the setting on and allows the browser or system permission prompt.';
+  'A session picture is stored only after the writer turns the setting on and allows the camera and screen for this writing session, or remembers that allow on this device. The stored file is the screenshot with the camera in the upper left.';
 
-export type CaptureKind = 'camera' | 'screenshot';
+export type CaptureKind = 'composite';
+/** Older captures stored the camera and the screen as separate files. Those are not exported. */
+export type StoredCaptureKind = CaptureKind | 'camera' | 'screenshot';
 export type CaptureReason = 'start' | 'interval' | 'end';
+/** How long an allow lasts. Session asks again next writing session. Permanent is remembered on this device. */
+export type CapturePermissionDuration = 'session' | 'permanent';
+export type CaptureGrantMode = 'off' | CapturePermissionDuration;
 
 export interface SessionCaptureSettings {
-  /** Device-camera still. Off until the writer turns it on. */
+  /** Device camera. Off until the writer turns it on. */
   camera: boolean;
-  /** Screen still. Off until the writer turns it on. */
+  /** Screen. Off until the writer turns it on. */
   screenshot: boolean;
+  /** Applies when camera or screen is on. Defaults to this writing session. */
+  permission: CapturePermissionDuration;
+}
+
+export interface CaptureGrantRequest {
+  camera: CaptureGrantMode;
+  screen: CaptureGrantMode;
 }
 
 export interface WritingSessionState {
@@ -39,7 +63,7 @@ export interface WritingSessionState {
   startedAt: string;
   /** When the last capture attempt finished (saved or declined). */
   lastAttemptAt: string;
-  /** End of the last window that actually stored a thumbnail. */
+  /** End of the last window that actually stored a picture. */
   lastWindowEnd: string;
   endedAt: string | null;
 }
@@ -70,11 +94,16 @@ export interface StillImage {
   mime: 'image/jpeg';
 }
 
-export interface StoppableStream {
-  getTracks(): Array<{ stop(): void }>;
+export interface StoppableTrack {
+  stop(): void;
+  readyState?: string;
 }
 
-export interface ThumbnailSchema {
+export interface StoppableStream {
+  getTracks(): StoppableTrack[];
+}
+
+export interface CompositeSchema {
   fileId: string;
   mime: 'image/jpeg';
   width: number;
@@ -87,8 +116,7 @@ export interface SessionCaptureMoment {
   reason: CaptureReason;
   windowStart: string;
   windowEnd: string;
-  cameraThumbnail?: ThumbnailSchema;
-  screenshotThumbnail?: ThumbnailSchema;
+  composite?: CompositeSchema;
   seals: SealWindowMeta[];
 }
 
@@ -103,8 +131,9 @@ export interface SessionCaptureSchemaSession {
 export interface SessionCaptureSchema {
   camera: boolean;
   screenshot: boolean;
+  permission: CapturePermissionDuration;
   intervalMinutes: 5;
-  thumbnail: { maxWidth: number; maxHeight: number; mime: 'image/jpeg' };
+  composite: { maxWidth: number; maxHeight: number; mime: 'image/jpeg' };
   consent: string;
   sessions: SessionCaptureSchemaSession[];
 }
@@ -121,7 +150,7 @@ export interface CaptureThumbnailInput {
   sessionId: string;
   at: string;
   reason: CaptureReason;
-  kind: CaptureKind;
+  kind: StoredCaptureKind;
   windowStart: string;
   windowEnd: string;
   mime: 'image/jpeg';
@@ -131,16 +160,17 @@ export interface CaptureThumbnailInput {
 }
 
 export function defaultSessionCaptureSettings(): SessionCaptureSettings {
-  return { camera: false, screenshot: false };
+  return { camera: false, screenshot: false, permission: 'session' };
 }
 
-/** Only a boolean true turns a capture on. Missing and other truthy values stay off. */
+/** Only a boolean true turns a capture on. Only the string "permanent" is remembered. */
 export function normalizeSessionCaptureSettings(value: unknown): SessionCaptureSettings {
   if (!value || typeof value !== 'object') return defaultSessionCaptureSettings();
   const record = value as Record<string, unknown>;
   return {
     camera: record.camera === true,
     screenshot: record.screenshot === true,
+    permission: record.permission === 'permanent' ? 'permanent' : 'session',
   };
 }
 
@@ -157,11 +187,21 @@ export function sessionCaptureConfigured(settings: SessionCaptureSettings): bool
   return settings.camera || settings.screenshot;
 }
 
-export function thumbnailSize(
+/** What the desktop shell should remember. Off devices are not granted. */
+export function captureGrantRequest(settings: SessionCaptureSettings): CaptureGrantRequest {
+  const duration: CapturePermissionDuration = settings.permission === 'permanent' ? 'permanent' : 'session';
+  return {
+    camera: settings.camera ? duration : 'off',
+    screen: settings.screenshot ? duration : 'off',
+  };
+}
+
+/** Fit inside the max box. Never enlarges. */
+export function fitWithin(
   srcWidth: number,
   srcHeight: number,
-  maxWidth = THUMBNAIL_MAX_WIDTH,
-  maxHeight = THUMBNAIL_MAX_HEIGHT,
+  maxWidth: number,
+  maxHeight: number,
 ): { width: number; height: number } {
   const width = Math.max(1, srcWidth || maxWidth);
   const height = Math.max(1, srcHeight || maxHeight);
@@ -172,23 +212,60 @@ export function thumbnailSize(
   };
 }
 
+/**
+ * Camera thumbnail drawn on the screenshot. Upper left, inset by the margin,
+ * and never larger than the overlay cap or the given fraction of the frame.
+ */
+export function cameraOverlayRect(
+  frameWidth: number,
+  frameHeight: number,
+  cameraWidth: number,
+  cameraHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  const maxWidth = Math.min(CAMERA_OVERLAY_MAX_WIDTH, Math.max(1, Math.round(frameWidth * CAMERA_OVERLAY_WIDTH_RATIO)));
+  const maxHeight = Math.min(CAMERA_OVERLAY_MAX_HEIGHT, Math.max(1, Math.round(frameHeight * CAMERA_OVERLAY_HEIGHT_RATIO)));
+  const size = fitWithin(cameraWidth, cameraHeight, maxWidth, maxHeight);
+  return {
+    x: CAMERA_OVERLAY_MARGIN,
+    y: CAMERA_OVERLAY_MARGIN,
+    width: size.width,
+    height: size.height,
+  };
+}
+
 export function isPermissionDenial(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const name = (error as { name?: string }).name;
   return name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'AbortError' || name === 'SecurityError';
 }
 
+function streamIsLive(stream: StoppableStream | null): boolean {
+  if (!stream) return false;
+  const tracks = stream.getTracks();
+  if (tracks.length === 0) return false;
+  return tracks.some((track) => track.readyState === undefined || track.readyState === 'live');
+}
+
 /**
- * Open a camera or screen stream only when `allowed` is true, then release it.
- * A denial returns null. The stream is stopped even when the setting flips off
- * while the prompt is open.
+ * Reuse a camera or screen stream for the permission the writer chose.
+ * Opens only when `allowed` is true and no live stream is already held.
+ * A denial returns null. The new stream is stopped if the setting flips off
+ * while the prompt is open. The caller stops the held stream when the
+ * writing session ends, or immediately when the permission is session-only
+ * and the session ends.
  */
-export async function grabConsentedStill<T extends StoppableStream>(args: {
+export async function holdConsentedStream<T extends StoppableStream>(args: {
   allowed: () => boolean;
+  current: T | null;
   open: () => Promise<T>;
-  draw: (stream: T) => Promise<StillImage>;
-}): Promise<StillImage | null> {
-  if (!args.allowed()) return null;
+}): Promise<T | null> {
+  if (!args.allowed()) {
+    if (args.current) {
+      for (const track of args.current.getTracks()) track.stop();
+    }
+    return null;
+  }
+  if (streamIsLive(args.current)) return args.current;
   let stream: T;
   try {
     stream = await args.open();
@@ -196,42 +273,32 @@ export async function grabConsentedStill<T extends StoppableStream>(args: {
     if (isPermissionDenial(error)) return null;
     throw error;
   }
-  try {
-    if (!args.allowed()) return null;
-    return await args.draw(stream);
-  } finally {
+  if (!args.allowed()) {
     for (const track of stream.getTracks()) track.stop();
+    return null;
   }
+  return stream;
 }
 
-export async function captureEnabledStills(
+/**
+ * One composite for this moment. Does not call `grab` when pictures are off.
+ * The grabber is expected to reuse streams already granted for this permission.
+ */
+export async function captureSessionComposite(
   read: () => SessionCaptureSettings,
-  grab: {
-    camera: () => Promise<StillImage | null>;
-    screenshot: () => Promise<StillImage | null>;
-  },
-): Promise<{ stills: Array<{ kind: CaptureKind; image: StillImage }>; failures: string[] }> {
-  const stills: Array<{ kind: CaptureKind; image: StillImage }> = [];
-  const failures: string[] = [];
-  if (!sessionCaptureConfigured(read())) return { stills, failures };
-
-  if (read().camera) {
-    try {
-      const image = await grab.camera();
-      if (image && read().camera) stills.push({ kind: 'camera', image });
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : 'The camera thumbnail failed.');
-    }
+  grab: () => Promise<StillImage | null>,
+): Promise<{ image: StillImage | null; failure: string | null }> {
+  if (!sessionCaptureConfigured(read())) return { image: null, failure: null };
+  try {
+    const image = await grab();
+    if (!sessionCaptureConfigured(read())) return { image: null, failure: null };
+    return { image, failure: null };
+  } catch (error) {
+    return {
+      image: null,
+      failure: error instanceof Error ? error.message : 'The session picture failed.',
+    };
   }
-  if (read().screenshot) {
-    try {
-      const image = await grab.screenshot();
-      if (image && read().screenshot) stills.push({ kind: 'screenshot', image });
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : 'The screenshot thumbnail failed.');
-    }
-  }
-  return { stills, failures };
 }
 
 /** Next five-minute boundary after the last attempt. Null when that moment has not arrived. */
@@ -283,9 +350,10 @@ function momentKey(thumb: CaptureThumbnailInput): string {
 }
 
 /**
- * Certification schema for session thumbnails.
- * Returns null when neither pictures nor screenshots are turned on, so the
+ * Certification schema for session pictures.
+ * Returns null when neither the camera nor the screen is turned on, so the
  * downloaded certification record omits the field entirely.
+ * Separate camera or screenshot files are ignored. Only a composite is included.
  */
 export function buildSessionCaptureSchema(args: {
   settings: SessionCaptureSettings;
@@ -301,8 +369,7 @@ export function buildSessionCaptureSchema(args: {
     .filter((session) => session.manuscriptId === args.manuscriptId)
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const thumbs = args.thumbnails.filter((thumb) => {
-    if (thumb.kind === 'camera' && !settings.camera) return false;
-    if (thumb.kind === 'screenshot' && !settings.screenshot) return false;
+    if (thumb.kind !== 'composite') return false;
     return sessions.some((session) => session.id === thumb.sessionId);
   });
 
@@ -315,29 +382,21 @@ export function buildSessionCaptureSchema(args: {
 
   const schemaSessions: SessionCaptureSchemaSession[] = [];
   for (const session of sessions) {
-    const grouped = new Map<string, CaptureThumbnailInput[]>();
+    const grouped = new Map<string, CaptureThumbnailInput>();
     for (const thumb of bySession.get(session.id) ?? []) {
-      const list = grouped.get(momentKey(thumb)) ?? [];
-      list.push(thumb);
-      grouped.set(momentKey(thumb), list);
+      const key = momentKey(thumb);
+      if (!grouped.has(key)) grouped.set(key, thumb);
     }
     const captures: SessionCaptureMoment[] = [...grouped.values()]
-      .sort((a, b) => a[0]!.windowEnd.localeCompare(b[0]!.windowEnd) || a[0]!.at.localeCompare(b[0]!.at))
-      .map((group) => {
-        const first = group[0]!;
-        const camera = group.find((thumb) => thumb.kind === 'camera');
-        const screenshot = group.find((thumb) => thumb.kind === 'screenshot');
-        const moment: SessionCaptureMoment = {
-          at: first.at,
-          reason: first.reason,
-          windowStart: first.windowStart,
-          windowEnd: first.windowEnd,
-          seals: sealsInWindow(args.points, first.windowStart, first.windowEnd),
-        };
-        if (camera) moment.cameraThumbnail = thumbnailSchema(camera);
-        if (screenshot) moment.screenshotThumbnail = thumbnailSchema(screenshot);
-        return moment;
-      });
+      .sort((a, b) => a.windowEnd.localeCompare(b.windowEnd) || a.at.localeCompare(b.at))
+      .map((shot) => ({
+        at: shot.at,
+        reason: shot.reason,
+        windowStart: shot.windowStart,
+        windowEnd: shot.windowEnd,
+        composite: compositeSchema(shot),
+        seals: sealsInWindow(args.points, shot.windowStart, shot.windowEnd),
+      }));
     if (captures.length === 0) continue;
     schemaSessions.push({
       id: session.id,
@@ -351,10 +410,11 @@ export function buildSessionCaptureSchema(args: {
   return {
     camera: settings.camera,
     screenshot: settings.screenshot,
+    permission: settings.permission,
     intervalMinutes: CAPTURE_INTERVAL_MINUTES,
-    thumbnail: {
-      maxWidth: THUMBNAIL_MAX_WIDTH,
-      maxHeight: THUMBNAIL_MAX_HEIGHT,
+    composite: {
+      maxWidth: COMPOSITE_MAX_WIDTH,
+      maxHeight: COMPOSITE_MAX_HEIGHT,
       mime: 'image/jpeg',
     },
     consent: SESSION_CAPTURE_CONSENT,
@@ -362,33 +422,33 @@ export function buildSessionCaptureSchema(args: {
   };
 }
 
-function thumbnailSchema(thumb: CaptureThumbnailInput): ThumbnailSchema {
+function compositeSchema(shot: CaptureThumbnailInput): CompositeSchema {
   return {
-    fileId: thumb.id,
+    fileId: shot.id,
     mime: 'image/jpeg',
-    width: thumb.width,
-    height: thumb.height,
-    dataUrl: thumb.dataUrl,
+    width: shot.width,
+    height: shot.height,
+    dataUrl: shot.dataUrl,
   };
 }
 
+/** Letter page. Two composites across and three down: six per page. */
 export const CAPTURE_PAGE = {
   pageWidth: 612,
   pageHeight: 792,
-  margin: 36,
-  headerHeight: 56,
-  columns: 4,
-  columnGap: 8,
-  thumbHeight: 70,
-  cellChrome: 28,
+  margin: 28,
+  headerHeight: 62,
+  columns: 2,
+  rows: 3,
+  columnGap: 12,
   rowGap: 10,
-  lineHeight: 12,
-  sealBlockHeight: 52,
+  imageMaxHeight: 104,
 } as const;
 
+export const CAPTURES_PER_PAGE = CAPTURE_PAGE.columns * CAPTURE_PAGE.rows;
+
 export interface CaptureGridCell {
-  thumbnailId: string;
-  kind: CaptureKind;
+  compositeId: string;
   reason: CaptureReason;
   at: string;
   windowStart: string;
@@ -399,84 +459,39 @@ export interface CaptureGridCell {
   height?: number;
 }
 
-export interface PlannedSealCell {
-  thumbnailId: string;
-  seal: SealWindowMeta | null;
-  empty: boolean;
+export interface PlannedCaptureCell extends CaptureGridCell {
+  column: number;
+  row: number;
 }
-
-export type PlannedCaptureRow =
-  | { type: 'thumbs'; height: number; cells: CaptureGridCell[] }
-  | { type: 'seals'; height: number; cells: PlannedSealCell[] };
 
 export interface PlannedCapturePage {
-  rows: PlannedCaptureRow[];
+  cells: PlannedCaptureCell[];
 }
 
-export function captureColumnWidth(page = CAPTURE_PAGE): number {
-  const gaps = page.columnGap * (page.columns - 1);
-  return (page.pageWidth - page.margin * 2 - gaps) / page.columns;
-}
-
-/** How many thumbnail rows fit on a page when each window has no seals. */
-export function emptyCaptureRowsPerPage(page = CAPTURE_PAGE): number {
-  const usable = page.pageHeight - page.margin * 2 - page.headerHeight;
-  const row = page.thumbHeight + page.cellChrome + page.rowGap + page.lineHeight;
-  return Math.max(1, Math.floor(usable / row));
+export function captureCellSize(page = CAPTURE_PAGE): { width: number; height: number } {
+  const width = (page.pageWidth - page.margin * 2 - page.columnGap * (page.columns - 1)) / page.columns;
+  const usable = page.pageHeight - page.margin * 2 - page.headerHeight - page.rowGap * (page.rows - 1);
+  return { width, height: usable / page.rows };
 }
 
 /**
- * Letter pages: four thumbnails across, then the seal metadata for that window.
- * A row moves to the next page when it does not fit. Seal lines continue under
- * the same column when a window has more metadata than the page can hold.
+ * Letter pages hold six composites: two across, three down.
+ * Each cell keeps the certification details for its window. Those details
+ * are drawn under the picture, and a cell does not split onto the next page.
  */
 export function planCapturePages(cells: CaptureGridCell[], page = CAPTURE_PAGE): PlannedCapturePage[] {
-  const usable = page.pageHeight - page.margin * 2 - page.headerHeight;
-  const thumbRowH = page.thumbHeight + page.cellChrome;
+  const perPage = page.columns * page.rows;
   const pages: PlannedCapturePage[] = [];
-  let rows: PlannedCaptureRow[] = [];
-  let used = 0;
-
-  const flush = () => {
-    if (rows.length === 0) return;
-    pages.push({ rows });
-    rows = [];
-    used = 0;
-  };
-
-  const place = (row: PlannedCaptureRow) => {
-    if (row.height > usable) {
-      if (used > 0) flush();
-      rows.push(row);
-      flush();
-      return;
-    }
-    if (used > 0 && used + row.height > usable) flush();
-    rows.push(row);
-    used += row.height;
-  };
-
-  for (let index = 0; index < cells.length; index += page.columns) {
-    const group = cells.slice(index, index + page.columns);
-    place({ type: 'thumbs', height: thumbRowH, cells: group });
-    const layers = Math.max(1, ...group.map((cell) => cell.seals.length));
-    for (let layer = 0; layer < layers; layer += 1) {
-      const hasSeal = group.some((cell) => cell.seals.length > layer);
-      const last = layer === layers - 1;
-      const height = (hasSeal ? page.sealBlockHeight : page.lineHeight) + (last ? page.rowGap : 0);
-      place({
-        type: 'seals',
-        height,
-        cells: group.map((cell) => ({
-          thumbnailId: cell.thumbnailId,
-          seal: cell.seals[layer] ?? null,
-          empty: cell.seals.length === 0 && layer === 0,
-        })),
-      });
-    }
+  for (let index = 0; index < cells.length; index += perPage) {
+    const slice = cells.slice(index, index + perPage);
+    pages.push({
+      cells: slice.map((cell, offset) => ({
+        ...cell,
+        column: offset % page.columns,
+        row: Math.floor(offset / page.columns),
+      })),
+    });
   }
-
-  flush();
   return pages;
 }
 
@@ -484,33 +499,18 @@ export function cellsFromSchema(schema: SessionCaptureSchema): CaptureGridCell[]
   const cells: CaptureGridCell[] = [];
   for (const session of schema.sessions) {
     for (const capture of session.captures) {
-      const shared = {
-        at: capture.at,
+      if (!capture.composite) continue;
+      cells.push({
+        compositeId: capture.composite.fileId,
         reason: capture.reason,
+        at: capture.at,
         windowStart: capture.windowStart,
         windowEnd: capture.windowEnd,
         seals: capture.seals,
-      };
-      if (capture.cameraThumbnail) {
-        cells.push({
-          ...shared,
-          thumbnailId: capture.cameraThumbnail.fileId,
-          kind: 'camera',
-          dataUrl: capture.cameraThumbnail.dataUrl,
-          width: capture.cameraThumbnail.width,
-          height: capture.cameraThumbnail.height,
-        });
-      }
-      if (capture.screenshotThumbnail) {
-        cells.push({
-          ...shared,
-          thumbnailId: capture.screenshotThumbnail.fileId,
-          kind: 'screenshot',
-          dataUrl: capture.screenshotThumbnail.dataUrl,
-          width: capture.screenshotThumbnail.width,
-          height: capture.screenshotThumbnail.height,
-        });
-      }
+        dataUrl: capture.composite.dataUrl,
+        width: capture.composite.width,
+        height: capture.composite.height,
+      });
     }
   }
   return cells;
@@ -520,7 +520,7 @@ export function captureDocumentHeader(title: string, manuscriptId: string): stri
   return [
     'HuManuScript session capture',
     title,
-    'Low-resolution thumbnails, with the seal id, content hash, origin, and times for passages written in that window.',
+    'Screenshot with the camera in the upper left. Certification details for that window are under each picture.',
     `Manuscript ${manuscriptId}`,
   ];
 }

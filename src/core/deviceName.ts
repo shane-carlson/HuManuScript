@@ -6,6 +6,11 @@ export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
   /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
   getSpellSuggestions?: (word: string) => string[];
+  /**
+   * Desktop camera and screen grant. Absent in a browser.
+   * Permanent is remembered on this device. Session asks again next writing session.
+   */
+  setCaptureGrant?: (grant: { camera: 'off' | 'session' | 'permanent'; screen: 'off' | 'session' | 'permanent' }) => Promise<unknown>;
   /** Desktop cloud folders. Absent in a browser, which uses the directory picker instead. */
   cloudBackup?: {
     save: (provider: string, filename: string, contents: string) => Promise<string>;

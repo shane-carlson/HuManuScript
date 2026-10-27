@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('humanuscript', {
     list: (provider) => ipcRenderer.invoke('humanuscript:cloud-list', provider),
     read: (provider, filename) => ipcRenderer.invoke('humanuscript:cloud-read', provider, filename),
   },
+  setCaptureGrant: (grant) => ipcRenderer.invoke('humanuscript:capture-grant', grant),
   getSpellSuggestions: (word) => {
     if (typeof word !== 'string' || !word.trim()) return [];
     try {

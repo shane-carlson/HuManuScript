@@ -62,7 +62,7 @@ module.exports = {
       CFBundleDisplayName: 'HuManuScript',
       CFBundleName: 'HuManuScript',
       NSCameraUsageDescription:
-        'HuManuScript takes an optional session picture only after you turn on camera pictures and allow the prompt. The picture is stored as a low-resolution thumbnail.',
+        'HuManuScript uses the camera for an optional session picture only after you turn it on and allow it for this writing session, or remember that allow on this device. The camera is drawn on the screenshot.',
     },
   },
   dmg: {
