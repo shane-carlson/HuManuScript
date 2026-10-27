@@ -59,14 +59,21 @@ import {
   type GrammarSuggestionChoice,
 } from '../core/grammar.ts';
 import { harperEngineVersion, lintManuscriptBlocks, prepareHarper } from '../core/harperEngine.ts';
+import { LAYOUT_PANE_LIMITS, paneRoom } from '../core/layoutSession.ts';
 import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
+  loadCertificationWidth,
   loadEditorView,
   loadNotesCollapsed,
+  loadNotesWidth,
+  loadRailCollapsed,
   saveCertificationCollapsed,
+  saveCertificationWidth,
   saveEditorView,
   saveNotesCollapsed,
+  saveNotesWidth,
+  saveRailCollapsed,
   type EditorViewMode,
 } from '../storage.ts';
 import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
@@ -76,6 +83,7 @@ import { CertificationMark } from './CertificationMark.tsx';
 import { ManuscriptDivider, ManuscriptPageBreak } from './ManuscriptBreaks.tsx';
 import { ManuscriptStatsBar } from './ManuscriptStatsBar.tsx';
 import { NotesRail } from './NotesRail.tsx';
+import { PaneGrab } from './PaneGrab.tsx';
 import { HeadingRemoveControl } from './HeadingRemoveControl.tsx';
 import { ManuscriptImage } from './ManuscriptImage.tsx';
 import { ManuscriptSelectBanner } from './ManuscriptSelectBanner.tsx';
@@ -198,7 +206,9 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed());
+  const [notesWidth, setNotesWidth] = useState(() => loadNotesWidth());
+  const [certWidth, setCertWidth] = useState(() => loadCertificationWidth());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
   const [liveDevice, setLiveDevice] = useState<string | null>(() => shortPlatformLabel());
@@ -214,6 +224,7 @@ export function Editor({
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const editorLayoutRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     saveEditorView(viewMode);
@@ -226,6 +237,18 @@ export function Editor({
   useEffect(() => {
     saveNotesCollapsed(notesCollapsed);
   }, [notesCollapsed]);
+
+  useEffect(() => {
+    saveRailCollapsed(railCollapsed);
+  }, [railCollapsed]);
+
+  useEffect(() => {
+    saveNotesWidth(notesWidth);
+  }, [notesWidth]);
+
+  useEffect(() => {
+    saveCertificationWidth(certWidth);
+  }, [certWidth]);
 
   useEffect(() => {
     let cancel = false;
@@ -778,7 +801,12 @@ export function Editor({
       onChange={publish}
     />
     <div
+      ref={editorLayoutRef}
       className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}${notesCollapsed ? ' is-notes-collapsed' : ''}`}
+      style={{
+        '--pane-notes': notesCollapsed ? '52px' : `${notesWidth}px`,
+        '--pane-cert': certCollapsed ? '52px' : `${certWidth}px`,
+      } as CSSProperties}
     >
       {focusMode && (
         <div className="focus-exit-bar">
@@ -1701,6 +1729,19 @@ export function Editor({
         </div>
       </main>
 
+      {!focusMode && !notesCollapsed && (
+        <PaneGrab
+          label="Resize notes pane"
+          className="pane-grab--notes"
+          value={notesWidth}
+          min={LAYOUT_PANE_LIMITS.notesWidth.min}
+          max={LAYOUT_PANE_LIMITS.notesWidth.max}
+          direction={-1}
+          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, certCollapsed ? 52 : certWidth, LAYOUT_PANE_LIMITS.notesWidth)}
+          onChange={setNotesWidth}
+          onCommit={saveNotesWidth}
+        />
+      )}
       {!focusMode && (
         <NotesRail
           doc={doc}
@@ -1718,6 +1759,19 @@ export function Editor({
               });
             });
           }}
+        />
+      )}
+      {!focusMode && !certCollapsed && (
+        <PaneGrab
+          label="Resize certification pane"
+          className="pane-grab--cert"
+          value={certWidth}
+          min={LAYOUT_PANE_LIMITS.certificationWidth.min}
+          max={LAYOUT_PANE_LIMITS.certificationWidth.max}
+          direction={-1}
+          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, notesCollapsed ? 52 : notesWidth, LAYOUT_PANE_LIMITS.certificationWidth)}
+          onChange={setCertWidth}
+          onCommit={saveCertificationWidth}
         />
       )}
       {!focusMode && (
