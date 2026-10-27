@@ -46,6 +46,24 @@ test('the prompt asks, confirms the download, shows progress, then asks to resta
   assert.equal(retry?.primary, 'Download');
 });
 
+test('a menu check says when the app is current and when the check fails', () => {
+  const checking = updatePromptModel({ phase: 'checking', version: '' });
+  assert.equal(checking?.message, 'Checking for updates…');
+  assert.equal(checking?.primary, null);
+  assert.match(checking?.detail ?? '', /keep writing/);
+
+  const current = updatePromptModel({ phase: 'current', version: '0.1.36' });
+  assert.equal(current?.message, 'HuManuScript is up to date.');
+  assert.equal(current?.primary, null);
+  assert.equal(current?.secondary, 'Dismiss');
+  assert.match(current?.detail ?? '', /keep writing/);
+
+  const failed = updatePromptModel({ phase: 'check-failed', version: 'latest.yml?token=1' });
+  assert.equal(failed?.message, 'Could not check for updates.');
+  assert.equal(failed?.primary, null);
+  assert.match(failed?.detail ?? '', /keep writing/);
+});
+
 test('a feed string that is not a version never becomes the prompt', () => {
   const model = updatePromptModel({ phase: 'available', version: 'latest-mac.yml?token=1' });
   assert.equal(model?.message, 'An update is available.');

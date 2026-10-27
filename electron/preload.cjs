@@ -1,6 +1,15 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
-const UPDATE_PHASES = new Set(['available', 'downloading', 'downloaded', 'failed']);
+const UPDATE_PHASES = new Set([
+  'available',
+  'downloading',
+  'downloaded',
+  'failed',
+  'checking',
+  'current',
+  'check-failed',
+]);
+const QUIET_PHASES = new Set(['checking', 'current', 'check-failed']);
 
 /** Sandbox cannot load autoUpdate.cjs, so the same notice check lives here. */
 function readAvailableUpdate(payload) {
@@ -10,6 +19,7 @@ function readAvailableUpdate(payload) {
   let phase = payload.phase;
   if (phase == null) phase = 'available';
   if (!UPDATE_PHASES.has(phase)) return null;
+  if (QUIET_PHASES.has(phase)) return { phase, version: '', percent: 0 };
   let percent = 0;
   if (phase === 'downloading') {
     const value = Number(payload.percent);
@@ -38,6 +48,7 @@ contextBridge.exposeInMainWorld('humanuscript', {
   },
   downloadUpdate: () => ipcRenderer.invoke('humanuscript:update-download'),
   installUpdate: () => ipcRenderer.invoke('humanuscript:update-install'),
+  checkForUpdates: () => ipcRenderer.invoke('humanuscript:update-check'),
   cloudBackup: {
     save: (provider, filename, contents) => ipcRenderer.invoke('humanuscript:cloud-save', provider, filename, contents),
     list: (provider) => ipcRenderer.invoke('humanuscript:cloud-list', provider),

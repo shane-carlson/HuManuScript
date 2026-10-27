@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
-import { updatePromptModel } from '../core/appUpdate.ts';
+import { subscribeLocalUpdate, updatePromptModel } from '../core/appUpdate.ts';
 import type { AvailableUpdate, UpdateFeedPhase } from '../core/deviceName.ts';
+
+const NOTICE_PHASES = new Set<UpdateFeedPhase>([
+  'available',
+  'downloading',
+  'downloaded',
+  'failed',
+  'checking',
+  'current',
+  'check-failed',
+]);
 
 type Feed = {
   phase: UpdateFeedPhase;
@@ -11,7 +21,7 @@ type Feed = {
 function feedFrom(update: AvailableUpdate | null | undefined): Feed | null {
   if (!update) return null;
   const phase = update.phase ?? 'available';
-  if (phase !== 'available' && phase !== 'downloading' && phase !== 'downloaded' && phase !== 'failed') return null;
+  if (!NOTICE_PHASES.has(phase)) return null;
   return {
     phase,
     version: update.version ?? '',
@@ -25,15 +35,19 @@ export function UpdateAvailableNotice() {
 
   useEffect(() => {
     const bridge = window.humanuscript;
-    if (!bridge?.onUpdateAvailable) return;
     const apply = (update: AvailableUpdate | null | undefined) => {
       const next = feedFrom(update);
       if (!next) return;
       setFeed(next);
-      if (next.phase === 'downloading' || next.phase === 'downloaded') setConfirming(false);
+      if (next.phase !== 'available' && next.phase !== 'failed') setConfirming(false);
     };
-    apply(bridge.getUpdateAvailable?.() ?? null);
-    return bridge.onUpdateAvailable(apply);
+    apply(bridge?.getUpdateAvailable?.() ?? null);
+    const offBridge = bridge?.onUpdateAvailable?.(apply) ?? (() => {});
+    const offLocal = subscribeLocalUpdate(apply);
+    return () => {
+      offBridge();
+      offLocal();
+    };
   }, []);
 
   if (!feed) return null;
@@ -50,6 +64,14 @@ export function UpdateAvailableNotice() {
       return;
     }
     if (model.phase === 'downloaded') void window.humanuscript?.installUpdate?.();
+  };
+
+  const onSecondary = () => {
+    if (model.phase === 'current' || model.phase === 'check-failed') {
+      setFeed(null);
+      return;
+    }
+    setConfirming(false);
   };
 
   return (
@@ -70,7 +92,7 @@ export function UpdateAvailableNotice() {
       {model.primary || model.secondary ? (
         <div className="update-available__actions">
           {model.secondary ? (
-            <button type="button" className="ghost" onClick={() => setConfirming(false)}>
+            <button type="button" className="ghost" onClick={onSecondary}>
               {model.secondary}
             </button>
           ) : null}

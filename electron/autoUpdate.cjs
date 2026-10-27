@@ -1,5 +1,6 @@
 /**
- * Checks GitHub Releases when a packaged build opens, and about once an hour.
+ * Checks GitHub Releases when a packaged build opens, about once an hour,
+ * and when Help → Check for updates is chosen. Same feed either way.
  * A newer release is only announced. download() and install() run after the
  * person confirms, so nothing is fetched or applied on its own.
  * The electron-updater instance is passed in so tests do not load Electron.
@@ -29,11 +30,14 @@ function progressPercent(progress) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+const QUIET_PHASES = ['checking', 'current', 'check-failed'];
+
 /** Notice sent to the window. Drops query strings, URLs, and unknown phases. */
 function readUpdateState(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  const version = releasedVersion(payload);
   const rawPhase = payload.phase;
+  if (QUIET_PHASES.includes(rawPhase)) return { phase: rawPhase, version: '', percent: 0 };
+  const version = releasedVersion(payload);
   if (rawPhase == null) return { phase: 'available', version, percent: 0 };
   if (!PHASES.includes(rawPhase)) return null;
   return {
@@ -54,10 +58,11 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
   let downloading = false;
   let downloaded = false;
   let installing = false;
+  let manualCheck = false;
   let lastNotice = '';
   let swallowDuplicate = false;
 
-  const emit = (nextPhase, percent = 0) => {
+  const emit = (nextPhase, percent = 0, force = false) => {
     phase = nextPhase;
     const notice = readUpdateState({
       phase: nextPhase,
@@ -66,7 +71,7 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
     });
     if (!notice) return;
     const key = `${notice.phase}|${notice.version}|${notice.percent}`;
-    if (key === lastNotice) return;
+    if (!force && key === lastNotice) return;
     lastNotice = key;
     notify(notice);
   };
@@ -83,8 +88,19 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
     return true;
   };
 
+  const reportManualFailure = (error) => {
+    manualCheck = false;
+    log(`Update check failed: ${safeUpdateError(error)}`);
+    emit('check-failed', 0, true);
+    swallowDuplicate = true;
+    queueMicrotask(() => {
+      swallowDuplicate = false;
+    });
+  };
+
   const reportError = (error) => {
     if (failDownload(error)) {
+      manualCheck = false;
       swallowDuplicate = true;
       queueMicrotask(() => {
         swallowDuplicate = false;
@@ -93,6 +109,10 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
     }
     if (swallowDuplicate) {
       swallowDuplicate = false;
+      return;
+    }
+    if (manualCheck) {
+      reportManualFailure(error);
       return;
     }
     reportCheckFailure(error);
@@ -108,11 +128,19 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
   };
   autoUpdater.on('error', reportError);
   autoUpdater.on('update-available', (info) => {
+    manualCheck = false;
     if (phase === 'downloading' || phase === 'downloaded') return;
     const reported = releasedVersion(info);
     if (reported) version = reported;
     log(`Update available${reported ? `: ${reported}` : ''}.`);
     emit('available');
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (!manualCheck) return;
+    manualCheck = false;
+    if (phase === 'downloading' || phase === 'downloaded') return;
+    log('No update available.');
+    emit('current', 0, true);
   });
   autoUpdater.on('download-progress', (progress) => {
     if (!downloading && phase !== 'downloading') return;
@@ -129,16 +157,25 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
   });
 
   const check = () => {
+    const fromMenu = manualCheck;
+    const onFailure = (error) => {
+      if (fromMenu) reportError(error);
+      else reportCheckFailure(error);
+    };
     try {
       const pending = autoUpdater.checkForUpdates();
-      if (pending && typeof pending.then === 'function') {
-        pending.catch((error) => {
-          reportCheckFailure(error);
-        });
-      }
+      if (pending && typeof pending.then === 'function') pending.catch(onFailure);
     } catch (error) {
-      reportCheckFailure(error);
+      onFailure(error);
     }
+  };
+
+  const checkNow = () => {
+    if (installing || downloaded || downloading) return;
+    manualCheck = true;
+    log('Checking for updates.');
+    emit('checking', 0, true);
+    check();
   };
 
   const download = () => {
@@ -177,7 +214,7 @@ function watchForUpdates(autoUpdater, log = () => {}, timers = {}, notify = () =
   check();
   const timer = schedule(check, HOUR_MS);
   if (timer && typeof timer.unref === 'function') timer.unref();
-  return { check, download, install };
+  return { check, checkNow, download, install };
 }
 
 module.exports = {

@@ -51,6 +51,21 @@ test('a notice keeps the release version and drops anything else', () => {
     percent: 0,
   });
   assert.equal(readUpdateState(null), null);
+  assert.deepEqual(readUpdateState({ phase: 'current', version: 'latest.yml?token=1' }), {
+    phase: 'current',
+    version: '',
+    percent: 0,
+  });
+  assert.deepEqual(readUpdateState({ phase: 'check-failed', version: '0.1.36' }), {
+    phase: 'check-failed',
+    version: '',
+    percent: 0,
+  });
+  assert.deepEqual(readUpdateState({ phase: 'checking', version: '0.1.36' }), {
+    phase: 'checking',
+    version: '',
+    percent: 0,
+  });
 });
 
 function fakeUpdater(calls) {
@@ -182,5 +197,46 @@ test('a failed download is shown and does not restart the app', () => {
 
   controls.download();
   assert.equal(calls.filter((call) => call === 'download').length, 2);
+  assert.equal(shown.at(-1).phase, 'downloading');
+});
+
+test('a menu check says when the app is current, when it fails, and when a release is waiting', () => {
+  const lines = [];
+  const shown = [];
+  const calls = [];
+  const { fake, handlers } = fakeUpdater(calls);
+  const { controls } = start(fake, lines, shown);
+
+  handlers['update-not-available']({ version: '0.1.36' });
+  assert.deepEqual(shown, []);
+
+  controls.checkNow();
+  assert.equal(shown.at(-1).phase, 'checking');
+  assert.equal(lines.at(-1), 'Checking for updates.');
+  handlers['update-not-available']({ version: '0.1.36' });
+  assert.deepEqual(shown.at(-1), { phase: 'current', version: '', percent: 0 });
+  assert.equal(lines.at(-1), 'No update available.');
+
+  handlers['update-not-available']({ version: '0.1.36' });
+  assert.equal(shown.filter((notice) => notice.phase === 'current').length, 1);
+
+  controls.checkNow();
+  handlers.error(new Error('https://updates.example/latest.yml?token=secret'));
+  handlers.error(new Error('https://updates.example/latest.yml?token=secret'));
+  assert.equal(shown.at(-1).phase, 'check-failed');
+  assert.equal(shown.filter((notice) => notice.phase === 'check-failed').length, 1);
+  assert.equal(lines.filter((line) => line.startsWith('Update check failed')).length, 1);
+  assert.equal(calls.includes('download'), false);
+
+  controls.checkNow();
+  handlers['update-available']({ version: '0.1.37' });
+  assert.deepEqual(shown.at(-1), { phase: 'available', version: '0.1.37', percent: 0 });
+  controls.download();
+  assert.equal(calls.filter((call) => call === 'download').length, 1);
+  assert.equal(shown.at(-1).phase, 'downloading');
+
+  const checksWhileDownloading = calls.filter((call) => call === 'check').length;
+  controls.checkNow();
+  assert.equal(calls.filter((call) => call === 'check').length, checksWhileDownloading);
   assert.equal(shown.at(-1).phase, 'downloading');
 });

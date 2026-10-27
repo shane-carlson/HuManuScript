@@ -4,7 +4,14 @@ import type { LicenseActivateResult, LicenseStatus } from './license.ts';
 
 export type CloudBackupEntry = { name: string; modified: string };
 
-export type UpdateFeedPhase = 'available' | 'downloading' | 'downloaded' | 'failed';
+export type UpdateFeedPhase =
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'failed'
+  | 'checking'
+  | 'current'
+  | 'check-failed';
 
 export type AvailableUpdate = {
   version: string;
@@ -21,6 +28,8 @@ export type HumanuscriptBridge = {
   downloadUpdate?: () => Promise<unknown> | void;
   /** Restarts into the downloaded update after the person confirms. */
   installUpdate?: () => Promise<unknown> | void;
+  /** Runs the same GitHub Release check now. Absent in a browser. */
+  checkForUpdates?: () => Promise<unknown> | void;
   /** Electron built-in dictionary. Absent in a browser that cannot read suggestions. */
   getSpellSuggestions?: (word: string) => string[];
   /**
