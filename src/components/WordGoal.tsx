@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { ManuscriptDocument } from '../core/document.ts';
 import { SessionCaptureControls } from './SessionCapture.tsx';
 import { WritingTimer } from './WritingTimer.tsx';
@@ -60,6 +60,8 @@ export function WordGoal({
   const [sessionGoal, setSessionGoal] = useState<SessionGoal | null>(() => loadSessionGoal(bookId));
   const [readyId, setReadyId] = useState<string | null>(null);
   const [noteRoot, setNoteRoot] = useState<HTMLDivElement | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsPanelId = useId();
 
   useEffect(() => {
     setSessionGoal(loadSessionGoal(bookId));
@@ -67,6 +69,15 @@ export function WordGoal({
     const frame = requestAnimationFrame(() => setReadyId(bookId));
     return () => cancelAnimationFrame(frame);
   }, [bookId]);
+
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOptionsOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [optionsOpen]);
 
   const total = manuscriptStats(doc.blocks).words;
   const chapter = activeChapter(doc.blocks, activeBlockId);
@@ -125,6 +136,7 @@ export function WordGoal({
   return (
     <div className="word-goal" data-word-goal={phase} data-word-goal-scope={scope}>
       <div className="word-goal__line">
+        <div className="word-goal__main">
         <div className="word-goal__scope">
           <span className="session-capture-controls__label">Goal</span>
           <div role="group" aria-label="Goal scope">
@@ -209,9 +221,29 @@ export function WordGoal({
             </button>
           )}
         </form>
-        <SessionCaptureControls />
         <WritingTimer bookId={bookId} doc={doc} sessionGoal={sessionGoal} noteRoot={noteRoot} />
+        </div>
+        <button
+          type="button"
+          className="session-options__trigger"
+          aria-expanded={optionsOpen}
+          aria-controls={optionsPanelId}
+          onClick={() => setOptionsOpen((open) => !open)}
+        >
+          Session options
+        </button>
       </div>
+      {optionsOpen && (
+        <div className="session-options__panel" id={optionsPanelId} role="region" aria-label="Session options">
+          <p className="session-options__explain">
+            You can include screenshots and pictures from this computer&apos;s camera. They are added to the
+            certification evidence as proof the text was written by a person. Camera and screen stay off until you
+            turn them on. Start and End on this bar begin and finish the session. A picture is taken at the start,
+            every five minutes, and when you press End.
+          </p>
+          <SessionCaptureControls />
+        </div>
+      )}
       <div className="word-goal__notes" ref={setNoteRoot}>
         {phase === 'error' && (
           <p className="word-goal__status word-goal__status--error" role="alert">{error}</p>

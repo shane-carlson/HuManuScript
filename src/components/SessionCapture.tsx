@@ -480,7 +480,7 @@ export function SessionCapturePanel() {
     <section className="session-capture" aria-label="Session pictures">
       <h3>Session pictures</h3>
       <p className="session-capture__lead">
-        Start and End on the session bar begin and finish pictures. Camera and screen stay off until you turn them on.
+        Start and End on the session bar begin and finish pictures. Turn the camera and screen on under Session options. They stay off until you do.
       </p>
       {api.session && !api.ownsSession && (
         <p className="session-capture__status">
@@ -552,7 +552,7 @@ export function SessionCaptureExport({
       </p>
       {!enabled && (
         <p className="session-capture-export__hint">
-          Camera and screen are off. Turn them on in the session bar, next to the word goal and timer. Nothing is
+          Camera and screen are off. Open Session options on the session bar and turn them on. Nothing is
           captured, and this document stays out of the certification record, until you do.
         </p>
       )}
