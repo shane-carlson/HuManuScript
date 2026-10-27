@@ -1,5 +1,7 @@
 /**
- * Manuscript export for writers. Every format leads with the certification page, then the body.
+ * Manuscript export for writers.
+ * Word, RTF, ODT, Markdown, plain text, and PDF lead with the certification page.
+ * EPUB is a reflowable ebook and does not include that page.
  * Body text comes from blocks only; provenance is summarized on the certification page.
  */
 
@@ -28,6 +30,8 @@ import { markedToMarkdown, markedToRtf, styledSpans } from './richText.ts';
 import { dividerDisplayText } from './manuscript.ts';
 import { isProseBlock, type ManuscriptBlock } from './types.ts';
 import { resolveManuscriptTypography, type ManuscriptTypography } from './typography.ts';
+import { buildEpubBlob, type EpubBuildOptions } from './epubExport.ts';
+import { buildPrintMatter, contentsFromDocument, type PrintMatter, type PrintPage } from './publicationPages.ts';
 
 export const SCRIVENER_SPLIT_SEPARATOR = '#';
 const SCENE_BREAK = '* * *';
@@ -46,7 +50,8 @@ export type ExportFormat =
   | 'odt'
   | 'markdown'
   | 'plain'
-  | 'pdf';
+  | 'pdf'
+  | 'epub';
 
 export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
   docx: 'Microsoft Word (.docx)',
@@ -56,6 +61,7 @@ export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
   markdown: 'Markdown (.md)',
   plain: 'Plain text (.txt)',
   pdf: 'PDF (.pdf)',
+  epub: 'EPUB 3 (.epub)',
 };
 
 function chapterHeading(block: ManuscriptBlock, index: number): string {
@@ -87,9 +93,9 @@ function certificationRtf(model: CertificationPageModel): string {
     .join('\n');
 }
 
-function bodyMarkdown(doc: ManuscriptDocument): string {
+function bodyMarkdown(doc: ManuscriptDocument, skipTitle = false): string {
   const title = displayTitle(doc);
-  const lines: string[] = [`# ${title}`, ''];
+  const lines: string[] = skipTitle ? [] : [`# ${title}`, ''];
   let chapterNo = 0;
   for (const block of doc.blocks) {
     switch (block.type) {
@@ -151,8 +157,8 @@ function joinAfterPageBreak(summary: string, breakToken: string, body: string): 
   return `${trimBlankEdges(summary)}\n\n${breakToken}\n\n${trimBlankEdges(body)}\n`;
 }
 
-function bodyPlain(doc: ManuscriptDocument): string {
-  const lines: string[] = [displayTitle(doc).toUpperCase(), ''];
+function bodyPlain(doc: ManuscriptDocument, skipTitle = false): string {
+  const lines: string[] = skipTitle ? [] : [displayTitle(doc).toUpperCase(), ''];
   let chapterNo = 0;
   for (const block of doc.blocks) {
     switch (block.type) {
@@ -326,13 +332,16 @@ function proseToDocx(block: ManuscriptBlock, type: ManuscriptTypography): Paragr
   });
 }
 
-function bodyDocxParagraphsFixed(doc: ManuscriptDocument, type: ManuscriptTypography): Paragraph[] {
-  const children: Paragraph[] = [
-    new Paragraph({
-      heading: HeadingLevel.TITLE,
-      children: [docxRun(type, displayTitle(doc), { bold: true, sizePt: type.sizePt + 8 })],
-    }),
-  ];
+function bodyDocxParagraphsFixed(doc: ManuscriptDocument, type: ManuscriptTypography, skipTitle = false): Paragraph[] {
+  const children: Paragraph[] = [];
+  if (!skipTitle) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.TITLE,
+        children: [docxRun(type, displayTitle(doc), { bold: true, sizePt: type.sizePt + 8 })],
+      }),
+    );
+  }
   let chapterNo = 0;
   for (const block of doc.blocks) {
     switch (block.type) {
@@ -422,8 +431,8 @@ function certificationOdtBody(model: CertificationPageModel): string {
     .join('');
 }
 
-function bodyOdt(doc: ManuscriptDocument): string {
-  const parts: string[] = [`<text:h text:style-name="Heading_20_1">${xmlEscape(displayTitle(doc))}</text:h>`];
+function bodyOdt(doc: ManuscriptDocument, skipTitle = false): string {
+  const parts: string[] = skipTitle ? [] : [`<text:h text:style-name="Heading_20_1">${xmlEscape(displayTitle(doc))}</text:h>`];
   let chapterNo = 0;
   for (const block of doc.blocks) {
     switch (block.type) {
@@ -543,7 +552,11 @@ function pdfAddWrapped(
   return y;
 }
 
-async function buildPdfBlob(model: CertificationPageModel, manuscript: ManuscriptDocument): Promise<Blob> {
+async function buildPdfBlob(
+  model: CertificationPageModel,
+  manuscript: ManuscriptDocument,
+  matter: PrintMatter | null,
+): Promise<Blob> {
   const type = resolveManuscriptTypography(manuscript);
   const face = type.font.pdfFont;
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: false });
@@ -570,12 +583,15 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
     y = pdfAddWrapped(doc, line, margin, y, width, 5, false);
     if (heading) doc.setFont(face, 'normal');
   }
+  if (matter) paintPdfPages(doc, matter.front, face, type.sizePt, margin, width);
   doc.addPage();
   y = 20;
-  doc.setFont(face, 'bold');
-  doc.setFontSize(type.sizePt + 6);
-  doc.text(displayTitle(manuscript), margin, y);
-  y += type.sizePt * 0.45 + 4;
+  if (!matter) {
+    doc.setFont(face, 'bold');
+    doc.setFontSize(type.sizePt + 6);
+    doc.text(displayTitle(manuscript), margin, y);
+    y += type.sizePt * 0.45 + 4;
+  }
   doc.setFont(face, 'normal');
   doc.setFontSize(type.sizePt);
   const bodyLead = Math.max(5, type.sizePt * 0.45);
@@ -615,7 +631,66 @@ async function buildPdfBlob(model: CertificationPageModel, manuscript: Manuscrip
       y += 2;
     }
   }
+  if (matter?.back.length) paintPdfPages(doc, matter.back, face, type.sizePt, margin, width);
   return doc.output('blob');
+}
+
+function paintPdfPages(
+  doc: jsPDF,
+  pages: PrintPage[],
+  face: string,
+  sizePt: number,
+  margin: number,
+  width: number,
+): void {
+  for (const page of pages) {
+    doc.addPage();
+    if (page.blank) continue;
+    let y = 28;
+    const lines = [...(page.heading ? [page.heading] : []), ...page.lines];
+    lines.forEach((line, index) => {
+      const heading = index === 0 && !!page.heading;
+      doc.setFont(face, heading ? 'bold' : 'normal');
+      doc.setFontSize(heading ? sizePt + 4 : sizePt);
+      const lead = heading ? 8 : Math.max(5, sizePt * 0.45);
+      if (page.align === 'center') {
+        const wrapped = doc.splitTextToSize(line, width) as string[];
+        for (const row of wrapped) {
+          if (y > 270) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.text(row, 105, y, { align: 'center' });
+          y += lead;
+        }
+      } else {
+        y = pdfAddWrapped(doc, line, margin, y, width, lead, true);
+      }
+      y += 2;
+    });
+  }
+}
+
+/** Book pages for Word, PDF, and the other writer files. Off unless the author turns them on. */
+export interface PublicationFileOptions {
+  includePublicationPages: boolean;
+  author: string;
+  subtitle: string;
+  imprint: string;
+  copyrightYear: string;
+  copyrightHolder: string;
+  rightsLine: string;
+  disclaimer: string;
+  paperbackIsbn: string;
+  hardcoverIsbn: string;
+  ebookIsbn: string;
+  edition: string;
+  dedication: string;
+  epigraph: string;
+  epigraphAttribution: string;
+  alsoBy: string[];
+  aboutAuthor: string;
+  seriesLine?: string;
 }
 
 export async function exportManuscriptBlob(
@@ -623,29 +698,79 @@ export async function exportManuscriptBlob(
   format: ExportFormat,
   exportedAt: string = new Date().toISOString(),
   identity: CertificationPageIdentity = {},
+  epub?: EpubBuildOptions,
+  publication?: PublicationFileOptions,
 ): Promise<Blob> {
+  if (format === 'epub') {
+    if (!epub) throw new Error('EPUB export needs the author, language, and identifier from the export form.');
+    return buildEpubBlob(
+      doc,
+      { ...epub, seriesLine: epub.seriesLine.trim() || identity.seriesLabel?.trim() || '' },
+      exportedAt,
+    );
+  }
   const liveDevice = await getTypingDeviceLabel();
   const model = buildCertificationPageModel(doc, exportedAt, identity, liveDevice);
   const type = resolveManuscriptTypography(doc);
+  const matter = publication?.includePublicationPages
+    ? buildPrintMatter({
+        title: displayTitle(doc),
+        seriesLine: publication.seriesLine?.trim() || identity.seriesLabel?.trim() || '',
+        author: publication.author,
+        subtitle: publication.subtitle,
+        imprint: publication.imprint,
+        copyrightYear: publication.copyrightYear,
+        copyrightHolder: publication.copyrightHolder,
+        rightsLine: publication.rightsLine,
+        disclaimer: publication.disclaimer,
+        paperbackIsbn: publication.paperbackIsbn,
+        hardcoverIsbn: publication.hardcoverIsbn,
+        ebookIsbn: publication.ebookIsbn,
+        edition: publication.edition,
+        dedication: publication.dedication,
+        epigraph: publication.epigraph,
+        epigraphAttribution: publication.epigraphAttribution,
+        alsoBy: publication.alsoBy,
+        aboutAuthor: publication.aboutAuthor,
+        contents: contentsFromDocument(doc),
+      })
+    : null;
+  const withPages = !!matter;
   switch (format) {
     case 'plain': {
-      const text = joinAfterPageBreak(certificationPagePlain(model), PLAIN_PAGE_BREAK, bodyPlain(doc));
+      const text = joinAfterPageBreak(
+        certificationPagePlain(model),
+        PLAIN_PAGE_BREAK,
+        manuscriptWithPages(bodyPlain(doc, withPages), matter, PLAIN_PAGE_BREAK),
+      );
       return new Blob([text], { type: 'text/plain;charset=utf-8' });
     }
     case 'markdown': {
-      const text = joinAfterPageBreak(certificationMarkdown(model), MARKDOWN_PAGE_BREAK, bodyMarkdown(doc));
+      const text = joinAfterPageBreak(
+        certificationMarkdown(model),
+        MARKDOWN_PAGE_BREAK,
+        manuscriptWithPages(bodyMarkdown(doc, withPages), matter, MARKDOWN_PAGE_BREAK),
+      );
       return new Blob([text], { type: 'text/markdown;charset=utf-8' });
     }
     case 'rtf': {
-      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, false)}`, type);
+      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${rtfBook(matter, bodyRtfInner(doc, false))}`, type);
       return new Blob([rtf], { type: 'application/rtf' });
     }
     case 'scrivener-rtf': {
-      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${bodyRtfInner(doc, true)}`, type);
+      const rtf = wrapRtf(`${certificationRtf(model)}\n\\page\n${rtfBook(matter, bodyRtfInner(doc, true))}`, type);
       return new Blob([rtf], { type: 'application/rtf' });
     }
     case 'docx': {
       const half = type.sizePt * 2;
+      const children = [
+        ...certificationDocxParagraphs(model, type),
+        new Paragraph({ children: [new PageBreak()] }),
+        ...(matter ? joinedDocx(matter.front, type) : []),
+        ...(matter ? [new Paragraph({ children: [new PageBreak()] })] : []),
+        ...bodyDocxParagraphsFixed(doc, type, withPages),
+        ...(matter?.back.length ? [new Paragraph({ children: [new PageBreak()] }), ...joinedDocx(matter.back, type)] : []),
+      ];
       const document = new Document({
         styles: {
           default: {
@@ -655,34 +780,103 @@ export async function exportManuscriptBlob(
             heading2: { run: { font: type.font.exportName, size: (type.sizePt + 2) * 2, bold: true } },
           },
         },
-        sections: [
-          {
-            children: [
-              ...certificationDocxParagraphs(model, type),
-              new Paragraph({ children: [new PageBreak()] }),
-              ...bodyDocxParagraphsFixed(doc, type),
-            ],
-          },
-        ],
+        sections: [{ children }],
       });
       return Packer.toBlob(document);
     }
     case 'odt': {
-      const inner = `${certificationOdtBody(model)}${ODT_PAGE_BREAK}${bodyOdt(doc)}`;
+      const front = matter ? joinedOdt(matter.front) : '';
+      const back = matter?.back.length ? `${ODT_PAGE_BREAK}${joinedOdt(matter.back)}` : '';
+      const inner = `${certificationOdtBody(model)}${ODT_PAGE_BREAK}${front}${matter ? ODT_PAGE_BREAK : ''}${bodyOdt(doc, withPages)}${back}`;
       return buildOdtBlob(inner, type);
     }
     case 'pdf':
-      return buildPdfBlob(model, doc);
+      return buildPdfBlob(model, doc, matter);
     default:
       throw new Error(`Unknown export format: ${format}`);
   }
 }
 
-export function exportFilename(title: string, format: ExportFormat): string {
-  const base = title
+function manuscriptWithPages(body: string, matter: PrintMatter | null, token: string): string {
+  if (!matter) return body;
+  const front = joinedPlain(matter.front, token);
+  const back = joinedPlain(matter.back, token);
+  let text = front ? `${front}\n\n${token}\n\n${trimBlankEdges(body)}` : body;
+  if (back) text = `${trimBlankEdges(text)}\n\n${token}\n\n${back}`;
+  return text;
+}
+
+function joinedPlain(pages: PrintPage[], token: string): string {
+  return pages
+    .map((page) => (page.blank ? '' : [...(page.heading ? [page.heading] : []), ...page.lines].join('\n')))
+    .join(`\n\n${token}\n\n`);
+}
+
+function rtfBook(matter: PrintMatter | null, body: string): string {
+  if (!matter) return body;
+  const front = joinedRtf(matter.front);
+  const back = matter.back.length ? `\\page\n${joinedRtf(matter.back)}` : '';
+  return `${front}\n\\page\n${body}${back ? `\n${back}` : ''}`;
+}
+
+function joinedRtf(pages: PrintPage[]): string {
+  return pages
+    .map((page) => {
+      if (page.blank) return '';
+      const align = page.align === 'center' ? '\\qc' : '\\ql';
+      const parts: string[] = [];
+      if (page.heading) parts.push(`\\pard${align}{\\b ${rtfEscape(page.heading)}\\par}`);
+      for (const line of page.lines) parts.push(`\\pard${align} ${rtfEscape(line)}\\par`);
+      return parts.join('\n');
+    })
+    .join('\\page\n');
+}
+
+function joinedOdt(pages: PrintPage[]): string {
+  return pages
+    .map((page, index) => {
+      const breakXml = index > 0 ? ODT_PAGE_BREAK : '';
+      if (page.blank) return breakXml;
+      const style = page.align === 'center' ? 'Center' : 'TextBody';
+      let body = breakXml;
+      if (page.heading) body += `<text:h text:style-name="Heading_20_1">${xmlEscape(page.heading)}</text:h>`;
+      for (const line of page.lines) body += `<text:p text:style-name="${style}">${xmlEscape(line)}</text:p>`;
+      return body;
+    })
+    .join('');
+}
+
+function joinedDocx(pages: PrintPage[], type: ManuscriptTypography): Paragraph[] {
+  const out: Paragraph[] = [];
+  pages.forEach((page, index) => {
+    if (index > 0) out.push(new Paragraph({ children: [new PageBreak()] }));
+    if (page.blank) return;
+    const lines = [...(page.heading ? [page.heading] : []), ...page.lines];
+    lines.forEach((line, lineIndex) => {
+      out.push(
+        new Paragraph({
+          alignment: page.align === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT,
+          children: [
+            docxRun(type, line, {
+              bold: lineIndex === 0 && !!page.heading,
+              sizePt: lineIndex === 0 && page.heading ? type.sizePt + 4 : undefined,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+  return out;
+}
+
+export function exportBasename(title: string): string {
+  return title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'untitled-manuscript';
+}
+
+export function exportFilename(title: string, format: ExportFormat): string {
   const ext: Record<ExportFormat, string> = {
     docx: 'docx',
     rtf: 'rtf',
@@ -691,6 +885,12 @@ export function exportFilename(title: string, format: ExportFormat): string {
     markdown: 'md',
     plain: 'txt',
     pdf: 'pdf',
+    epub: 'epub',
   };
-  return `${base}.${ext[format]}`;
+  return `${exportBasename(title)}.${ext[format]}`;
+}
+
+/** Storefront cover saved beside the EPUB. This is the file the author picked, not a generated cover. */
+export function exportCoverFilename(title: string, extension: 'jpg' | 'png'): string {
+  return `${exportBasename(title)}-cover.${extension}`;
 }

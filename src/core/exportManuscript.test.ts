@@ -154,7 +154,75 @@ test('word, rtf, odt, and pdf carry the book font and size; plain exports stay p
   assert.match(markdown, /Before the break/);
 });
 
-test('every exporter is covered by the page-break checks', () => {
-  const covered: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
-  assert.deepEqual(covered.sort(), (Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).sort());
+test('writer exports that lead with the certification page are every format except epub', () => {
+  const leading: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
+  const all = Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[];
+  assert.deepEqual([...leading, 'epub'].sort(), all.slice().sort());
 });
+
+test('publication pages are off for every writer file until the switch is on', async () => {
+  const doc = manuscriptWithBreaks();
+  const pages = {
+    includePublicationPages: true,
+    author: 'Ada Harbor',
+    subtitle: 'A novel',
+    imprint: 'Lantern Press',
+    copyrightYear: '2026',
+    copyrightHolder: '',
+    rightsLine: '',
+    disclaimer: 'This is fiction.',
+    paperbackIsbn: '9781861972712',
+    hardcoverIsbn: '',
+    ebookIsbn: '9780306406157',
+    edition: 'First edition',
+    dedication: 'For the harbor cats',
+    epigraph: 'The sea keeps lists',
+    epigraphAttribution: 'A pilot',
+    alsoBy: ['Other Book'],
+    aboutAuthor: 'Writes at night',
+  };
+  const formats: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
+  for (const format of formats) {
+    const off = await fileText(await exportManuscriptBlob(doc, format, now, identity));
+    assert.equal(off.includes('Lantern Press'), false, format);
+    assert.equal(off.includes('For the harbor cats'), false, format);
+    assert.equal(off.includes('Paperback ISBN'), false, format);
+    assert.equal(off.includes('intentionally left blank'), false, format);
+    assert.match(off, /HuManuScript certification summary/);
+
+    const on = await fileText(await exportManuscriptBlob(doc, format, now, identity, undefined, pages));
+    assert.match(on, /Lantern Press/, format);
+    assert.match(on, /For the harbor cats/, format);
+    assert.match(on, /Paperback ISBN 9781861972712/, format);
+    assert.match(on, /Ebook ISBN 9780306406157/, format);
+    assert.match(on, /This is fiction/, format);
+    assert.match(on, /Other Book/, format);
+    assert.match(on, /Writes at night/, format);
+    assert.match(on, /The sea keeps lists/, format);
+    assert.match(on, /Contents/, format);
+    assert.equal(on.includes('intentionally left blank'), false, format);
+    assert.equal(on.includes('Published by HuManuScript'), false, format);
+    assert.ok(on.indexOf('HuManuScript certification summary') < on.indexOf('For the harbor cats'), format);
+    assert.ok(on.indexOf('For the harbor cats') < on.indexOf('Before the break'), format);
+  }
+  await assert.rejects(
+    () => exportManuscriptBlob(doc, 'docx', now, identity, undefined, { ...pages, copyrightYear: '' }),
+    /copyright year/,
+  );
+  await assert.rejects(
+    () => exportManuscriptBlob(doc, 'pdf', now, identity, undefined, { ...pages, author: ' ' }),
+    /author name/,
+  );
+});
+
+async function fileText(blob: Blob): Promise<string> {
+  const buf = Buffer.from(await blob.arrayBuffer());
+  if (buf.subarray(0, 2).toString() === 'PK') {
+    const zip = await JSZip.loadAsync(buf);
+    const docx = zip.file('word/document.xml');
+    if (docx) return docx.async('string');
+    const odt = zip.file('content.xml');
+    if (odt) return odt.async('string');
+  }
+  return buf.toString('latin1');
+}

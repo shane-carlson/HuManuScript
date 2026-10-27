@@ -7,10 +7,13 @@ import { SessionCaptureProvider } from './components/SessionCapture.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
+import { epubChoicesFromBook } from './core/epubSettings.ts';
 import {
   assignSeriesToBook,
   bookDisplayTitle,
+  ensureBookEpubUuid,
   formatSeriesBookNumber,
+  saveBookEpubChoices,
   seriesMembershipLabel,
   setBookSeriesNumber,
   updateActiveBookDocument,
@@ -365,6 +368,7 @@ export default function App() {
               <div className="workspace-panel">
                 <ExportPane
                   doc={doc}
+                  bookId={activeBook?.id ?? library.activeBookId}
                   bookTitle={activeBook?.title}
                   seriesLabel={
                     activeBook
@@ -376,6 +380,21 @@ export default function App() {
                         )
                       : null
                   }
+                  epubChoices={epubChoicesFromBook(activeBook ?? {})}
+                  onEnsureEpubUuid={() => {
+                    const lib = libraryRef.current;
+                    const bookId = activeBook?.id ?? lib?.activeBookId;
+                    if (!lib || !bookId) return '';
+                    const next = ensureBookEpubUuid(lib, bookId);
+                    if (next.library !== lib) setLibrary(next.library);
+                    return next.uuid;
+                  }}
+                  onSaveEpubChoices={(patch) => {
+                    const lib = libraryRef.current;
+                    const bookId = activeBook?.id ?? lib?.activeBookId;
+                    if (!lib || !bookId) return;
+                    setLibrary(saveBookEpubChoices(lib, bookId, patch));
+                  }}
                 />
               </div>
             ) : tab === 'history' ? (

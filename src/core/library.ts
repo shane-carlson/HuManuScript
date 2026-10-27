@@ -3,6 +3,17 @@
  */
 
 import { emptyDocument, type ManuscriptDocument } from './document.ts';
+import { parseCopyrightYear } from './bookPages.ts';
+import {
+  canonicalBcp47,
+  isEpubUuid,
+  mintEpubUuid,
+  normalizeIsbn,
+  type EpubBodySize,
+  type EpubChoicePatch,
+  type EpubParagraphStyle,
+  type EpubTextAlign,
+} from './epubSettings.ts';
 
 export interface Series {
   id: string;
@@ -15,6 +26,32 @@ export interface Book {
   seriesId?: string;
   seriesBookNumber?: number;
   document: ManuscriptDocument;
+  /** Stable EPUB id. Minted once. A download does not replace it. */
+  epubUuid?: string;
+  /** Publication pages. One author. The ebook ISBN is the EPUB identifier when set. */
+  author?: string;
+  subtitle?: string;
+  imprint?: string;
+  copyrightYear?: number;
+  copyrightHolder?: string;
+  rightsLine?: string;
+  disclaimer?: string;
+  paperbackIsbn?: string;
+  hardcoverIsbn?: string;
+  ebookIsbn?: string;
+  edition?: string;
+  dedication?: string;
+  epigraph?: string;
+  epigraphAttribution?: string;
+  alsoBy?: string[];
+  aboutAuthor?: string;
+  /** File exports include publication pages only when this is true. */
+  includePublicationPages?: boolean;
+  epubLanguage?: string;
+  epubChapterBreaks?: boolean;
+  epubParagraphStyle?: EpubParagraphStyle;
+  epubTextAlign?: EpubTextAlign;
+  epubBodySize?: EpubBodySize;
 }
 
 export interface Library {
@@ -147,6 +184,104 @@ export function updateActiveBookDocument(library: Library, doc: ManuscriptDocume
 export function switchActiveBook(library: Library, bookId: string): Library | null {
   if (!library.books.some((b) => b.id === bookId)) return null;
   return { ...library, activeBookId: bookId };
+}
+
+/** Mint a UUID the first time this book is prepared for EPUB. Later calls keep it. */
+export function ensureBookEpubUuid(library: Library, bookId: string): { library: Library; uuid: string } {
+  const book = library.books.find((item) => item.id === bookId);
+  if (!book) return { library, uuid: '' };
+  if (book.epubUuid && isEpubUuid(book.epubUuid)) {
+    const uuid = book.epubUuid.toLowerCase();
+    if (uuid === book.epubUuid) return { library, uuid };
+    return {
+      uuid,
+      library: {
+        ...library,
+        books: library.books.map((item) => (item.id === bookId ? { ...item, epubUuid: uuid } : item)),
+      },
+    };
+  }
+  const uuid = mintEpubUuid();
+  return {
+    uuid,
+    library: {
+      ...library,
+      books: library.books.map((item) => (item.id === bookId ? { ...item, epubUuid: uuid } : item)),
+    },
+  };
+}
+
+/** Remember the export form on the book. An invalid ISBN, year, or language is left unchanged. */
+export function saveBookEpubChoices(library: Library, bookId: string, patch: EpubChoicePatch): Library {
+  return {
+    ...library,
+    books: library.books.map((book) => {
+      if (book.id !== bookId) return book;
+      const next: Book = {
+        ...book,
+        epubChapterBreaks: patch.chapterPageBreaks,
+        epubParagraphStyle: patch.paragraphStyle,
+        epubTextAlign: patch.textAlign,
+        epubBodySize: patch.bodySize,
+      };
+      const legacy = next as Book & { epubAuthor?: string; epubIsbn?: string };
+      delete legacy.epubAuthor;
+      delete legacy.epubIsbn;
+      writeText(next, 'author', patch.author, 200, true);
+      writeText(next, 'subtitle', patch.subtitle, 300, true);
+      writeText(next, 'imprint', patch.imprint, 200, true);
+      writeText(next, 'copyrightHolder', patch.copyrightHolder, 200, true);
+      writeText(next, 'rightsLine', patch.rightsLine, 300, true);
+      writeText(next, 'disclaimer', patch.disclaimer, 2000, false);
+      writeText(next, 'edition', patch.edition, 80, true);
+      writeText(next, 'dedication', patch.dedication, 4000, false);
+      writeText(next, 'epigraph', patch.epigraph, 2000, false);
+      writeText(next, 'epigraphAttribution', patch.epigraphAttribution, 200, true);
+      writeText(next, 'aboutAuthor', patch.aboutAuthor, 4000, false);
+      const alsoBy = patch.alsoBy
+        .map((item) => item.replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .slice(0, 40)
+        .map((item) => item.slice(0, 200));
+      if (alsoBy.length) next.alsoBy = alsoBy;
+      else delete next.alsoBy;
+      const yearRaw = patch.copyrightYear.trim();
+      if (!yearRaw) delete next.copyrightYear;
+      else {
+        const year = parseCopyrightYear(yearRaw);
+        if (year) next.copyrightYear = year;
+      }
+      writeIsbn(next, 'ebookIsbn', patch.ebookIsbn);
+      writeIsbn(next, 'paperbackIsbn', patch.paperbackIsbn);
+      writeIsbn(next, 'hardcoverIsbn', patch.hardcoverIsbn);
+      const language = canonicalBcp47(patch.language);
+      if (language) next.epubLanguage = language;
+      if (patch.includePublicationPages) next.includePublicationPages = true;
+      else delete next.includePublicationPages;
+      return next;
+    }),
+  };
+}
+
+function writeText(
+  book: Book,
+  key: 'author' | 'subtitle' | 'imprint' | 'copyrightHolder' | 'rightsLine' | 'disclaimer' | 'edition' | 'dedication' | 'epigraph' | 'epigraphAttribution' | 'aboutAuthor',
+  raw: string,
+  max: number,
+  collapse: boolean,
+): void {
+  const text = (collapse ? raw.replace(/\s+/g, ' ') : raw.replace(/\r\n/g, '\n')).trim();
+  if (!text) delete book[key];
+  else book[key] = text.slice(0, max);
+}
+
+function writeIsbn(book: Book, key: 'ebookIsbn' | 'paperbackIsbn' | 'hardcoverIsbn', raw: string): void {
+  const trimmed = raw.trim();
+  if (!trimmed) delete book[key];
+  else {
+    const isbn = normalizeIsbn(trimmed);
+    if (isbn) book[key] = isbn;
+  }
 }
 
 export function createBook(library: Library, newBookId: string, title = 'Untitled book'): Library {

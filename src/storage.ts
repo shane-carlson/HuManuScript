@@ -1,5 +1,7 @@
 import { emptyDocument, type ManuscriptDocument, type StoredManuscript } from './core/document.ts';
 import type { Book, Library, Series } from './core/library.ts';
+import { readStoredBookPages } from './core/bookPages.ts';
+import { readStoredEpubFields } from './core/epubSettings.ts';
 import { readGrammarUsage, type CertificationPoint, type MoveRecord, type ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 import { readBookNotes } from './core/notes.ts';
@@ -292,7 +294,34 @@ function isBook(value: unknown): value is Book {
 
 function hydrateBook(raw: Book): Book {
   const doc = parseDocument(raw.document as StoredManuscript)!;
-  return { ...raw, document: doc };
+  const book: Book = { ...raw, document: doc };
+  delete book.epubUuid;
+  delete book.epubLanguage;
+  delete book.epubChapterBreaks;
+  delete book.epubParagraphStyle;
+  delete book.epubTextAlign;
+  delete book.epubBodySize;
+  delete book.author;
+  delete book.subtitle;
+  delete book.imprint;
+  delete book.copyrightYear;
+  delete book.copyrightHolder;
+  delete book.rightsLine;
+  delete book.disclaimer;
+  delete book.paperbackIsbn;
+  delete book.hardcoverIsbn;
+  delete book.ebookIsbn;
+  delete book.edition;
+  delete book.dedication;
+  delete book.epigraph;
+  delete book.epigraphAttribution;
+  delete book.alsoBy;
+  delete book.aboutAuthor;
+  delete book.includePublicationPages;
+  const legacy = book as Book & { epubAuthor?: string; epubIsbn?: string };
+  delete legacy.epubAuthor;
+  delete legacy.epubIsbn;
+  return { ...book, ...readStoredEpubFields(raw), ...readStoredBookPages(raw) };
 }
 
 export function loadLibrary(): LoadResult {
