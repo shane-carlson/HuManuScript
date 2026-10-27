@@ -5,12 +5,15 @@ export function ToolbarIconButton({
   onClick,
   disabled,
   active,
+  essential = false,
   children,
 }: {
   label: string;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   active?: boolean;
+  /** Stays on the one-row rail when the rest of the tools are collapsed. */
+  essential?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -20,6 +23,7 @@ export function ToolbarIconButton({
       onClick={onClick}
       disabled={disabled}
       data-tooltip={label}
+      data-rail-essential={essential ? 'true' : undefined}
       aria-label={label}
     >
       {children}
