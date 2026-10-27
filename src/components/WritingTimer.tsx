@@ -132,13 +132,29 @@ export function WritingTimer({
 
   return (
     <div className="writing-timer" data-timer-phase={timer.phase} data-timer-mode={timer.mode}>
-      <div className="writing-timer__mode" role="group" aria-label="Writing timer">
-        <button type="button" aria-pressed={mode === 'up'} aria-label="Count up" disabled={locked} title="Count up" onClick={() => chooseMode('up')}>
-          Up
-        </button>
-        <button type="button" aria-pressed={mode === 'down'} aria-label="Countdown" disabled={locked} title="Countdown" onClick={() => chooseMode('down')}>
-          Down
-        </button>
+      <div className="writing-timer__mode">
+        <span className="session-capture-controls__label">Time</span>
+        <div role="group" aria-label="Writing timer">
+          <button
+            type="button"
+            aria-pressed={mode === 'up'}
+            disabled={locked}
+            data-tooltip="Count time upward from zero."
+            onClick={() => chooseMode('up')}
+          >
+            Count up
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'down'}
+            disabled={locked}
+            data-tooltip="Count down from the minutes you enter, between 1 and 180."
+            data-tooltip-wrap="true"
+            onClick={() => chooseMode('down')}
+          >
+            Countdown
+          </button>
+        </div>
       </div>
       {mode === 'down' && (
         <label className="writing-timer__minutes">
@@ -148,6 +164,8 @@ export function WritingTimer({
             value={minutes}
             disabled={locked}
             aria-label="Countdown minutes"
+            data-tooltip="Minutes for the countdown, from 1 to 180."
+            data-tooltip-wrap="true"
             onChange={(event) => {
               const value = event.target.value;
               setMinutes(value);
@@ -160,13 +178,44 @@ export function WritingTimer({
           />
         </label>
       )}
-      <p className="writing-timer__clock" role="timer" aria-label={timer.mode === 'down' ? 'Countdown' : 'Count up'}>
+      <p
+        className="writing-timer__clock"
+        role="timer"
+        aria-label={timer.mode === 'down' ? 'Countdown' : 'Count up'}
+        data-tooltip={timer.mode === 'down' ? 'Time left in the countdown.' : 'Time elapsed this sitting.'}
+      >
         {formatClock(clockMs)}
       </p>
       <div className="writing-timer__controls">
-        <button type="button" onClick={onStart} disabled={timer.phase === 'running' || capture.busy} aria-label="Start session" title="Start the timer and the picture session">Start</button>
-        <button type="button" onClick={onPause} disabled={timer.phase !== 'running'}>Pause</button>
-        <button type="button" onClick={onEnd} disabled={capture.busy || (!locked && !capture.ownsSession)} aria-label="End session" title="End the timer and the picture session">End</button>
+        <button
+          type="button"
+          onClick={onStart}
+          disabled={timer.phase === 'running' || capture.busy}
+          aria-label="Start session"
+          data-tooltip="Start the clock and the picture session. A picture is taken now, every five minutes, and when you press End, only if Camera or Screen is on."
+          data-tooltip-wrap="true"
+        >
+          Start
+        </button>
+        <button
+          type="button"
+          onClick={onPause}
+          disabled={timer.phase !== 'running'}
+          data-tooltip="Pause the clock. Camera and screen pictures keep their five-minute schedule until you press End."
+          data-tooltip-wrap="true"
+        >
+          Pause
+        </button>
+        <button
+          type="button"
+          onClick={onEnd}
+          disabled={capture.busy || (!locked && !capture.ownsSession)}
+          aria-label="End session"
+          data-tooltip="End the clock and the picture session. If Camera or Screen is on, one last picture is taken."
+          data-tooltip-wrap="true"
+        >
+          End
+        </button>
       </div>
       {noteRoot ? createPortal(timerNotes(error, summary), noteRoot) : null}
     </div>

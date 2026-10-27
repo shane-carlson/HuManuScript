@@ -125,19 +125,34 @@ export function WordGoal({
   return (
     <div className="word-goal" data-word-goal={phase} data-word-goal-scope={scope}>
       <div className="word-goal__line">
-        <div className="word-goal__scope" role="group" aria-label="Goal scope">
-          <button type="button" aria-pressed={scope === 'session'} onClick={() => { setScope('session'); setInputError(''); }}>
-            Session
-          </button>
-          <button type="button" aria-pressed={scope === 'chapter'} onClick={() => { setScope('chapter'); setInputError(''); }}>
-            Chapter
-          </button>
+        <div className="word-goal__scope">
+          <span className="session-capture-controls__label">Goal</span>
+          <div role="group" aria-label="Goal scope">
+            <button
+              type="button"
+              aria-pressed={scope === 'session'}
+              data-tooltip="Count new words from when you set the goal until you clear it."
+              data-tooltip-wrap="true"
+              onClick={() => { setScope('session'); setInputError(''); }}
+            >
+              Session
+            </button>
+            <button
+              type="button"
+              aria-pressed={scope === 'chapter'}
+              data-tooltip="Count the words already in the chapter you are writing."
+              data-tooltip-wrap="true"
+              onClick={() => { setScope('chapter'); setInputError(''); }}
+            >
+              Chapter
+            </button>
+          </div>
         </div>
         {phase === 'ready' && target != null && current != null && (
           <div className="word-goal__progress">
             <p>
               <strong>{current.toLocaleString()}</strong>
-              <span>/{target.toLocaleString()}</span>
+              <span> of {target.toLocaleString()}</span>
             </p>
             <div
               className="word-goal__meter"
@@ -163,18 +178,35 @@ export function WordGoal({
             <input
               inputMode="numeric"
               value={draft}
-              placeholder="Words"
+              placeholder="Word goal"
               aria-label={scope === 'session' ? 'Words this session' : 'Words in this chapter'}
               aria-invalid={phase === 'error' || undefined}
+              data-tooltip="A whole number of words. Session counts new words. Chapter counts the chapter."
+              data-tooltip-wrap="true"
               onChange={(event) => {
                 setDraft(event.target.value);
                 if (inputError) setInputError('');
               }}
             />
           </label>
-          <button type="submit" className="primary" title={scope === 'session' ? 'Set session word goal' : 'Set chapter word goal'}>Set</button>
+          <button
+            type="submit"
+            className="primary"
+            data-tooltip={scope === 'session' ? 'Save this number as the session word goal.' : 'Save this number as the chapter word goal.'}
+            data-tooltip-wrap="true"
+          >
+            Set goal
+          </button>
           {target != null && (
-            <button type="button" className="ghost" onClick={clearGoal} title="Clear goal">Clear</button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={clearGoal}
+              data-tooltip="Remove the word goal. The clock and the picture session keep going."
+              data-tooltip-wrap="true"
+            >
+              Clear
+            </button>
           )}
         </form>
         <SessionCaptureControls />

@@ -231,7 +231,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   font-size: 0.72rem;
 }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal__form input {
-  width: 4.6rem;
+  width: 5.6rem;
 }
 .workspace-sidebar {
   background: var(--bg-elev);
@@ -368,6 +368,15 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   color: var(--text-dim);
   font-size: 0.78rem;
 }
+/* Bounds the editor under the header so manuscript, notes, and certification can scroll. */
+.editor-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .writing-locked {
   opacity: 0.72;
 }
@@ -437,7 +446,9 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -461,16 +472,25 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .word-goal__scope {
   display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  overflow: hidden;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.word-goal__scope [role='group'] {
+  display: inline-flex;
 }
 .word-goal__scope button {
-  border: none;
-  border-radius: 0;
+  border: 1px solid var(--border-strong);
   padding: 4px 10px;
   font-size: 0.75rem;
   background: transparent;
+}
+.word-goal__scope button:first-of-type {
+  border-radius: 999px 0 0 999px;
+}
+.word-goal__scope button:last-of-type {
+  border-radius: 0 999px 999px 0;
+  border-left: none;
 }
 .word-goal__scope button[aria-pressed='true'] {
   background: var(--text);
@@ -485,13 +505,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .word-goal__progress {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 7rem;
 }
 .word-goal__progress p { margin: 0; font-size: 0.86rem; white-space: nowrap; }
 .word-goal__scope-label { color: var(--text-dim); }
 .word-goal__meter {
-  width: 56px;
+  flex: 1 1 4rem;
+  width: auto;
+  min-width: 3.5rem;
   height: 8px;
   border-radius: 999px;
   background: var(--bg-elev-2);
@@ -510,7 +533,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   flex: 0 0 auto;
 }
 .word-goal__form input {
-  width: 4.8rem;
+  width: 6.6rem;
   height: 32px;
   padding: 2px 8px;
   border-radius: 8px;
@@ -603,20 +626,34 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 6px;
   flex: 0 0 auto;
 }
-.writing-timer__mode,
+.writing-timer__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.writing-timer__mode [role='group'],
 .writing-timer__controls {
   display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  overflow: hidden;
 }
 .writing-timer__mode button,
 .writing-timer__controls button {
-  border: none;
+  border: 1px solid var(--border-strong);
   border-radius: 0;
   padding: 4px 10px;
   font-size: 0.75rem;
   background: transparent;
+}
+.writing-timer__mode button:first-of-type,
+.writing-timer__controls button:first-of-type {
+  border-radius: 999px 0 0 999px;
+}
+.writing-timer__mode button:last-of-type,
+.writing-timer__controls button:last-of-type {
+  border-radius: 0 999px 999px 0;
+}
+.writing-timer__mode button + button,
+.writing-timer__controls button + button {
+  border-left: none;
 }
 .writing-timer__mode button[aria-pressed='true'] {
   background: var(--text);
@@ -2931,6 +2968,11 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
     flex: none;
     min-height: 0;
   }
+  .editor-shell {
+    overflow: visible;
+    flex: none;
+    min-height: 0;
+  }
   .editor-layout,
   .editor-layout.is-cert-collapsed,
   .editor-layout.is-focus {
@@ -2985,6 +3027,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   }
   .app.is-manuscript-focus .workspace-layout,
   .app.is-manuscript-focus .workspace-main,
+  .app.is-manuscript-focus .editor-shell,
   .app.is-manuscript-focus .editor-layout {
     flex: 1;
     min-height: 0;

@@ -419,7 +419,12 @@ export function SessionCaptureControls() {
   const api = useSessionCapture();
   return (
     <div className="session-capture-controls" aria-label="Session pictures">
-      <label className="session-capture-controls__check">
+      <span className="session-capture-controls__label">Pictures</span>
+      <label
+        className="session-capture-controls__check"
+        data-tooltip="Include the camera. It is drawn in the upper left of the screenshot. Nothing is captured until this is on and you press Start."
+        data-tooltip-wrap="true"
+      >
         <input
           type="checkbox"
           checked={api.settings.camera}
@@ -427,7 +432,11 @@ export function SessionCaptureControls() {
         />
         <span>Camera</span>
       </label>
-      <label className="session-capture-controls__check">
+      <label
+        className="session-capture-controls__check"
+        data-tooltip="Include a screenshot. Nothing is captured until this is on and you press Start. With the camera on, the camera sits in the upper left."
+        data-tooltip-wrap="true"
+      >
         <input
           type="checkbox"
           checked={api.settings.screenshot}
@@ -437,7 +446,7 @@ export function SessionCaptureControls() {
       </label>
       <fieldset className="session-capture-controls__permission">
         <legend className="sr-only">How long camera and screen permission lasts</legend>
-        <label>
+        <label data-tooltip="Ask for the camera and screen once this sitting. The allow ends when you press End." data-tooltip-wrap="true">
           <input
             type="radio"
             name="session-capture-permission"
@@ -445,9 +454,9 @@ export function SessionCaptureControls() {
             aria-label="This writing session"
             onChange={() => api.setPermission('session')}
           />
-          <span title="Ask again next session">Now</span>
+          <span>This session</span>
         </label>
-        <label>
+        <label data-tooltip="Remember the camera and screen allow on this device so later sessions do not ask again." data-tooltip-wrap="true">
           <input
             type="radio"
             name="session-capture-permission"
@@ -455,7 +464,7 @@ export function SessionCaptureControls() {
             aria-label="Remember on this device"
             onChange={() => api.setPermission('permanent')}
           />
-          <span title="Remember on this device">Keep</span>
+          <span>Remember</span>
         </label>
       </fieldset>
     </div>

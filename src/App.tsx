@@ -433,7 +433,7 @@ export default function App() {
             ) : (
               <>
                 {!license.mayWrite && <LicenseGate license={license} />}
-                <div className={license.mayWrite ? undefined : 'writing-locked'} inert={license.mayWrite ? undefined : true}>
+                <div className={license.mayWrite ? 'editor-shell' : 'editor-shell writing-locked'} inert={license.mayWrite ? undefined : true}>
                 <p className="sr-only">Editing {displayTitle(doc)}</p>
                 <Editor
                   key={library.activeBookId}
