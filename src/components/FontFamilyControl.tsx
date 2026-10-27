@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { addCustomFontFile, installCustomFonts, removeCustomFont } from '../core/customFonts.ts';
 import { APPROVED_FONT_TYPE_LABEL } from '../core/fontFile.ts';
 import {
@@ -9,6 +9,8 @@ import {
   type ManuscriptFontFace,
 } from '../core/typography.ts';
 
+const ADD_FONT = '__add-font__';
+
 export function FontFamilyControl({
   fontId,
   onChange,
@@ -17,6 +19,7 @@ export function FontFamilyControl({
   onChange: (fontId: string) => void;
 }) {
   const inputId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [added, setAdded] = useState<readonly ManuscriptFontFace[]>(() => extraManuscriptFaces());
   const [message, setMessage] = useState('');
   const [messageIsError, setMessageIsError] = useState(false);
@@ -65,8 +68,18 @@ export function FontFamilyControl({
         <select
           aria-label="Font"
           value={selected?.id ?? 'palatino'}
-          onChange={(event) => onChange(event.target.value)}
+          disabled={busy}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === ADD_FONT) {
+              event.target.value = selected?.id ?? 'palatino';
+              fileRef.current?.click();
+              return;
+            }
+            onChange(next);
+          }}
         >
+          <option value={ADD_FONT}>Add font</option>
           {choices.map((font) => (
             <option key={font.id} value={font.id}>
               {font.label}
@@ -74,22 +87,21 @@ export function FontFamilyControl({
           ))}
         </select>
       </label>
-      <label className="toolbar-text-btn toolbar-font-add" data-tooltip={`Add a font. ${APPROVED_FONT_TYPE_LABEL}.`}>
-        Add font
-        <input
-          id={inputId}
-          className="toolbar-font-file"
-          type="file"
-          accept=".ttf,.otf,.woff,.woff2"
-          aria-label="Add a font file"
-          disabled={busy}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            void onFile(file);
-          }}
-        />
-      </label>
+      <input
+        ref={fileRef}
+        id={inputId}
+        className="toolbar-font-file"
+        type="file"
+        accept=".ttf,.otf,.woff,.woff2"
+        aria-label="Add a font file"
+        tabIndex={-1}
+        title={APPROVED_FONT_TYPE_LABEL}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void onFile(file);
+        }}
+      />
       {isCustomFontId(fontId) && (
         <button
           type="button"
