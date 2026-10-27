@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { emptyDocument } from './document.ts';
 import { emptyBlock } from './manuscript.ts';
-import { layoutPublication, publicationFormat, PUBLICATION_FORMATS, wordsForPage } from './publication.ts';
+import { layoutPublication, otherBindingSizes, publicationFormat, PUBLICATION_FORMATS, wordsForPage } from './publication.ts';
 import type { ManuscriptBlock } from './types.ts';
 
 function book(blocks: ManuscriptBlock[], title = 'Harbor Light') {
@@ -23,19 +23,39 @@ function proseWords(page: { nodes: Array<{ kind: string; text?: string }> }): nu
 }
 
 test('publication formats cover print books and fixed reader pages', () => {
-  assert.deepEqual(PUBLICATION_FORMATS.map((format) => format.id), [
+  assert.deepEqual(PUBLICATION_FORMATS.filter((format) => format.button).map((format) => format.id), [
     'trade',
     'hardcover',
     'mass-market',
     'ereader',
     'tablet',
   ]);
+  assert.deepEqual(otherBindingSizes('paperback').map((format) => format.trim), [
+    '5 × 8 in',
+    '5.25 × 8 in',
+    '5.5 × 8.5 in',
+    '6.14 × 9.21 in',
+    '7 × 10 in',
+  ]);
+  assert.deepEqual(otherBindingSizes('hardcover').map((format) => format.trim), [
+    '5.5 × 8.5 in',
+    '6 × 9 in',
+    '6.14 × 9.21 in',
+    '7 × 10 in',
+    '8.5 × 11 in',
+  ]);
   assert.equal(publicationFormat('nope').id, 'trade');
+  assert.equal(publicationFormat('paperback-5x8').widthIn, 5);
+  assert.equal(publicationFormat('paperback-5x8').heightIn, 8);
+  assert.equal(publicationFormat('hardcover-8-5x11').widthIn, 8.5);
+  assert.equal(publicationFormat('hardcover-8-5x11').heightIn, 11);
   assert.equal(publicationFormat('ereader').kind, 'reader');
   assert.equal(publicationFormat('tablet').widthIn, 6);
   assert.equal(publicationFormat('tablet').heightIn, 8);
   assert.ok(publicationFormat('mass-market').marginXIn < publicationFormat('trade').marginXIn);
   assert.ok(publicationFormat('mass-market').marginXIn <= 0.5);
+  assert.ok(otherBindingSizes('paperback').every((format) => format.wordsPerPage >= 40));
+  assert.ok(otherBindingSizes('hardcover').every((format) => format.wordsPerPage >= 40));
   assert.ok(wordsForPage(publicationFormat('ereader'), 26) < wordsForPage(publicationFormat('ereader'), 13));
 });
 

@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { ManuscriptDocument } from '../core/document.ts';
 import {
   layoutPublication,
+  otherBindingSizes,
   publicationFormat,
   PUBLICATION_FORMATS,
+  type PublicationFormat,
   type PublicationFormatId,
   type PublicationNode,
   type PublicationPage,
@@ -53,6 +55,8 @@ export function PublicationView({
 }) {
   const [formatId, setFormatId] = useState<PublicationFormatId>(loadFormat);
   const [readerSize, setReaderSize] = useState(() => loadReaderSize(13));
+  const [openSizes, setOpenSizes] = useState<'paperback' | 'hardcover' | null>(null);
+  const formatsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     saveFormat(formatId);
   }, [formatId]);
@@ -63,6 +67,21 @@ export function PublicationView({
       /* session storage may be unavailable */
     }
   }, [readerSize]);
+  useEffect(() => {
+    if (!openSizes) return;
+    const close = (event: MouseEvent) => {
+      if (!formatsRef.current?.contains(event.target as Node)) setOpenSizes(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenSizes(null);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openSizes]);
   const format = publicationFormat(formatId);
   const bodyPt = format.kind === 'reader' ? readerSize : format.bodyPt;
   const layout = useMemo(
@@ -83,18 +102,32 @@ export function PublicationView({
         <h3>Publication</h3>
         <p>{format.blurb}</p>
       </div>
-      <div className="publication__formats" role="group" aria-label="Publication format">
-        {PUBLICATION_FORMATS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`publication__format${item.id === format.id ? ' is-active' : ''}`}
-            aria-pressed={item.id === format.id}
-            onClick={() => setFormatId(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="publication__formats" role="group" aria-label="Publication format" ref={formatsRef}>
+        {PUBLICATION_FORMATS.filter((item) => item.button).map((item) => {
+          const sizes = item.binding === 'paperback' || item.binding === 'hardcover'
+            ? otherBindingSizes(item.binding)
+            : [];
+          const active = format.id === item.id || sizes.some((size) => size.id === format.id);
+          return (
+            <FormatChoice
+              key={item.id}
+              item={item}
+              active={active}
+              sizes={sizes}
+              open={sizes.length > 0 && openSizes === item.binding}
+              selectedId={format.id}
+              onSelect={(id) => {
+                setFormatId(id);
+                setOpenSizes(null);
+              }}
+              onToggle={() => {
+                const binding = item.binding;
+                if (binding !== 'paperback' && binding !== 'hardcover') return;
+                setOpenSizes((current) => current === binding ? null : binding);
+              }}
+            />
+          );
+        })}
       </div>
       <p className="publication__meta">
         {format.trim}
@@ -118,6 +151,64 @@ export function PublicationView({
         ))}
       </div>
     </section>
+  );
+}
+
+function FormatChoice({
+  item,
+  active,
+  sizes,
+  open,
+  selectedId,
+  onSelect,
+  onToggle,
+}: {
+  item: PublicationFormat;
+  active: boolean;
+  sizes: readonly PublicationFormat[];
+  open: boolean;
+  selectedId: PublicationFormatId;
+  onSelect: (id: PublicationFormatId) => void;
+  onToggle: () => void;
+}) {
+  const sized = sizes.length > 0;
+  return (
+    <div className={`publication__format-group${active ? ' is-active' : ''}${open ? ' is-open' : ''}${sized ? ' has-sizes' : ''}`}>
+      <button
+        type="button"
+        className="publication__format"
+        aria-pressed={active}
+        onClick={() => onSelect(item.id)}
+      >
+        {item.label}
+      </button>
+      {sized && (
+        <button
+          type="button"
+          className="publication__format-chevron"
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label={item.binding === 'paperback' ? 'Other trade paperback sizes' : 'Other hardcover sizes'}
+          onClick={onToggle}
+        />
+      )}
+      {open && (
+        <div className="publication__sizes" role="menu" aria-label={`${item.label} sizes`}>
+          {sizes.map((size) => (
+            <button
+              key={size.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={size.id === selectedId}
+              className={size.id === selectedId ? 'is-active' : undefined}
+              onClick={() => onSelect(size.id)}
+            >
+              {size.trim}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
