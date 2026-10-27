@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { appVersion } from 'virtual:app-version';
 import { AppVersionLabel } from './components/AppVersionLabel.tsx';
 import { Editor } from './components/Editor.tsx';
+import { PaneGrab } from './components/PaneGrab.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
@@ -15,6 +16,7 @@ import {
   type Library,
 } from './core/library.ts';
 import { formatAppVersion } from './core/appVersion.ts';
+import { LAYOUT_PANE_LIMITS } from './core/layoutSession.ts';
 import { displayTitle, reconcileLoadedDocument } from './core/document.ts';
 import {
   listBookVersions,
@@ -32,10 +34,12 @@ import {
   loadLibrary,
   loadManuscriptFocus,
   loadSidebarCollapsed,
+  loadSidebarWidth,
   loadWorkspaceTab,
   saveLibrary,
   saveManuscriptFocus,
   saveSidebarCollapsed,
+  saveSidebarWidth,
   saveWorkspaceTab,
   THEME_KEY,
   type WorkspaceTab,
@@ -72,6 +76,7 @@ export default function App() {
   const [saveError, setSaveError] = useState('');
   const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadSidebarCollapsed());
+  const [sidebarWidth, setSidebarWidth] = useState(() => loadSidebarWidth());
   const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
   const [versions, setVersions] = useState<VersionLedger>(() => loadVersionLedger());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -119,6 +124,10 @@ export default function App() {
   useEffect(() => {
     saveSidebarCollapsed(sidebarCollapsed);
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    saveSidebarWidth(sidebarWidth);
+  }, [sidebarWidth]);
 
   useEffect(() => {
     saveManuscriptFocus(manuscriptFocus);
@@ -324,7 +333,10 @@ export default function App() {
         </section>
       )}
       {phase === 'ready' && library && doc && (
-        <div className={`workspace-layout${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
+        <div
+          className={`workspace-layout${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
+          style={{ '--pane-sidebar': `${sidebarWidth}px` } as CSSProperties}
+        >
           <WorkspaceSidebar
             library={library}
             tab={tab}
@@ -334,6 +346,18 @@ export default function App() {
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
           />
+          {!sidebarCollapsed && !focusActive && (
+            <PaneGrab
+              label="Resize library pane"
+              className="pane-grab--sidebar"
+              value={sidebarWidth}
+              min={LAYOUT_PANE_LIMITS.sidebarWidth.min}
+              max={LAYOUT_PANE_LIMITS.sidebarWidth.max}
+              direction={1}
+              onChange={setSidebarWidth}
+              onCommit={saveSidebarWidth}
+            />
+          )}
           <div className="workspace-main">
             {tab === 'export' ? (
               <div className="workspace-panel">

@@ -3,6 +3,12 @@ import type { Book, Library, Series } from './core/library.ts';
 import { readGrammarUsage, type CertificationPoint, type MoveRecord, type ProvenanceSpan } from './core/certification.ts';
 import type { BlockType, InlineMark, ManuscriptBlock } from './core/types.ts';
 import { readBookNotes } from './core/notes.ts';
+import {
+  LAYOUT_SESSION_KEY,
+  layoutSessionFromStored,
+  type LayoutSession,
+  type LayoutSessionFlags,
+} from './core/layoutSession.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
 
 export const LIBRARY_KEY = 'humanuscript.library.v2';
@@ -57,52 +63,97 @@ export function saveWorkspaceTab(tab: WorkspaceTab): void {
   }
 }
 
-export function loadSidebarCollapsed(): boolean {
+function readSessionFlag(key: string): boolean | undefined {
   try {
-    return sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+    const value = sessionStorage.getItem(key);
+    if (value === '1') return true;
+    if (value === '0') return false;
   } catch {
-    return false;
+    /* ignore */
   }
+  return undefined;
+}
+
+function sessionLayoutFlags(): LayoutSessionFlags {
+  return {
+    sidebarCollapsed: readSessionFlag(SIDEBAR_COLLAPSED_KEY),
+    notesCollapsed: readSessionFlag(NOTES_COLLAPSED_KEY),
+    certificationCollapsed: readSessionFlag(CERTIFICATION_COLLAPSED_KEY),
+  };
+}
+
+/** Last rails and grab-bar widths. localStorage survives the next launch and an update. */
+export function loadLayoutSession(): LayoutSession {
+  try {
+    return layoutSessionFromStored(localStorage.getItem(LAYOUT_SESSION_KEY), sessionLayoutFlags());
+  } catch {
+    return layoutSessionFromStored(null, sessionLayoutFlags());
+  }
+}
+
+function saveLayoutSession(patch: Partial<LayoutSession>): void {
+  try {
+    const next = layoutSessionFromStored(JSON.stringify({ ...loadLayoutSession(), ...patch }));
+    localStorage.setItem(LAYOUT_SESSION_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadSidebarCollapsed(): boolean {
+  return loadLayoutSession().sidebarCollapsed;
 }
 
 export function saveSidebarCollapsed(collapsed: boolean): void {
-  try {
-    sessionStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  saveLayoutSession({ sidebarCollapsed: collapsed });
 }
 
 export function loadCertificationCollapsed(): boolean {
-  try {
-    return sessionStorage.getItem(CERTIFICATION_COLLAPSED_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return loadLayoutSession().certificationCollapsed;
 }
 
 export function saveCertificationCollapsed(collapsed: boolean): void {
-  try {
-    sessionStorage.setItem(CERTIFICATION_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  saveLayoutSession({ certificationCollapsed: collapsed });
 }
 
 export function loadNotesCollapsed(): boolean {
-  try {
-    return sessionStorage.getItem(NOTES_COLLAPSED_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return loadLayoutSession().notesCollapsed;
 }
 
 export function saveNotesCollapsed(collapsed: boolean): void {
-  try {
-    sessionStorage.setItem(NOTES_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  saveLayoutSession({ notesCollapsed: collapsed });
+}
+
+export function loadRailCollapsed(): boolean {
+  return loadLayoutSession().railCollapsed;
+}
+
+export function saveRailCollapsed(collapsed: boolean): void {
+  saveLayoutSession({ railCollapsed: collapsed });
+}
+
+export function loadSidebarWidth(): number {
+  return loadLayoutSession().sidebarWidth;
+}
+
+export function saveSidebarWidth(width: number): void {
+  saveLayoutSession({ sidebarWidth: width });
+}
+
+export function loadNotesWidth(): number {
+  return loadLayoutSession().notesWidth;
+}
+
+export function saveNotesWidth(width: number): void {
+  saveLayoutSession({ notesWidth: width });
+}
+
+export function loadCertificationWidth(): number {
+  return loadLayoutSession().certificationWidth;
+}
+
+export function saveCertificationWidth(width: number): void {
+  saveLayoutSession({ certificationWidth: width });
 }
 
 export function loadManuscriptFocus(): boolean {
