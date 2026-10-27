@@ -343,6 +343,8 @@ function wordEnds(text: string): number[] {
   return ends;
 }
 
+type ProseNode = Extract<PublicationNode, { kind: 'paragraph' | 'blockquote' }>;
+
 function sliceMarks(marks: InlineMark[], start: number, end: number): InlineMark[] {
   const sliced: InlineMark[] = [];
   for (const mark of marks) {
@@ -354,41 +356,38 @@ function sliceMarks(marks: InlineMark[], start: number, end: number): InlineMark
 }
 
 function proseSlice(
-  node: Extract<PublicationNode, { kind: 'paragraph' | 'blockquote' }>,
+  node: ProseNode,
   start: number,
   end: number,
   piece: number,
-): PublicationNode {
-  const text = node.text.slice(start, end).trim();
-  const lead = node.text.slice(start, end).length - node.text.slice(start, end).trimStart().length;
+): ProseNode {
+  const raw = node.text.slice(start, end);
+  const text = raw.trim();
+  const lead = raw.length - raw.trimStart().length;
   const trimmedStart = start + lead;
   const marks = sliceMarks(node.marks, trimmedStart, trimmedStart + text.length);
+  const continued = piece > 0 || node.continued === true;
+  const id = piece === 0 ? node.id : `${node.id}~${piece}`;
   if (node.kind === 'blockquote') {
-    return {
-      kind: 'blockquote',
-      id: piece === 0 ? node.id : `${node.id}~${piece}`,
-      text,
-      marks,
-      continued: piece > 0,
-    };
+    return { kind: 'blockquote', id, text, marks, continued };
   }
   return {
     kind: 'paragraph',
-    id: piece === 0 ? node.id : `${node.id}~${piece}`,
+    id,
     text,
     marks,
-    listStyle: piece === 0 ? node.listStyle : null,
-    listIndex: piece === 0 ? node.listIndex : null,
+    listStyle: continued ? null : node.listStyle,
+    listIndex: continued ? null : node.listIndex,
     indentLevel: node.indentLevel,
-    continued: piece > 0,
+    continued,
   };
 }
 
 /** Take the first `maxWords` words. The tail keeps the rest for the next page. */
 function splitOnce(
-  node: Extract<PublicationNode, { kind: 'paragraph' | 'blockquote' }>,
+  node: ProseNode,
   maxWords: number,
-): [PublicationNode, PublicationNode | null] {
+): [ProseNode, ProseNode | null] {
   const ends = wordEnds(node.text);
   if (ends.length <= maxWords) return [node, null];
   const cut = ends[maxWords - 1]!;
@@ -404,6 +403,149 @@ export function wordsForPage(format: PublicationFormat, bodyPt = format.bodyPt):
   const size = bodyPt > 0 ? bodyPt : format.bodyPt;
   const ratio = format.bodyPt / size;
   return Math.max(24, Math.round(format.wordsPerPage * ratio * ratio));
+}
+
+export interface PublicationSlot {
+  /** Running head already chosen for this page. */
+  header: string;
+  number: number;
+}
+
+function isProseNode(node: PublicationNode): node is ProseNode {
+  return node.kind === 'paragraph' || node.kind === 'blockquote';
+}
+
+function proseWordCount(node: ProseNode): number {
+  return wordEnds(node.text).length;
+}
+
+/** Largest leading slice that `canTake` accepts. Null when even one word does not fit. */
+function largestFit(
+  node: ProseNode,
+  canTake: (head: PublicationNode) => boolean,
+): { head: PublicationNode; tail: PublicationNode | null } | null {
+  const total = proseWordCount(node);
+  if (total === 0) return null;
+  let low = 1;
+  let high = total;
+  let best = 0;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const [head] = splitOnce(node, mid);
+    if (canTake(head)) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  if (best === 0) return null;
+  const [head, tail] = splitOnce(node, best);
+  if (tail && proseWordCount(tail) >= total) return null;
+  return { head, tail };
+}
+
+/**
+ * Paginate the manuscript.
+ * `fits` is true when those nodes stay inside one page's text area.
+ * A chapter always opens on a new page, so the previous chapter may end early.
+ * Prose keeps flowing until the page is full.
+ */
+export function packPublication(
+  doc: ManuscriptDocument,
+  format: PublicationFormat,
+  identity: PublicationIdentity | undefined,
+  fits: (nodes: PublicationNode[], slot: PublicationSlot) => boolean,
+): PublicationLayout {
+  const { bookTitle, seriesLabel, subtitle } = titles(doc, identity);
+  const queue: Array<PublicationNode | { kind: 'break' }> = flowWithBreaks(doc);
+  const hasBody = queue.some((node) => node.kind !== 'break');
+  const pages: PublicationPage[] = [{
+    kind: 'title',
+    number: null,
+    header: '',
+    seriesLabel,
+    title: bookTitle,
+    subtitle,
+    nodes: hasBody ? [] : [{ kind: 'note', text: 'The manuscript has no pages yet.' }],
+  }];
+
+  let bucket: PublicationNode[] = [];
+  let runningHead = '';
+  let number = 1;
+  let index = 0;
+  let steps = 0;
+
+  const slotFor = (nodes: PublicationNode[]): PublicationSlot => {
+    let head = runningHead;
+    for (const node of nodes) {
+      if (node.kind === 'chapter') head = node.runningHead;
+    }
+    return {
+      header: number % 2 === 1 ? (head || bookTitle) : bookTitle,
+      number,
+    };
+  };
+
+  const fitsPage = (nodes: PublicationNode[]) => fits(nodes, slotFor(nodes));
+
+  const seal = () => {
+    if (!bucket.length) return;
+    const slot = slotFor(bucket);
+    pages.push({
+      kind: 'text',
+      number,
+      header: slot.header,
+      seriesLabel: null,
+      title: bookTitle,
+      subtitle: '',
+      nodes: bucket,
+    });
+    for (const node of bucket) {
+      if (node.kind === 'chapter') runningHead = node.runningHead;
+    }
+    number += 1;
+    bucket = [];
+  };
+
+  while (index < queue.length) {
+    if (++steps > 250000) break;
+    const node = queue[index]!;
+    if (node.kind === 'break') {
+      seal();
+      index += 1;
+      continue;
+    }
+    if (node.kind === 'chapter' && bucket.length > 0) {
+      seal();
+      continue;
+    }
+    if (fitsPage([...bucket, node])) {
+      bucket.push(node);
+      index += 1;
+      continue;
+    }
+    if (isProseNode(node)) {
+      const split = largestFit(node, (head) => fitsPage([...bucket, head]));
+      if (split) {
+        bucket.push(split.head);
+        seal();
+        if (split.tail) queue[index] = split.tail;
+        else index += 1;
+        continue;
+      }
+    }
+    if (bucket.length > 0) {
+      seal();
+      continue;
+    }
+    bucket.push(node);
+    index += 1;
+    seal();
+  }
+  seal();
+
+  return { format, bookTitle, pages };
 }
 
 function titles(doc: ManuscriptDocument, identity: PublicationIdentity | undefined): {
@@ -426,70 +568,13 @@ export function layoutPublication(
   identity?: PublicationIdentity,
   bodyPt = format.bodyPt,
 ): PublicationLayout {
-  const { bookTitle, seriesLabel, subtitle } = titles(doc, identity);
-  const nodes = flowWithBreaks(doc);
   const limit = wordsForPage(format, bodyPt);
-  const pages: PublicationPage[] = [{
-    kind: 'title',
-    number: null,
-    header: '',
-    seriesLabel,
-    title: bookTitle,
-    subtitle,
-    nodes: nodes.some((node) => node.kind !== 'break') ? [] : [{ kind: 'note', text: 'The manuscript has no pages yet.' }],
-  }];
-
-  let bucket: PublicationNode[] = [];
-  let bodyWords = 0;
-  let runningHead = '';
-  let number = 1;
-
-  const seal = () => {
-    if (!bucket.length) return;
-    const header = number % 2 === 1 ? (runningHead || bookTitle) : bookTitle;
-    pages.push({
-      kind: 'text',
-      number,
-      header,
-      seriesLabel: null,
-      title: bookTitle,
-      subtitle: '',
-      nodes: bucket,
-    });
-    number += 1;
-    bucket = [];
-    bodyWords = 0;
-  };
-
-  const place = (node: PublicationNode) => {
-    if (node.kind === 'chapter') runningHead = node.runningHead;
-    const words = nodeWords(node);
-    const room = bodyWords === 0 ? limit : limit - bodyWords;
-    if ((node.kind === 'paragraph' || node.kind === 'blockquote') && words > room && room >= 8) {
-      const [head, tail] = splitOnce(node, room);
-      if (tail) {
-        place(head);
-        place(tail);
-        return;
-      }
+  return packPublication(doc, format, identity, (nodes) => {
+    let used = 0;
+    for (const node of nodes) {
+      used += nodeWords(node);
+      if (used > limit) return false;
     }
-    if (words > room && bodyWords > 0) {
-      seal();
-      place(node);
-      return;
-    }
-    bucket.push(node);
-    bodyWords += words;
-  };
-
-  for (const node of nodes) {
-    if (node.kind === 'break') {
-      seal();
-      continue;
-    }
-    place(node);
-  }
-  seal();
-
-  return { format, bookTitle, pages };
+    return true;
+  });
 }

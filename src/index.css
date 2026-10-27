@@ -1461,7 +1461,17 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .clean-manuscript__table td { border: 1px solid var(--border); padding: 4px 8px; }
 .clean-manuscript__figure img { max-width: 100%; border-radius: 8px; }
 .export-preview-empty { margin: 0; color: var(--text-dim); font-family: var(--sans); font-size: 0.92rem; }
-.publication { margin: 0; }
+.publication { position: relative; margin: 0; }
+.pub-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pub-page__flow { display: flow-root; width: 100%; }
 .publication__formats {
   display: flex;
   flex-wrap: wrap;

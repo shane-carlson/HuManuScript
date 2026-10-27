@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { emptyDocument } from './document.ts';
 import { emptyBlock } from './manuscript.ts';
-import { layoutPublication, otherBindingSizes, publicationFormat, PUBLICATION_FORMATS, wordsForPage } from './publication.ts';
+import { layoutPublication, otherBindingSizes, packPublication, publicationFormat, PUBLICATION_FORMATS, wordsForPage, type PublicationNode } from './publication.ts';
 import type { ManuscriptBlock } from './types.ts';
 
 function book(blocks: ManuscriptBlock[], title = 'Harbor Light') {
@@ -59,7 +59,7 @@ test('publication formats cover print books and fixed reader pages', () => {
   assert.ok(wordsForPage(publicationFormat('ereader'), 26) < wordsForPage(publicationFormat('ereader'), 13));
 });
 
-test('short chapters share a page until that page is full', () => {
+test('each chapter starts on a new page, and a short last page stays short', () => {
   const doc = book([
     { ...emptyBlock('chapter', 'c1'), title: 'The Dock' },
     { ...emptyBlock('paragraph', 'p1'), text: 'The lamp was lit.' },
@@ -75,9 +75,13 @@ test('short chapters share a page until that page is full', () => {
   assert.equal(layout.pages[0]?.seriesLabel, 'Book 2 of Harbor Saga');
   assert.equal(layout.pages[0]?.number, null);
   const text = layout.pages.filter((page) => page.kind === 'text');
-  assert.equal(text.length, 1);
-  assert.deepEqual(text[0]?.nodes.map((node) => node.kind), ['chapter', 'paragraph', 'chapter', 'paragraph']);
-  assert.equal(text[0]?.header, 'The Road');
+  assert.equal(text.length, 2);
+  assert.deepEqual(text[0]?.nodes.map((node) => node.kind), ['chapter', 'paragraph']);
+  assert.deepEqual(text[1]?.nodes.map((node) => node.kind), ['chapter', 'paragraph']);
+  assert.equal(text[0]?.header, 'The Dock');
+  assert.equal(text[1]?.header, 'Harbor Light');
+  assert.ok(proseWords(text[0]!) < 20);
+  if (text[1]?.nodes[1]?.kind === 'paragraph') assert.equal(text[1].nodes[1].text, 'She kept walking.');
 });
 
 test('a page break starts the next prose on a new page and does not add a blank sheet', () => {
@@ -137,6 +141,73 @@ test('an e-reader turns fixed pages and keeps lists, quotes, and scene breaks', 
   assert.deepEqual(numbered.map((node) => node.kind === 'paragraph' ? node.listIndex : null), [1, 2]);
   const limit = wordsForPage(publicationFormat('ereader'));
   for (const page of text) assert.ok(proseWords(page) <= limit);
+});
+
+test('a full page takes text up to the budget, then the next chapter opens on its own page', () => {
+  const format = { ...publicationFormat('trade'), wordsPerPage: 100 };
+  const doc = book([
+    { ...emptyBlock('chapter', 'c1'), title: 'One' },
+    { ...emptyBlock('paragraph', 'p1'), text: words(80) },
+    { ...emptyBlock('chapter', 'c2'), title: 'Two' },
+    { ...emptyBlock('paragraph', 'p2'), text: 'End.' },
+  ]);
+  const pages = layoutPublication(doc, format).pages.filter((page) => page.kind === 'text');
+  assert.equal(pages[0]?.nodes[0]?.kind, 'chapter');
+  assert.equal(proseWords(pages[0]!), 64);
+  assert.equal(proseWords(pages[1]!), 16);
+  assert.equal(pages[1]?.nodes.some((node) => node.kind === 'chapter'), false);
+  assert.equal(pages[2]?.nodes[0]?.kind, 'chapter');
+  if (pages[2]?.nodes[0]?.kind === 'chapter') assert.equal(pages[2].nodes[0].title, 'Two');
+});
+
+test('measured lines fill the page except the short close of a chapter', () => {
+  const format = publicationFormat('trade');
+  const doc = book([
+    { ...emptyBlock('chapter', 'c1'), title: 'Harbor' },
+    { ...emptyBlock('paragraph', 'p1'), text: words(250) },
+    { ...emptyBlock('chapter', 'c2'), title: 'Road' },
+    { ...emptyBlock('paragraph', 'p2'), text: 'She kept walking.' },
+  ]);
+  const wordsPerLine = 10;
+  const maxLines = 20;
+  const lines = (node: PublicationNode) => {
+    if (node.kind === 'chapter') return 3;
+    if (node.kind === 'paragraph' || node.kind === 'blockquote') {
+      const count = node.text.trim() ? node.text.trim().split(/\s+/).length : 0;
+      return Math.ceil(count / wordsPerLine);
+    }
+    return 1;
+  };
+  const layout = packPublication(doc, format, undefined, (nodes) => {
+    const used = nodes.reduce((sum, node) => sum + lines(node), 0);
+    return used <= maxLines;
+  });
+  const pages = layout.pages.filter((page) => page.kind === 'text');
+  assert.ok(pages.length >= 3);
+  const nextChapter = pages.findIndex((page) => page.nodes[0]?.kind === 'chapter' && page !== pages[0]);
+  assert.ok(nextChapter > 1);
+  for (const page of pages.slice(0, nextChapter)) {
+    const used = page.nodes.reduce((sum, node) => sum + lines(node), 0);
+    const lastOfChapter = page === pages[nextChapter - 1];
+    if (lastOfChapter) assert.ok(used < maxLines);
+    else assert.equal(used, maxLines);
+  }
+  assert.equal(pages[nextChapter]?.nodes[0]?.kind, 'chapter');
+  assert.equal(pages[nextChapter]?.nodes.some((node) => node.kind === 'paragraph' && node.text === 'She kept walking.'), true);
+});
+
+test('a split paragraph keeps every word and does not repeat a list number', () => {
+  const format = { ...publicationFormat('ereader'), wordsPerPage: 20 };
+  const doc = book([
+    { ...emptyBlock('paragraph', 'p'), text: words(45), listStyle: 'number' },
+  ]);
+  const pages = layoutPublication(doc, format).pages.filter((page) => page.kind === 'text');
+  const paras = pages.flatMap((page) => page.nodes).filter((node) => node.kind === 'paragraph');
+  assert.equal(paras.map((node) => node.kind === 'paragraph' ? node.text : '').join(' '), words(45));
+  assert.equal(paras[0]?.kind === 'paragraph' ? paras[0].listIndex : null, 1);
+  assert.equal(paras[1]?.kind === 'paragraph' ? paras[1].continued : null, true);
+  assert.equal(paras[1]?.kind === 'paragraph' ? paras[1].listStyle : null, null);
+  assert.equal(paras.at(-1)?.kind === 'paragraph' ? paras.at(-1)?.continued : null, true);
 });
 
 test('an empty manuscript is one title page in print and on a reader', () => {
