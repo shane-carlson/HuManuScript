@@ -254,7 +254,7 @@ export default function App() {
           <span className="mark" aria-hidden="true">H</span>
           <div>
             <p className="wordmark">HuManuScript</p>
-            <p className="tag">Helping authors document the humanity of their prose.</p>
+            <p className="tag">Proof of humanity in Prose.</p>
             <AppVersionLabel />
           </div>
         </div>
