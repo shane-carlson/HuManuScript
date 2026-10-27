@@ -1,5 +1,7 @@
 /** Label for the device that produced keyboard certification (display only; not part of the seal hash). */
 
+import type { LicenseActivateResult, LicenseStatus } from './license.ts';
+
 export type CloudBackupEntry = { name: string; modified: string };
 
 export type HumanuscriptBridge = {
@@ -16,6 +18,12 @@ export type HumanuscriptBridge = {
     save: (provider: string, filename: string, contents: string) => Promise<string>;
     list: (provider: string) => Promise<CloudBackupEntry[]>;
     read: (provider: string, filename: string) => Promise<string>;
+  };
+  /** Desktop Polar license. Absent in a browser, which is not gated. */
+  license?: {
+    getStatus: () => Promise<LicenseStatus>;
+    activate: (key: string) => Promise<LicenseActivateResult>;
+    buy: () => Promise<{ ok: boolean; error?: string }>;
   };
 };
 

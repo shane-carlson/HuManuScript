@@ -6,6 +6,7 @@ import { PaneGrab } from './components/PaneGrab.tsx';
 import { SessionCaptureProvider } from './components/SessionCapture.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
+import { LicenseGate } from './components/LicenseGate.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import { epubChoicesFromBook } from './core/epubSettings.ts';
 import {
@@ -32,6 +33,7 @@ import {
   type VersionLedger,
 } from './core/versions.ts';
 import { createIdFactory } from './core/uid.ts';
+import { useLicense } from './hooks/useLicense.ts';
 import {
   clearLibrary,
   freshDocument,
@@ -74,6 +76,11 @@ async function initialLibrary(ids: () => string): Promise<Library> {
 }
 
 export default function App() {
+  const license = useLicense();
+  const mayWriteRef = useRef(license.mayWrite);
+  useEffect(() => {
+    mayWriteRef.current = license.mayWrite;
+  }, [license.mayWrite]);
   const [phase, setPhase] = useState<Phase>('loading');
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
@@ -190,12 +197,13 @@ export default function App() {
   const numberDraft = seriesState.number;
 
   const setDoc = useCallback((next: typeof doc) => {
-    if (!next || !libraryRef.current) return;
+    if (!mayWriteRef.current || !next || !libraryRef.current) return;
     setLibrary(updateActiveBookDocument(libraryRef.current, next));
   }, []);
 
   const handleSaveVersion = useCallback(
     (label: string) => {
+      if (!mayWriteRef.current) return;
       const lib = libraryRef.current;
       const book = lib?.books.find((b) => b.id === lib.activeBookId);
       if (!book) return;
@@ -213,6 +221,7 @@ export default function App() {
   );
 
   const handleRestoreVersion = useCallback(async (versionId: string) => {
+    if (!mayWriteRef.current) return;
     const lib = libraryRef.current;
     const book = lib?.books.find((b) => b.id === lib?.activeBookId);
     if (!book || !lib) return;
@@ -270,6 +279,7 @@ export default function App() {
                 value={doc.title}
                 placeholder="Untitled manuscript"
                 aria-label="Book title"
+                disabled={!license.mayWrite}
                 onChange={(e) => setDoc({ ...doc, title: e.target.value })}
               />
             </label>
@@ -280,8 +290,12 @@ export default function App() {
                 value={seriesDraft}
                 aria-label="Series"
                 placeholder="Standalone"
+                disabled={!license.mayWrite}
                 onChange={(e) => setSeriesState((current) => ({ ...current, draft: e.target.value }))}
-                onBlur={() => handleLibraryChange(assignSeriesToBook(library, activeBook.id, seriesDraft, ids.current))}
+                onBlur={() => {
+                  if (!mayWriteRef.current) return;
+                  handleLibraryChange(assignSeriesToBook(library, activeBook.id, seriesDraft, ids.current));
+                }}
               />
               <datalist id="humanuscript-series">
                 {library.series.map((series) => (
@@ -298,8 +312,12 @@ export default function App() {
                   value={numberDraft}
                   aria-label="Book number in series"
                   placeholder="1"
+                  disabled={!license.mayWrite}
                   onChange={(e) => setSeriesState((current) => ({ ...current, number: e.target.value }))}
-                  onBlur={() => handleLibraryChange(setBookSeriesNumber(library, activeBook.id, numberDraft))}
+                  onBlur={() => {
+                    if (!mayWriteRef.current) return;
+                    handleLibraryChange(setBookSeriesNumber(library, activeBook.id, numberDraft));
+                  }}
                 />
               </label>
             ) : null}
@@ -350,6 +368,7 @@ export default function App() {
             onTabChange={setTab}
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
+            license={license}
           />
           {!sidebarCollapsed && !focusActive && (
             <PaneGrab
@@ -411,6 +430,8 @@ export default function App() {
               </div>
             ) : (
               <>
+                {!license.mayWrite && <LicenseGate license={license} />}
+                <div className={license.mayWrite ? undefined : 'writing-locked'} inert={license.mayWrite ? undefined : true}>
                 <p className="sr-only">Editing {displayTitle(doc)}</p>
                 <Editor
                   key={library.activeBookId}
@@ -432,6 +453,7 @@ export default function App() {
                       : null
                   }
                 />
+                </div>
               </>
             )}
           </div>

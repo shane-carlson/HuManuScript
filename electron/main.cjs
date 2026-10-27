@@ -19,6 +19,7 @@ const {
   readBackupFile,
   writeBackupFile,
 } = require('./cloudFolders.cjs');
+const license = require('./license.cjs');
 const {
   decideCameraAccess,
   decideScreenSource,
@@ -120,6 +121,10 @@ ipcMain.handle('humanuscript:device-name', () => {
   const name = os.hostname();
   return typeof name === 'string' ? name.trim() : '';
 });
+
+ipcMain.handle('humanuscript:license-status', () => license.getStatus());
+ipcMain.handle('humanuscript:license-activate', (_event, key) => license.activate(key));
+ipcMain.handle('humanuscript:license-buy', () => license.buy());
 
 let captureGrant = { camera: 'off', screen: 'off' };
 let captureGrantFile = emptyCaptureGrantFile();
