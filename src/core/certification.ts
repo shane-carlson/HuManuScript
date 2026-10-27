@@ -5,7 +5,9 @@
  * span with a SHA-256 content hash, the input events observed for that span,
  * and the time. Dictation is its own origin: sealed like keyboard, and not
  * counted as keyboard, paste, or other. Paste, drop, and other insertions
- * stay uncertified.
+ * stay uncertified. A spelling correction or a Harper grammar fix inside a
+ * seal is not a new insertion: the span stays keyboard or dictation, and the
+ * point records which check was used.
  *
  * Browser events are evidence of how text entered this editor. They are not
  * proof against someone simulating events.
@@ -77,10 +79,18 @@ export interface CertificationPoint {
    * Harper is a local rule checker. This record cannot say a generative model was used.
    */
   grammar?: GrammarUsage;
+  /**
+   * Present only after the writer accepts a spelling suggestion inside this seal.
+   * The suggestion comes from the platform dictionary or the bundled word list.
+   */
+  spellcheck?: SpellUsage;
 }
 
-/** Shown on the seal and the certification page. The wording is fixed. */
+/** Shown on the seal and the certification page. The wording is fixed. Harper writes this. */
 export const GRAMMAR_CHECK_COMMENT = 'Grammar Checked without Generative AI Usage via Harper';
+
+/** Shown on the seal and the certification page. The wording is fixed. */
+export const SPELL_CHECK_COMMENT = 'Spell Checked without Generative AI Usage';
 
 export type GrammarDialect = 'American' | 'British' | 'Canadian' | 'Australian' | 'Indian';
 export type GrammarSuggestionKind = 'replace' | 'remove' | 'insert-after';
@@ -115,6 +125,31 @@ export interface GrammarUsage {
   generative: false;
   comment: typeof GRAMMAR_CHECK_COMMENT;
   checks: GrammarCheck[];
+}
+
+export interface SpellCheck {
+  id: string;
+  /** When the writer accepted the suggestion. */
+  at: string;
+  /** Literal false. The suggestion is a dictionary replacement, not generated prose. */
+  generative: false;
+  before: string;
+  after: string;
+  beforeHash: string;
+  afterHash: string;
+  /**
+   * Where `after` sits in this seal's current text.
+   * Absent once a later edit touches those letters. The check itself stays.
+   */
+  range?: { start: number; end: number };
+}
+
+export interface SpellUsage {
+  schema: 1;
+  used: true;
+  generative: false;
+  comment: typeof SPELL_CHECK_COMMENT;
+  checks: SpellCheck[];
 }
 
 const GRAMMAR_DIALECTS = new Set<GrammarDialect>(['American', 'British', 'Canadian', 'Australian', 'Indian']);
@@ -178,6 +213,75 @@ export function readGrammarUsage(value: unknown): GrammarUsage | undefined {
   };
 }
 
+/** Keep a saved spellcheck record only when it still matches this seal. */
+export function readSpellUsage(value: unknown): SpellUsage | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const usage = value as SpellUsage;
+  if (usage.schema !== 1 || usage.used !== true || usage.generative !== false) return undefined;
+  if (usage.comment !== SPELL_CHECK_COMMENT || !Array.isArray(usage.checks)) return undefined;
+  const checks: SpellCheck[] = [];
+  for (const item of usage.checks) {
+    if (!item || typeof item !== 'object') return undefined;
+    const check = item as SpellCheck;
+    if (
+      typeof check.id !== 'string' ||
+      typeof check.at !== 'string' ||
+      check.generative !== false ||
+      typeof check.before !== 'string' ||
+      typeof check.after !== 'string' ||
+      typeof check.beforeHash !== 'string' ||
+      typeof check.afterHash !== 'string'
+    ) {
+      return undefined;
+    }
+    const next: SpellCheck = {
+      id: check.id,
+      at: check.at,
+      generative: false,
+      before: check.before,
+      after: check.after,
+      beforeHash: check.beforeHash,
+      afterHash: check.afterHash,
+    };
+    if (check.range) {
+      if (typeof check.range.start !== 'number' || typeof check.range.end !== 'number') return undefined;
+      next.range = { start: check.range.start, end: check.range.end };
+    }
+    checks.push(next);
+  }
+  return {
+    schema: 1,
+    used: true,
+    generative: false,
+    comment: SPELL_CHECK_COMMENT,
+    checks,
+  };
+}
+
+/** Drop a check note that does not match the fixed wording. The seal itself stays. */
+export function sanitizePointChecks(point: CertificationPoint): CertificationPoint {
+  let next = point;
+  if (point.grammar != null) {
+    const grammar = readGrammarUsage(point.grammar);
+    if (!grammar) {
+      next = { ...next };
+      delete next.grammar;
+    } else {
+      next = { ...next, grammar };
+    }
+  }
+  if (point.spellcheck != null) {
+    const spellcheck = readSpellUsage(next.spellcheck);
+    if (!spellcheck) {
+      next = { ...next };
+      delete next.spellcheck;
+    } else {
+      next = { ...next, spellcheck };
+    }
+  }
+  return next;
+}
+
 export interface MoveRecord {
   id: string;
   at: string;
@@ -202,14 +306,15 @@ export const MAX_KEYBOARD_INSERT_CHARS = 1;
 /** Inter-key interval below this is not treated as human typing for sealing. */
 export const MIN_HUMAN_KEY_INTERVAL_MS = 6;
 
-export function classifyInputType(
-  inputType: string | undefined,
-  trusted: boolean,
-):
+export type InputClass =
   | { kind: 'insert'; origin: InsertionOrigin }
   | { kind: 'delete' }
   | { kind: 'split' }
-  | { kind: 'ignore' } {
+  | { kind: 'ignore' }
+  /** Spelling replacement. Not paste, drop, or other. */
+  | { kind: 'spellcheck' };
+
+export function classifyInputType(inputType: string | undefined, trusted: boolean): InputClass {
   return classifyInsertion({ inputType, trusted, data: null, sinceLastMs: null });
 }
 
@@ -218,11 +323,7 @@ export function classifyInsertion(args: {
   trusted: boolean;
   data: string | null;
   sinceLastMs: number | null;
-}):
-  | { kind: 'insert'; origin: InsertionOrigin }
-  | { kind: 'delete' }
-  | { kind: 'split' }
-  | { kind: 'ignore' } {
+}): InputClass {
   const kindName = args.inputType ?? '';
   if (kindName === 'insertCompositionText' || kindName === 'deleteCompositionText') {
     return { kind: 'ignore' };
@@ -254,6 +355,8 @@ export function classifyInsertion(args: {
     return { kind: 'insert', origin: 'paste' };
   }
   if (kindName === 'insertFromDrop') return { kind: 'insert', origin: 'drop' };
+  // The platform dictionary's replacement. Not a paste, drop, or other insertion.
+  if (kindName === 'insertReplacementText') return { kind: 'spellcheck' };
   return { kind: 'insert', origin: 'other' };
 }
 
@@ -555,41 +658,42 @@ function edgeEdit(previous: string, next: string): boolean {
   return next.startsWith(previous) || previous.startsWith(next) || next.endsWith(previous) || previous.endsWith(next);
 }
 
-function withoutGrammarRange(check: GrammarCheck): GrammarCheck {
-  if (!check.range) return check;
-  const { range: _range, ...rest } = check;
-  return rest;
+interface RangedCheck {
+  after: string;
+  range?: { start: number; end: number };
 }
 
-/**
- * Move grammar flags with the letters they describe.
- * A flag that the edit overwrites loses its range. The check record stays.
- * Ranges are offsets into the seal's own text.
- */
-export function retargetGrammar(args: {
-  grammar: GrammarUsage;
+function withoutRange<T extends RangedCheck>(check: T): T {
+  if (!check.range) return check;
+  const next = { ...check };
+  delete next.range;
+  return next;
+}
+
+/** Move a check with the letters it describes. A check the edit overwrites loses its range. */
+export function retargetRangedChecks<T extends RangedCheck>(args: {
+  checks: T[];
   oldSealText: string;
   newSealText: string;
   newSpanStart: number;
   textEdit?: { start: number; end: number; insertLength: number };
-}): GrammarUsage {
-  if (args.oldSealText === args.newSealText) return args.grammar;
+}): T[] {
+  if (args.oldSealText === args.newSealText) return args.checks;
   const textEdit = args.textEdit;
-  const checks = args.grammar.checks.map((check) => {
-    if (!check.range || !textEdit) return withoutGrammarRange(check);
-    const next = mapGrammarRange({
+  return args.checks.map((check) => {
+    if (!check.range || !textEdit) return withoutRange(check);
+    const next = mapCheckRange({
       range: check.range,
       newSpanStart: args.newSpanStart,
       newSealText: args.newSealText,
       textEdit,
     });
-    if (!next || args.newSealText.slice(next.start, next.end) !== check.after) return withoutGrammarRange(check);
+    if (!next || args.newSealText.slice(next.start, next.end) !== check.after) return withoutRange(check);
     return { ...check, range: next };
   });
-  return { ...args.grammar, checks };
 }
 
-function mapGrammarRange(args: {
+function mapCheckRange(args: {
   range: { start: number; end: number };
   newSpanStart: number;
   newSealText: string;
@@ -623,48 +727,48 @@ function mapGrammarRange(args: {
 }
 
 /**
- * Replace letters strictly inside one keyboard or dictation seal.
- * The origin and the certification id stay. This does not mint a seal.
+ * Replace [start, end) without assigning a new origin.
+ * The letters stay in the span that already covers them.
+ * Returns null when the range is not inside a single span, so a seal is never split into paste, drop, or other.
  */
-export function reviseSealedPassage(args: {
+export function revisePreservingOrigin(args: {
   text: string;
   spans: ProvenanceSpan[];
   marks: InlineMark[];
   start: number;
   end: number;
   insert: string;
-}): (TextChange & { certificationId: string; spanId: string }) | null {
+  newId: () => string;
+}): (TextChange & { hostSpanId: string; certificationId?: string }) | null {
   const text = args.text ?? '';
   const start = Math.max(0, Math.min(args.start, text.length));
   const end = Math.max(start, Math.min(args.end, text.length));
   const insert = args.insert ?? '';
   if (insert.includes('\n') || insert.includes('\r')) return null;
   if (start === end && insert === '') return null;
-  let gap = 0;
-  const gapId = () => `sealed_gap_${gap++}`;
-  const spans = normalizeSpans(text, args.spans, gapId);
-  const span = spans.find(
-    (item) => item.start <= start && item.end >= end && isSealedOrigin(item.origin) && item.certificationId,
-  );
-  if (!span?.certificationId) return null;
-  const overlapsAnother = spans.some((item) => item.id !== span.id && item.end > start && item.start < end);
+  const spans = normalizeSpans(text, args.spans, args.newId);
+  const host = spans.find((span) => span.start <= start && span.end >= end && span.end > span.start);
+  if (!host) return null;
+  const overlapsAnother = spans.some((span) => span.id !== host.id && span.end > start && span.start < end);
   if (overlapsAnother) return null;
 
   const nextText = text.slice(0, start) + insert + text.slice(end);
   const delta = insert.length - (end - start);
-  const nextSpans = spans.map((item) => {
-    if (item.id === span.id) return { ...item, end: item.end + delta };
-    if (item.end <= start) return item;
-    if (item.start >= end) return { ...item, start: item.start + delta, end: item.end + delta };
-    return item;
+  const nextSpans = spans.map((span) => {
+    if (span.id === host.id) return { ...span, end: span.end + delta };
+    if (span.end <= start) return { ...span };
+    if (span.start >= end) return { ...span, start: span.start + delta, end: span.end + delta };
+    return { ...span };
   });
+  const normalized = normalizeSpans(nextText, nextSpans, args.newId);
+  const kept = normalized.find((span) => span.id === host.id);
   return {
     text: nextText,
-    spans: normalizeSpans(nextText, nextSpans, gapId),
+    spans: normalized,
     marks: shiftMarks(args.marks, start, end, insert.length, nextText.length),
     evidenceSpanIds: [],
-    certificationId: span.certificationId,
-    spanId: span.id,
+    hostSpanId: kept?.id ?? host.id,
+    ...(isSealedOrigin(host.origin) && host.certificationId ? { certificationId: host.certificationId } : {}),
   };
 }
 
@@ -677,7 +781,7 @@ export async function syncBlockPoints(args: {
   now: string;
   newId: () => string;
   typingDevice?: string | null;
-  /** Block coordinates of the edit that produced `text`, so grammar flags move with the letters. */
+  /** Block coordinates of the edit that produced `text`, so check notes move with the letters. */
   textEdit?: { start: number; end: number; insertLength: number };
 }): Promise<{ spans: ProvenanceSpan[]; points: CertificationPoint[] }> {
   const typingDevice = args.typingDevice ?? (await getTypingDeviceLabel());
@@ -775,17 +879,37 @@ export async function syncBlockPoints(args: {
         },
       };
     }
-    if (point.grammar && previousSealText != null) {
-      point = {
-        ...point,
-        grammar: retargetGrammar({
-          grammar: point.grammar,
-          oldSealText: previousSealText,
-          newSealText: slice,
-          newSpanStart: span.start,
-          textEdit: args.textEdit,
-        }),
-      };
+    if (previousSealText != null && previousSealText !== slice) {
+      if (point.grammar) {
+        point = {
+          ...point,
+          grammar: {
+            ...point.grammar,
+            checks: retargetRangedChecks({
+              checks: point.grammar.checks,
+              oldSealText: previousSealText,
+              newSealText: slice,
+              newSpanStart: span.start,
+              textEdit: args.textEdit,
+            }),
+          },
+        };
+      }
+      if (point.spellcheck) {
+        point = {
+          ...point,
+          spellcheck: {
+            ...point.spellcheck,
+            checks: retargetRangedChecks({
+              checks: point.spellcheck.checks,
+              oldSealText: previousSealText,
+              newSealText: slice,
+              newSpanStart: span.start,
+              textEdit: args.textEdit,
+            }),
+          },
+        };
+      }
     }
     usedCert.add(point.id);
     kept.push(point);

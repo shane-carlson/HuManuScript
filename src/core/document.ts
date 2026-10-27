@@ -8,14 +8,16 @@ import {
   contentHash,
   countOriginWords,
   GRAMMAR_CHECK_COMMENT,
-  MAX_PRIOR_HASHES,
   relocateRange,
-  reviseSealedPassage,
+  revisePreservingOrigin,
+  sanitizePointChecks,
+  SPELL_CHECK_COMMENT,
   splitSpans,
   stripInvalidKeyboardSeals,
   syncBlockPoints,
   TRUST_STATEMENT,
   type CertificationPoint,
+  type GrammarCheck,
   type GrammarDialect,
   type GrammarSuggestionKind,
   type GrammarUsage,
@@ -23,6 +25,8 @@ import {
   type InsertionOrigin,
   type MoveRecord,
   type ProvenanceSpan,
+  type SpellCheck,
+  type SpellUsage,
 } from './certification.ts';
 import {
   chapterOrder,
@@ -96,7 +100,7 @@ export async function reconcileLoadedDocument(
   newId: () => string,
 ): Promise<ManuscriptDocument> {
   let provenance = doc.provenance;
-  let points = doc.points;
+  let points = doc.points.map(sanitizePointChecks);
   for (const block of doc.blocks) {
     for (const field of ['title', 'text'] as const) {
       if (field === 'text' && !isProseBlock(block.type)) continue;
@@ -883,108 +887,6 @@ export function passageState(spans: ProvenanceSpan[], text: string): 'empty' | '
   return 'uncertified';
 }
 
-/**
- * Apply one Harper suggestion inside an existing keyboard or dictation seal.
- * The seal's origin stays. The content hash moves to the new span text, and
- * the previous hash is kept on the point. Unsealed text is left unchanged.
- */
-export async function acceptGrammarSuggestion(args: {
-  doc: ManuscriptDocument;
-  blockId: string;
-  field: 'title' | 'text';
-  start: number;
-  end: number;
-  insert: string;
-  suggestion: GrammarSuggestionKind;
-  lintKind: string;
-  message: string;
-  dialect: GrammarDialect;
-  engineVersion: string;
-  now: string;
-  newId: () => string;
-}): Promise<ManuscriptDocument> {
-  const block = args.doc.blocks.find((item) => item.id === args.blockId);
-  if (!block) return args.doc;
-  if (args.field === 'title' && isProseBlock(block.type)) return args.doc;
-  if (args.field === 'text' && !isProseBlock(block.type)) return args.doc;
-  const current = args.field === 'title' ? block.title : block.text;
-  const start = Math.max(0, Math.min(args.start, current.length));
-  const end = Math.max(start, Math.min(args.end, current.length));
-  const insert = args.insert ?? '';
-  const changed = reviseSealedPassage({
-    text: current,
-    spans: fieldSpans(args.doc, block, args.field),
-    marks: args.field === 'text' ? block.marks : [],
-    start,
-    end,
-    insert,
-  });
-  if (!changed) return args.doc;
-
-  const previous = args.doc.points.find((point) => point.id === changed.certificationId);
-  const previousHash = previous?.contentHash;
-  const before = current.slice(start, end);
-  const sealed = await syncBlockPoints({
-    blockId: block.id,
-    text: changed.text,
-    spans: changed.spans,
-    points: args.doc.points,
-    evidence: null,
-    now: args.now,
-    newId: args.newId,
-    textEdit: { start, end, insertLength: insert.length },
-  });
-  const span = sealed.spans.find((item) => item.certificationId === changed.certificationId);
-  const relativeStart = span ? start - span.start : 0;
-  const points = await Promise.all(
-    sealed.points.map(async (point) => {
-      if (point.id !== changed.certificationId) return point;
-      const priorHashes =
-        previousHash && previousHash !== point.contentHash && !point.priorHashes.includes(previousHash)
-          ? [...point.priorHashes, previousHash].slice(-MAX_PRIOR_HASHES)
-          : point.priorHashes;
-      const usage: GrammarUsage = {
-        schema: 1,
-        used: true,
-        engine: 'harper',
-        generative: false,
-        comment: GRAMMAR_CHECK_COMMENT,
-        checks: [
-          ...(point.grammar?.checks ?? []),
-          {
-            id: args.newId(),
-            at: args.now,
-            engine: 'harper',
-            engineVersion: args.engineVersion,
-            generative: false,
-            dialect: args.dialect,
-            lintKind: args.lintKind,
-            message: args.message,
-            suggestion: args.suggestion,
-            before,
-            after: insert,
-            beforeHash: await contentHash(before),
-            afterHash: await contentHash(insert),
-            range: { start: relativeStart, end: relativeStart + insert.length },
-          },
-        ],
-      };
-      return { ...point, priorHashes, grammar: usage, updatedAt: args.now };
-    }),
-  );
-  const blocks = args.doc.blocks.map((item) => {
-    if (item.id !== block.id) return item;
-    if (args.field === 'title') return { ...item, title: changed.text };
-    return { ...item, text: changed.text, marks: changed.marks };
-  });
-  return {
-    ...args.doc,
-    blocks,
-    provenance: putSpans(args.doc, block.id, args.field, sealed.spans),
-    points,
-  };
-}
-
 export function certificationExport(
   doc: ManuscriptDocument,
   exportedAt: string,
@@ -1009,6 +911,173 @@ export function certificationExport(
   };
   if (!sessionCaptures) return record;
   return { ...record, sessionCaptures };
+}
+
+/**
+ * Accept a spelling suggestion inside the span that already holds those letters.
+ * A keyboard or dictation seal stays sealed. The edit is not paste, drop, or other.
+ * The suggestion is the platform dictionary or the bundled word list. Nothing is sent to a service.
+ */
+export async function acceptSpellcheckSuggestion(args: {
+  doc: ManuscriptDocument;
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+  insert: string;
+  now: string;
+  newId: () => string;
+}): Promise<ManuscriptDocument> {
+  return acceptCheckedRevision({
+    ...args,
+    note: async (point, before, insert, range) => {
+      const check: SpellCheck = {
+        id: args.newId(),
+        at: args.now,
+        generative: false,
+        before,
+        after: insert,
+        beforeHash: await contentHash(before),
+        afterHash: await contentHash(insert),
+        ...(range ? { range } : {}),
+      };
+      const usage: SpellUsage = {
+        schema: 1,
+        used: true,
+        generative: false,
+        comment: SPELL_CHECK_COMMENT,
+        checks: [...(point.spellcheck?.checks ?? []), check],
+      };
+      return { ...point, spellcheck: usage, updatedAt: args.now };
+    },
+  });
+}
+
+/**
+ * Accept one Harper suggestion inside an existing keyboard or dictation seal.
+ * Harper writes `grammar.comment`. This function does not contact a grammar service.
+ */
+export async function acceptGrammarSuggestion(args: {
+  doc: ManuscriptDocument;
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+  insert: string;
+  suggestion: GrammarSuggestionKind;
+  lintKind: string;
+  message: string;
+  dialect: GrammarDialect;
+  engineVersion: string;
+  now: string;
+  newId: () => string;
+}): Promise<ManuscriptDocument> {
+  return acceptCheckedRevision({
+    ...args,
+    sealedOnly: true,
+    note: async (point, before, insert, range) => {
+      const check: GrammarCheck = {
+        id: args.newId(),
+        at: args.now,
+        engine: 'harper',
+        engineVersion: args.engineVersion,
+        generative: false,
+        dialect: args.dialect,
+        lintKind: args.lintKind,
+        message: args.message,
+        suggestion: args.suggestion,
+        before,
+        after: insert,
+        beforeHash: await contentHash(before),
+        afterHash: await contentHash(insert),
+        ...(range ? { range } : {}),
+      };
+      const usage: GrammarUsage = {
+        schema: 1,
+        used: true,
+        engine: 'harper',
+        generative: false,
+        comment: GRAMMAR_CHECK_COMMENT,
+        checks: [...(point.grammar?.checks ?? []), check],
+      };
+      return { ...point, grammar: usage, updatedAt: args.now };
+    },
+  });
+}
+
+async function acceptCheckedRevision(args: {
+  doc: ManuscriptDocument;
+  blockId: string;
+  field: 'title' | 'text';
+  start: number;
+  end: number;
+  insert: string;
+  now: string;
+  newId: () => string;
+  /** Harper only revises a keyboard or dictation seal. Unsealed text is left unchanged. */
+  sealedOnly?: boolean;
+  note: (
+    point: CertificationPoint,
+    before: string,
+    insert: string,
+    range: { start: number; end: number } | undefined,
+  ) => Promise<CertificationPoint>;
+}): Promise<ManuscriptDocument> {
+  const block = args.doc.blocks.find((item) => item.id === args.blockId);
+  if (!block) return args.doc;
+  if (args.field === 'title' && isProseBlock(block.type)) return args.doc;
+  if (args.field === 'text' && !isProseBlock(block.type)) return args.doc;
+  const current = args.field === 'title' ? block.title : block.text;
+  const start = Math.max(0, Math.min(args.start, current.length));
+  const end = Math.max(start, Math.min(args.end, current.length));
+  const insert = args.insert ?? '';
+  const changed = revisePreservingOrigin({
+    text: current,
+    spans: fieldSpans(args.doc, block, args.field),
+    marks: args.field === 'text' ? block.marks : [],
+    start,
+    end,
+    insert,
+    newId: args.newId,
+  });
+  if (!changed) return args.doc;
+  if (args.sealedOnly && !changed.certificationId) return args.doc;
+
+  const sealed = await syncBlockPoints({
+    blockId: block.id,
+    text: changed.text,
+    spans: changed.spans,
+    points: args.doc.points,
+    evidence: null,
+    now: args.now,
+    newId: args.newId,
+    textEdit: { start, end, insertLength: insert.length },
+  });
+  const before = current.slice(start, end);
+  const span = sealed.spans.find((item) => item.certificationId === changed.certificationId);
+  const relativeStart = span && span.start <= start ? start - span.start : 0;
+  const located =
+    span != null &&
+    span.start <= start &&
+    changed.text.slice(span.start + relativeStart, span.start + relativeStart + insert.length) === insert;
+  const range = located ? { start: relativeStart, end: relativeStart + insert.length } : undefined;
+  const points = await Promise.all(
+    sealed.points.map(async (point) => {
+      if (!changed.certificationId || point.id !== changed.certificationId) return point;
+      return args.note(point, before, insert, range);
+    }),
+  );
+  const blocks = args.doc.blocks.map((item) => {
+    if (item.id !== block.id) return item;
+    if (args.field === 'title') return { ...item, title: changed.text };
+    return { ...item, text: changed.text, marks: changed.marks };
+  });
+  return {
+    ...args.doc,
+    blocks,
+    provenance: putSpans(args.doc, block.id, args.field, sealed.spans),
+    points,
+  };
 }
 
 /**

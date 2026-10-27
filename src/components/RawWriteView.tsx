@@ -16,6 +16,8 @@ export type RawEdit = {
   insert: string;
   origin: InsertionOrigin | null;
   inputType: string;
+  /** A spelling revision. The letters stay in the span that already holds them. */
+  check?: 'spellcheck';
 };
 
 export function RawWriteView({
@@ -84,7 +86,14 @@ export function RawWriteView({
     onSelection(range);
   };
 
-  const edit = (start: number, end: number, insert: string, origin: InsertionOrigin | null, inputType: string) => {
+  const edit = (
+    start: number,
+    end: number,
+    insert: string,
+    origin: InsertionOrigin | null,
+    inputType: string,
+    check?: 'spellcheck',
+  ) => {
     const current = modelText.current;
     const from = Math.max(0, Math.min(start, current.length));
     const to = Math.max(from, Math.min(end, current.length));
@@ -93,7 +102,7 @@ export function RawWriteView({
     caretRef.current = { start: next, end: next };
     ownEdit.current = true;
     onSelection({ start: next, end: next });
-    onEdit({ start: from, end: to, insert, origin, inputType });
+    onEdit({ start: from, end: to, insert, origin, inputType, ...(check ? { check } : {}) });
   };
 
   const syncFromDom = (origin: InsertionOrigin, inputType: string) => {
@@ -306,7 +315,7 @@ export function RawWriteView({
           insert: replacement,
           at: new Date().toISOString(),
         });
-        edit(change.start, change.end, change.insert, change.origin, change.event.inputType);
+        edit(change.start, change.end, change.insert, null, '', 'spellcheck');
       }}
       onGrammarCheck={(scope) => onGrammarCheck?.(scope, menuBlockRef.current ?? undefined)}
       onUnwrapHeading={() => {

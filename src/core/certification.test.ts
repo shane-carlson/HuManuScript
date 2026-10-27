@@ -92,7 +92,7 @@ test('classifies keyboard, paste, drop, and other insertions', () => {
   assert.deepEqual(classifyInputType('insertFromYank', true), { kind: 'insert', origin: 'paste' });
   assert.deepEqual(classifyInputType('insertFromDictation', true), { kind: 'insert', origin: 'dictation' });
   assert.deepEqual(classifyInputType('insertFromDrop', true), { kind: 'insert', origin: 'drop' });
-  assert.deepEqual(classifyInputType('insertReplacementText', true), { kind: 'insert', origin: 'other' });
+  assert.deepEqual(classifyInputType('insertReplacementText', true), { kind: 'spellcheck' });
   assert.equal(classifyInputType('deleteContentBackward', true).kind, 'delete');
   assert.equal(classifyInputType('insertParagraph', true).kind, 'split');
   assert.equal(classifyInputType('insertCompositionText', true).kind, 'ignore');

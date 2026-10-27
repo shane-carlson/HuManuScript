@@ -9,6 +9,7 @@ import {
   displayTitle,
   dragPreviewLabel,
   acceptGrammarSuggestion,
+  acceptSpellcheckSuggestion,
   editField,
   insertHeadingWithParagraph,
   insertStructure,
@@ -44,7 +45,6 @@ import {
 } from '../core/manuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
-import { GRAMMAR_CHECK_COMMENT } from '../core/certification.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
 import {
   GRAMMAR_SCOPE_LABELS,
@@ -453,6 +453,21 @@ export function Editor({
   };
 
   const applyCommit = (blockId: string, field: 'title' | 'text', change: FieldCommit) => {
+    if (change.check === 'spellcheck') {
+      commit((current) =>
+        acceptSpellcheckSuggestion({
+          doc: current,
+          blockId,
+          field,
+          start: change.start,
+          end: change.end,
+          insert: change.insert,
+          now: new Date().toISOString(),
+          newId: ids.current,
+        }),
+      );
+      return;
+    }
     commit((current) =>
       editField({
         doc: current,
@@ -544,6 +559,35 @@ export function Editor({
   };
 
   const editRaw = (edit: RawEdit) => {
+    if (edit.check === 'spellcheck') {
+      commit((current) => {
+        const flat = flattenRaw(current);
+        const host = flat.segments.find((segment) => edit.start >= segment.start && edit.end <= segment.end);
+        if (!host || edit.insert.includes('\n')) {
+          return replaceRawRange({
+            doc: current,
+            start: edit.start,
+            end: edit.end,
+            insert: edit.insert,
+            origin: null,
+            event: null,
+            now: new Date().toISOString(),
+            newId: ids.current,
+          });
+        }
+        return acceptSpellcheckSuggestion({
+          doc: current,
+          blockId: host.blockId,
+          field: isHeadingType(host.kind) ? 'title' : 'text',
+          start: edit.start - host.start,
+          end: edit.end - host.start,
+          insert: edit.insert,
+          now: new Date().toISOString(),
+          newId: ids.current,
+        });
+      });
+      return;
+    }
     commit((current) => replaceRawRange({
       doc: current,
       start: edit.start,
@@ -1829,9 +1873,8 @@ export function Editor({
                   <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
-                  {point.grammar?.used && (
-                    <p className="point-grammar">{point.grammar.comment || GRAMMAR_CHECK_COMMENT}</p>
-                  )}
+                  {point.spellcheck?.used && <p className="point-check">{point.spellcheck.comment}</p>}
+                  {point.grammar?.used && <p className="point-check">{point.grammar.comment}</p>}
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
                 </li>
               ))}

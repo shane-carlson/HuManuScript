@@ -2,7 +2,7 @@
 
 A manuscript editor for writers who want a record of how the prose got onto the page. It is built on the manuscript model from [Speak Fiction](https://github.com/shane-carlson/SpeakFiction) (MIT): chapters, scenes, sections, and paragraphs; bold, italic, and underline marks stored as offsets into the plain text; and drag-to-reorder, where a chapter takes the prose beneath it with it.
 
-HuManuScript adds a certification layer. As you type, dictate, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text and dictated text are each sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Dictation is its own origin: sealed, and not counted as keyboard, paste, or other. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as a spellcheck replacement or an untrusted scripted edit.
+HuManuScript adds a certification layer. As you type, dictate, paste, drop, or otherwise insert text, each span keeps its origin. Keyboard text and dictated text are each sealed with a SHA-256 hash of the current span, the input events observed for it, and the time. Dictation is its own origin: sealed, and not counted as keyboard, paste, or other. Pasted text, including a paste from an AI chat, stays visibly uncertified. So does a drop from outside the editor, and any other insertion such as an untrusted scripted edit. A spelling suggestion or a Harper grammar fix inside a sealed passage stays sealed. The certification point for that passage notes the check. Spelling uses the platform dictionary or the bundled word list. Harper, when a suggestion is accepted, is a local checker. The manuscript is not sent to a cloud grammar service.
 
 This is evidence from the browser, not proof against someone simulating events. It is not a cryptographic authorship certificate. That limit is stated on the certification summary that leads the Word, RTF, ODT, Markdown, text, and PDF exports. The EPUB ebook does not include it.
 
@@ -97,6 +97,7 @@ The public GitHub repository `shane-carlson/SpeakFiction` is the same project as
 | --- | --- | --- |
 | Keyboard, including an IME composition | Green underline | Yes, as keyboard |
 | Dictation (`insertFromDictation`, or a trusted multi-character insert that is not a paste, drop, or keystroke) | Teal underline | Yes, as dictation |
+| Spelling suggestion or Harper grammar fix inside a sealed passage | Same underline as that seal | Yes. The seal stays keyboard or dictation, and the point notes the check |
 | Paste, including middle-click yank | Amber underline | No |
 | Drop from outside the page | Blue underline | No |
 | Anything else, including an untrusted `insertText` or a too-fast keystroke | Purple underline | No |
