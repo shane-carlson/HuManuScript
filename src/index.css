@@ -1087,15 +1087,23 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   overflow: hidden;
   align-items: stretch;
 }
-.editor-layout.is-focus,
-.editor-layout.is-focus.is-cert-collapsed {
-  grid-template-columns: minmax(0, 1fr);
+.editor-layout.is-focus {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 250px) minmax(220px, 280px);
   grid-template-rows: auto minmax(0, 1fr);
 }
-.editor-layout.is-focus .focus-exit-bar { grid-column: 1 / -1; }
+.editor-layout.is-focus.is-notes-collapsed {
+  grid-template-columns: minmax(0, 1fr) 52px minmax(220px, 280px);
+}
+.editor-layout.is-focus.is-cert-collapsed {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 250px) 52px;
+}
+.editor-layout.is-focus.is-notes-collapsed.is-cert-collapsed {
+  grid-template-columns: minmax(0, 1fr) 52px 52px;
+}
+.editor-layout.is-focus .focus-exit-bar { grid-column: 1 / -1; grid-row: 1; }
 .editor-layout.is-focus .canvas { grid-column: 1; grid-row: 2; }
-.editor-layout.is-focus .notes-rail,
-.editor-layout.is-focus .points { display: none; }
+.editor-layout.is-focus .notes-rail { grid-column: 2; grid-row: 2; min-height: 0; }
+.editor-layout.is-focus .points { grid-column: 3; grid-row: 2; min-height: 0; }
 .editor-layout.is-cert-collapsed {
   grid-template-columns: minmax(0, 1fr) 52px;
 }

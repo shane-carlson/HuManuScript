@@ -198,6 +198,8 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
+  const [focusCertCollapsed, setFocusCertCollapsed] = useState(true);
+  const [focusNotesCollapsed, setFocusNotesCollapsed] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [linkedCardId, setLinkedCardId] = useState<string | null>(null);
@@ -210,7 +212,13 @@ export function Editor({
   if (focusMode !== trackedFocus) {
     setTrackedFocus(focusMode);
     if (!focusMode) setViewPercent(100);
+    if (focusMode) {
+      setFocusNotesCollapsed(true);
+      setFocusCertCollapsed(true);
+    }
   }
+  const notesCollapsedView = focusMode ? focusNotesCollapsed : notesCollapsed;
+  const certCollapsedView = focusMode ? focusCertCollapsed : certCollapsed;
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -778,7 +786,7 @@ export function Editor({
       onChange={publish}
     />
     <div
-      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}${notesCollapsed ? ' is-notes-collapsed' : ''}`}
+      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsedView ? ' is-cert-collapsed' : ''}${notesCollapsedView ? ' is-notes-collapsed' : ''}`}
     >
       {focusMode && (
         <div className="focus-exit-bar">
@@ -1701,13 +1709,15 @@ export function Editor({
         </div>
       </main>
 
-      {!focusMode && (
-        <NotesRail
+      <NotesRail
           doc={doc}
           activeBlockId={noteBlockId}
           saveError={saveError}
-          collapsed={notesCollapsed}
-          onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
+          collapsed={notesCollapsedView}
+          onToggleCollapsed={() => {
+            if (focusMode) setFocusNotesCollapsed((collapsed) => !collapsed);
+            else setNotesCollapsed((collapsed) => !collapsed);
+          }}
           onChange={publish}
           onShowBlock={(blockId) => {
             if (viewMode === 'raw' || viewMode === 'preview' || viewMode === 'publication') setViewMode('manuscript');
@@ -1719,18 +1729,19 @@ export function Editor({
             });
           }}
         />
-      )}
-      {!focusMode && (
-      <aside className={`points${certCollapsed ? ' is-collapsed' : ''}`}>
+      <aside className={`points${certCollapsedView ? ' is-collapsed' : ''}`}>
         <button
           type="button"
-          className={`cert-collapse-toggle${certCollapsed ? ' is-collapsed-mark' : ''}`}
-          onClick={() => setCertCollapsed((c) => !c)}
-          aria-expanded={!certCollapsed}
-          aria-label={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
-          data-tooltip={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
+          className={`cert-collapse-toggle${certCollapsedView ? ' is-collapsed-mark' : ''}`}
+          onClick={() => {
+            if (focusMode) setFocusCertCollapsed((collapsed) => !collapsed);
+            else setCertCollapsed((collapsed) => !collapsed);
+          }}
+          aria-expanded={!certCollapsedView}
+          aria-label={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
+          data-tooltip={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
         >
-          {certCollapsed ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
+          {certCollapsedView ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>
         <div className="points-body">
           <div className="points-head">
@@ -1800,7 +1811,6 @@ export function Editor({
           <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
         </div>
       </aside>
-      )}
     </div>
     {tablePicker && (
       <TableGridPicker
