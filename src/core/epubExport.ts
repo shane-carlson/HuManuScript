@@ -7,6 +7,7 @@
 import JSZip from 'jszip';
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
+import { copyrightNoticeLines } from './publicationPages.ts';
 import {
   EPUB_BODY_SIZE_EM,
   EPUB_PARAGRAPH_GAP,
@@ -41,7 +42,7 @@ export interface EpubBuildOptions {
   author: string;
   /** BCP 47 tag. Default in the form is en. */
   language: string;
-  /** Empty uses the stored UUID. */
+  /** Ebook ISBN. Empty uses the stored UUID. Print ISBNs are not part of this file. */
   isbn: string;
   /** Stable id already stored on the book. Not minted here. */
   epubUuid: string;
@@ -50,6 +51,22 @@ export interface EpubBuildOptions {
   paragraphStyle: EpubParagraphStyle;
   textAlign: EpubTextAlign;
   bodySize: EpubBodySize;
+  /** Series line already formatted, such as "Book 2 of Harbor". Empty omits it. */
+  seriesLine: string;
+  subtitle: string;
+  imprint: string;
+  copyrightYear: number | null;
+  copyrightHolder: string;
+  rightsLine: string;
+  disclaimer: string;
+  edition: string;
+  dedication: string;
+  epigraph: string;
+  epigraphAttribution: string;
+  alsoBy: string[];
+  aboutAuthor: string;
+  /** Title, copyright, and the other book pages. Off leaves the package as cover, contents, and chapters. */
+  includePublicationPages: boolean;
 }
 
 /** Ingram's ebook file guide caps each image at 3.2 million pixels. */
@@ -66,6 +83,20 @@ interface ResolvedEpub {
   paragraphStyle: EpubParagraphStyle;
   textAlign: EpubTextAlign;
   bodySize: EpubBodySize;
+  seriesLine: string;
+  subtitle: string;
+  imprint: string;
+  copyrightHolder: string;
+  rightsLine: string;
+  disclaimer: string;
+  edition: string;
+  dedication: string;
+  epigraph: string;
+  epigraphAttribution: string;
+  alsoBy: string[];
+  aboutAuthor: string;
+  includePublicationPages: boolean;
+  copyrightYear: number | null;
 }
 
 interface PackedImage {
@@ -208,6 +239,23 @@ nav li {
 body.cover-page {
   text-align: center;
 }
+h1.book-title {
+  text-align: center;
+  text-indent: 0;
+  margin: 1.2em 0 0.4em;
+}
+p.book-line, p.book-foot, p.dedication, p.attribution {
+  text-indent: 0;
+  text-align: center;
+  margin: 0.4em 0;
+}
+p.book-foot { margin-top: 2em; }
+p.copyright-line, p.about {
+  text-indent: 0;
+  text-align: left;
+  margin: 0.4em 0;
+}
+p.attribution { margin-top: 0.8em; }
 `;
 }
 
@@ -225,6 +273,16 @@ export function readEpubImage(bytes: Uint8Array, label: 'cover' | 'picture'): Ep
     throw new EpubExportError('This picture is CMYK. Ebook images need RGB.');
   }
   return { bytes, mediaType };
+}
+
+export function epubImageInfo(
+  bytes: Uint8Array,
+): { mediaType: 'image/jpeg' | 'image/png'; width: number; height: number; cmyk: boolean } | null {
+  const mediaType = sniffImage(bytes);
+  if (!mediaType) return null;
+  const info = mediaType === 'image/png' ? pngInfo(bytes) : jpegInfo(bytes);
+  if (!info) return { mediaType, width: 0, height: 0, cmyk: false };
+  return { mediaType, width: info.width, height: info.height, cmyk: info.cmyk };
 }
 
 export async function buildEpubBlob(
@@ -299,10 +357,14 @@ export async function buildEpubBlob(
     });
   }
 
+  const bookPages = resolved.includePublicationPages ? ebookPageDocuments(resolved, title) : { before: [], after: [] };
   const tocEntries: TocEntry[] = [];
   for (const file of files) {
     for (const link of file.frontLinks) tocEntries.push({ title: link.title, href: link.href, children: [] });
     if (file.toc) tocEntries.push(file.toc);
+  }
+  for (const page of bookPages.after) {
+    if (page.toc) tocEntries.push(page.toc);
   }
   if (!tocEntries.length) {
     const first = files[0]!;
@@ -318,13 +380,22 @@ export async function buildEpubBlob(
 
   const nav = navDocument(resolved.language, tocEntries, landmarks);
   const ncx = ncxDocument(resolved.language, resolved.identifier, title, tocEntries);
+  const spineIds = [
+    ...(coverHref ? ['cover'] : []),
+    ...bookPages.before.map((page) => page.id),
+    'nav',
+    ...files.map((file) => file.id),
+    ...bookPages.after.map((page) => page.id),
+  ];
+  const documents = [...bookPages.before, ...files, ...bookPages.after];
   const opf = opfDocument({
     resolved,
     title,
     modified: epubModified(exportedAt),
     coverHref,
     coverMedia: cover?.mediaType ?? null,
-    files,
+    documents,
+    spineIds,
     images: packed,
   });
   const css = epubStylesheet(resolved);
@@ -349,7 +420,7 @@ export async function buildEpubBlob(
     zip.file(`OEBPS/${coverHref}`, cover.bytes, { compression: 'DEFLATE' });
     zip.file('OEBPS/cover.xhtml', coverPage, { compression: 'DEFLATE' });
   }
-  for (const file of files) zip.file(`OEBPS/${file.href}`, file.xhtml, { compression: 'DEFLATE' });
+  for (const file of documents) zip.file(`OEBPS/${file.href}`, file.xhtml, { compression: 'DEFLATE' });
   for (const image of packed) zip.file(`OEBPS/${image.href}`, image.bytes, { compression: 'DEFLATE' });
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
@@ -378,6 +449,17 @@ function resolveEpubOptions(options: EpubBuildOptions): ResolvedEpub {
   if (!isEpubParagraphStyle(options.paragraphStyle) || !isEpubTextAlign(options.textAlign) || !isEpubBodySize(options.bodySize)) {
     throw new EpubExportError('Choose a paragraph style, alignment, and body size the ebook stores accept.');
   }
+  const includePublicationPages = options.includePublicationPages === true;
+  let copyrightYear: number | null = null;
+  if (includePublicationPages) {
+    if (options.copyrightYear == null || !Number.isInteger(options.copyrightYear) || options.copyrightYear < 1000 || options.copyrightYear > 9999) {
+      throw new EpubExportError(
+        'Enter a four-digit copyright year before including publication pages. The year is not filled in on export.',
+      );
+    }
+    copyrightYear = options.copyrightYear;
+  }
+  const alsoBy = (options.alsoBy ?? []).map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
   return {
     author,
     language,
@@ -387,7 +469,134 @@ function resolveEpubOptions(options: EpubBuildOptions): ResolvedEpub {
     paragraphStyle: options.paragraphStyle,
     textAlign: options.textAlign,
     bodySize: options.bodySize,
+    seriesLine: options.seriesLine.replace(/\s+/g, ' ').trim(),
+    subtitle: options.subtitle.replace(/\s+/g, ' ').trim(),
+    imprint: options.imprint.replace(/\s+/g, ' ').trim(),
+    copyrightYear,
+    copyrightHolder: options.copyrightHolder.replace(/\s+/g, ' ').trim(),
+    rightsLine: options.rightsLine.replace(/\s+/g, ' ').trim(),
+    disclaimer: options.disclaimer.replace(/\r\n/g, '\n').trim(),
+    edition: options.edition.replace(/\s+/g, ' ').trim(),
+    dedication: options.dedication.replace(/\r\n/g, '\n').trim(),
+    epigraph: options.epigraph.replace(/\r\n/g, '\n').trim(),
+    epigraphAttribution: options.epigraphAttribution.replace(/\s+/g, ' ').trim(),
+    alsoBy,
+    aboutAuthor: options.aboutAuthor.replace(/\r\n/g, '\n').trim(),
+    includePublicationPages,
   };
+}
+
+interface EbookPage {
+  id: string;
+  href: string;
+  xhtml: string;
+  toc: TocEntry | null;
+}
+
+function ebookPageDocuments(resolved: ResolvedEpub, title: string): { before: EbookPage[]; after: EbookPage[] } {
+  const year = resolved.copyrightYear;
+  if (year == null) return { before: [], after: [] };
+  const notice = copyrightNoticeLines({
+    year,
+    author: resolved.author,
+    copyrightHolder: resolved.copyrightHolder,
+    rightsLine: resolved.rightsLine,
+    disclaimer: resolved.disclaimer,
+    imprint: resolved.imprint,
+    edition: resolved.edition,
+    paperbackIsbn: '',
+    hardcoverIsbn: '',
+    ebookIsbn: resolved.isbnKind ? resolved.identifier : '',
+    printIsbns: false,
+  });
+  const before: EbookPage[] = [
+    { id: 'title', href: 'title.xhtml', xhtml: titlePageDocument(resolved, title), toc: null },
+    {
+      id: 'copyright',
+      href: 'copyright.xhtml',
+      xhtml: xhtmlDocument(
+        resolved.language,
+        'Copyright',
+        notice.map((line) => `<p class="copyright-line">${xmlText(line)}</p>`).join('\n'),
+        'copyright-page',
+      ),
+      toc: null,
+    },
+  ];
+  if (resolved.dedication) {
+    before.push({
+      id: 'dedication',
+      href: 'dedication.xhtml',
+      xhtml: xhtmlDocument(resolved.language, 'Dedication', proseParagraphs(resolved.dedication, 'dedication'), 'dedication'),
+      toc: null,
+    });
+  }
+  if (resolved.epigraph) {
+    const quote = proseParagraphs(resolved.epigraph, 'epigraph');
+    const attribution = resolved.epigraphAttribution
+      ? `\n<p class="attribution">${xmlText(resolved.epigraphAttribution)}</p>`
+      : '';
+    before.push({
+      id: 'epigraph',
+      href: 'epigraph.xhtml',
+      xhtml: xhtmlDocument(
+        resolved.language,
+        'Epigraph',
+        `<blockquote>\n${quote}\n</blockquote>${attribution}`,
+        'epigraph',
+      ),
+      toc: null,
+    });
+  }
+  const after: EbookPage[] = [];
+  if (resolved.alsoBy.length) {
+    const label = `Also by ${resolved.author}`;
+    const items = resolved.alsoBy.map((item) => `<li>${xmlText(item)}</li>`).join('');
+    after.push({
+      id: 'also-by',
+      href: 'also-by.xhtml',
+      xhtml: xhtmlDocument(
+        resolved.language,
+        label,
+        `<h1>${xmlText(label)}</h1>\n<ul>${items}</ul>`,
+        'backmatter',
+      ),
+      toc: { title: label, href: 'also-by.xhtml', children: [] },
+    });
+  }
+  if (resolved.aboutAuthor) {
+    after.push({
+      id: 'about',
+      href: 'about.xhtml',
+      xhtml: xhtmlDocument(
+        resolved.language,
+        'About the author',
+        `<h1>About the author</h1>\n${proseParagraphs(resolved.aboutAuthor, 'about')}`,
+        'backmatter',
+      ),
+      toc: { title: 'About the author', href: 'about.xhtml', children: [] },
+    });
+  }
+  return { before, after };
+}
+
+function titlePageDocument(resolved: ResolvedEpub, title: string): string {
+  const parts: string[] = [];
+  if (resolved.seriesLine) parts.push(`<p class="book-line">${xmlText(resolved.seriesLine)}</p>`);
+  parts.push(`<h1 class="book-title">${xmlText(title)}</h1>`);
+  if (resolved.subtitle) parts.push(`<p class="book-line">${xmlText(resolved.subtitle)}</p>`);
+  parts.push(`<p class="book-line">${xmlText(resolved.author)}</p>`);
+  if (resolved.imprint) parts.push(`<p class="book-foot">${xmlText(resolved.imprint)}</p>`);
+  return xhtmlDocument(resolved.language, title, parts.join('\n'), 'titlepage');
+}
+
+function proseParagraphs(text: string, className: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((chunk) => `<p class="${className}">${xmlText(chunk).replace(/\n/g, '<br />')}</p>`)
+    .join('\n');
 }
 
 function splitSlices(doc: ManuscriptDocument): Slice[] {
@@ -608,7 +817,8 @@ function opfDocument(args: {
   modified: string;
   coverHref: string | null;
   coverMedia: 'image/jpeg' | 'image/png' | null;
-  files: { id: string; href: string }[];
+  documents: { id: string; href: string }[];
+  spineIds: string[];
   images: PackedImage[];
 }): string {
   const { resolved } = args;
@@ -626,17 +836,14 @@ function opfDocument(args: {
       '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>',
     );
   }
-  for (const file of args.files) {
+  for (const file of args.documents) {
+    if (file.id === 'cover' || file.id === 'nav') continue;
     items.push(`<item id="${file.id}" href="${file.href}" media-type="application/xhtml+xml"/>`);
   }
   for (const image of args.images) {
     items.push(`<item id="${image.id}" href="${image.href}" media-type="${image.mediaType}"/>`);
   }
-  const spine = [
-    ...(args.coverHref ? ['<itemref idref="cover"/>'] : []),
-    '<itemref idref="nav"/>',
-    ...args.files.map((file) => `<itemref idref="${file.id}"/>`),
-  ];
+  const spine = args.spineIds.map((id) => `<itemref idref="${id}"/>`);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="${resolved.language}">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">

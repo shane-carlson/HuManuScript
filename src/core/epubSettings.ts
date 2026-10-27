@@ -1,8 +1,12 @@
 /**
  * Choices for a reflowable EPUB 3. Stored on the book so the identifier
  * and the last formatting choices survive the next export.
- * The cover file is not stored here.
+ * Publication pages live in bookPages.ts. The cover file is not stored.
  */
+
+import { bookPagesFromStored, readStoredBookPages } from './bookPages.ts';
+
+export { normalizeIsbn } from './bookPages.ts';
 
 export type EpubParagraphStyle = 'indent' | 'spacing';
 export type EpubTextAlign = 'left' | 'justify';
@@ -70,27 +74,6 @@ export function canonicalBcp47(raw: string): string | null {
     .join('-');
 }
 
-export function normalizeIsbn(raw: string): string | null {
-  const compact = raw.replace(/[-\s]/g, '').toUpperCase();
-  if (!compact) return null;
-  if (/^\d{13}$/.test(compact) && isbn13Ok(compact)) return compact;
-  if (/^\d{9}[\dX]$/.test(compact) && isbn10Ok(compact)) return compact;
-  return null;
-}
-
-function isbn13Ok(isbn: string): boolean {
-  let sum = 0;
-  for (let i = 0; i < 12; i += 1) sum += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
-  return (10 - (sum % 10)) % 10 === Number(isbn[12]);
-}
-
-function isbn10Ok(isbn: string): boolean {
-  let sum = 0;
-  for (let i = 0; i < 9; i += 1) sum += Number(isbn[i]) * (10 - i);
-  const last = isbn[9] === 'X' ? 10 : Number(isbn[9]);
-  return (sum + last) % 11 === 0;
-}
-
 export function isEpubParagraphStyle(value: unknown): value is EpubParagraphStyle {
   return value === 'indent' || value === 'spacing';
 }
@@ -105,13 +88,13 @@ export function isEpubBodySize(value: unknown): value is EpubBodySize {
 
 export interface StoredEpubFields {
   epubUuid?: string;
-  epubIsbn?: string;
-  epubAuthor?: string;
   epubLanguage?: string;
   epubChapterBreaks?: boolean;
   epubParagraphStyle?: EpubParagraphStyle;
   epubTextAlign?: EpubTextAlign;
   epubBodySize?: EpubBodySize;
+  /** Publication pages in file exports. Absent means off. */
+  includePublicationPages?: boolean;
 }
 
 /** Keep only values the exporter can write. Drop the rest on load. */
@@ -120,11 +103,6 @@ export function readStoredEpubFields(raw: unknown): StoredEpubFields {
   const value = raw as Record<string, unknown>;
   const out: StoredEpubFields = {};
   if (typeof value.epubUuid === 'string' && isEpubUuid(value.epubUuid)) out.epubUuid = value.epubUuid.toLowerCase();
-  if (typeof value.epubIsbn === 'string') {
-    const isbn = normalizeIsbn(value.epubIsbn);
-    if (isbn) out.epubIsbn = isbn;
-  }
-  if (typeof value.epubAuthor === 'string' && value.epubAuthor.trim()) out.epubAuthor = value.epubAuthor.trim();
   if (typeof value.epubLanguage === 'string') {
     const language = canonicalBcp47(value.epubLanguage);
     if (language) out.epubLanguage = language;
@@ -133,37 +111,91 @@ export function readStoredEpubFields(raw: unknown): StoredEpubFields {
   if (isEpubParagraphStyle(value.epubParagraphStyle)) out.epubParagraphStyle = value.epubParagraphStyle;
   if (isEpubTextAlign(value.epubTextAlign)) out.epubTextAlign = value.epubTextAlign;
   if (isEpubBodySize(value.epubBodySize)) out.epubBodySize = value.epubBodySize;
+  if (value.includePublicationPages === true) out.includePublicationPages = true;
   return out;
 }
 
 export interface EpubChoicePatch {
   author: string;
+  subtitle: string;
+  imprint: string;
+  /** The year field as typed. Stored only when it is four digits. */
+  copyrightYear: string;
+  copyrightHolder: string;
+  rightsLine: string;
+  disclaimer: string;
+  paperbackIsbn: string;
+  hardcoverIsbn: string;
+  ebookIsbn: string;
+  edition: string;
+  dedication: string;
+  epigraph: string;
+  epigraphAttribution: string;
+  alsoBy: string[];
+  aboutAuthor: string;
+  includePublicationPages: boolean;
   language: string;
-  isbn: string;
   chapterPageBreaks: boolean;
   paragraphStyle: EpubParagraphStyle;
   textAlign: EpubTextAlign;
   bodySize: EpubBodySize;
 }
 
-export interface EpubChoiceView {
+export interface EpubChoiceView extends EpubChoicePatch {
   uuid: string;
-  author: string;
-  language: string;
-  isbn: string;
-  chapterPageBreaks: boolean;
-  paragraphStyle: EpubParagraphStyle;
-  textAlign: EpubTextAlign;
-  bodySize: EpubBodySize;
 }
 
-export function epubChoicesFromBook(book: StoredEpubFields): EpubChoiceView {
-  const stored = readStoredEpubFields(book);
+export function emptyEpubChoicePatch(): EpubChoicePatch {
   return {
+    author: '',
+    subtitle: '',
+    imprint: '',
+    copyrightYear: '',
+    copyrightHolder: '',
+    rightsLine: '',
+    disclaimer: '',
+    paperbackIsbn: '',
+    hardcoverIsbn: '',
+    ebookIsbn: '',
+    edition: '',
+    dedication: '',
+    epigraph: '',
+    epigraphAttribution: '',
+    alsoBy: [],
+    aboutAuthor: '',
+    includePublicationPages: false,
+    language: DEFAULT_EPUB_LANGUAGE,
+    chapterPageBreaks: DEFAULT_EPUB_CHAPTER_BREAKS,
+    paragraphStyle: DEFAULT_EPUB_PARAGRAPH_STYLE,
+    textAlign: DEFAULT_EPUB_TEXT_ALIGN,
+    bodySize: DEFAULT_EPUB_BODY_SIZE,
+  };
+}
+
+export function epubChoicesFromBook(book: unknown): EpubChoiceView {
+  const stored = readStoredEpubFields(book);
+  const pages = bookPagesFromStored(readStoredBookPages(book));
+  return {
+    ...emptyEpubChoicePatch(),
     uuid: stored.epubUuid ?? '',
-    author: stored.epubAuthor ?? '',
+    author: pages.author,
+    subtitle: pages.subtitle,
+    imprint: pages.imprint,
+    copyrightYear: pages.copyrightYear != null ? String(pages.copyrightYear) : '',
+    copyrightHolder: pages.copyrightHolder,
+    rightsLine: pages.rightsLine,
+    disclaimer: pages.disclaimer,
+    paperbackIsbn: pages.paperbackIsbn,
+    hardcoverIsbn: pages.hardcoverIsbn,
+    ebookIsbn: pages.ebookIsbn,
+    edition: pages.edition,
+    dedication: pages.dedication,
+    epigraph: pages.epigraph,
+    epigraphAttribution: pages.epigraphAttribution,
+    alsoBy: pages.alsoBy,
+    aboutAuthor: pages.aboutAuthor,
+    includePublicationPages: stored.includePublicationPages === true,
     language: stored.epubLanguage ?? DEFAULT_EPUB_LANGUAGE,
-    isbn: stored.epubIsbn ?? '',
     chapterPageBreaks: stored.epubChapterBreaks ?? DEFAULT_EPUB_CHAPTER_BREAKS,
     paragraphStyle: stored.epubParagraphStyle ?? DEFAULT_EPUB_PARAGRAPH_STYLE,
     textAlign: stored.epubTextAlign ?? DEFAULT_EPUB_TEXT_ALIGN,

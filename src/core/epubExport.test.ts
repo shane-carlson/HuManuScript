@@ -78,6 +78,20 @@ function options(over: Partial<EpubBuildOptions> = {}): EpubBuildOptions {
     paragraphStyle: 'indent',
     textAlign: 'left',
     bodySize: 'medium',
+    seriesLine: '',
+    subtitle: '',
+    imprint: '',
+    copyrightYear: null,
+    copyrightHolder: '',
+    rightsLine: '',
+    disclaimer: '',
+    edition: '',
+    dedication: '',
+    epigraph: '',
+    epigraphAttribution: '',
+    alsoBy: [],
+    aboutAuthor: '',
+    includePublicationPages: false,
     ...over,
   };
 }
@@ -309,17 +323,120 @@ test('a saved epub id survives a library reload and a bad id is dropped', async 
     library = ensureBookEpubUuid(library, library.activeBookId).library;
     library = {
       ...library,
-      books: library.books.map((book) => ({ ...book, epubIsbn: 'not-an-isbn', epubLanguage: 'english' })),
+      books: library.books.map((book) => ({
+        ...book,
+        epubAuthor: 'Ada Harbor',
+        epubIsbn: 'not-an-isbn',
+        epubLanguage: 'english',
+        copyrightYear: 'soon',
+        paperbackIsbn: '978-1-86197-271-2',
+        includePublicationPages: 'yes',
+      })) as typeof library.books,
     };
     saveLibrary(library);
     const loaded = loadLibrary();
     assert.equal(loaded.ok, true);
     if (!loaded.ok || !loaded.library) return;
-    assert.equal(loaded.library.books[0]!.epubUuid, library.books[0]!.epubUuid);
-    assert.equal(loaded.library.books[0]!.epubIsbn, undefined);
-    assert.equal(loaded.library.books[0]!.epubLanguage, undefined);
+    const loadedBook = loaded.library.books[0]!;
+    assert.equal(loadedBook.epubUuid, library.books[0]!.epubUuid);
+    assert.equal(loadedBook.author, 'Ada Harbor');
+    assert.equal(loadedBook.ebookIsbn, undefined);
+    assert.equal(loadedBook.epubLanguage, undefined);
+    assert.equal(loadedBook.copyrightYear, undefined);
+    assert.equal(loadedBook.paperbackIsbn, '9781861972712');
+    assert.equal(loadedBook.includePublicationPages, undefined);
   } finally {
     if (previous) Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: previous });
     else Reflect.deleteProperty(globalThis, 'localStorage');
   }
+});
+
+test('publication pages stay out of the epub until the switch is on', async () => {
+  const zip = await unzip(await buildEpubBlob(sample(), options({
+    dedication: 'For the harbor cats',
+    subtitle: 'A novel',
+    copyrightYear: 2026,
+    alsoBy: ['Other Book'],
+  }), now));
+  assert.equal(zip.file('OEBPS/title.xhtml'), null);
+  assert.equal(zip.file('OEBPS/copyright.xhtml'), null);
+  assert.equal(zip.file('OEBPS/dedication.xhtml'), null);
+  assert.equal(zip.file('OEBPS/also-by.xhtml'), null);
+  const joined = await Promise.all(
+    Object.keys(zip.files)
+      .filter((name) => !zip.files[name]!.dir)
+      .map((name) => zip.file(name)!.async('string')),
+  );
+  assert.equal(joined.join('\n').includes('For the harbor cats'), false);
+});
+
+test('the ebook spine adds title and copyright and skips empty pages', async () => {
+  const zip = await unzip(await buildEpubBlob(sample(), options({
+    includePublicationPages: true,
+    copyrightYear: 2026,
+    subtitle: 'A novel',
+    imprint: 'Lantern Press',
+    seriesLine: 'Book 2 of Harbor Saga',
+    dedication: 'For the harbor cats',
+    epigraph: 'The sea keeps lists',
+    epigraphAttribution: 'A pilot',
+    alsoBy: ['Other Book'],
+    aboutAuthor: 'Writes at night',
+    isbn: '9780306406157',
+    edition: 'First edition',
+    disclaimer: 'This is fiction.',
+  }), now));
+  const opf = await zip.file('OEBPS/content.opf')!.async('string');
+  assert.match(opf, /<itemref idref="title"\/>\s*<itemref idref="copyright"\/>\s*<itemref idref="dedication"\/>\s*<itemref idref="epigraph"\/>\s*<itemref idref="nav"\/>/);
+  assert.match(opf, /<itemref idref="also-by"\/>\s*<itemref idref="about"\/>/);
+  assert.equal(opf.includes('Paperback'), false);
+  assert.equal(opf.includes('9781861972712'), false);
+  assert.equal(opf.includes('Book 2 of Harbor Saga'), false);
+  assert.equal(opf.includes('dc:publisher'), false);
+  const titlePage = await zip.file('OEBPS/title.xhtml')!.async('string');
+  assert.match(titlePage, /epub:type="titlepage"/);
+  assert.match(titlePage, /A novel/);
+  assert.match(titlePage, /Ada Harbor/);
+  assert.match(titlePage, /Lantern Press/);
+  assert.match(titlePage, /Book 2 of Harbor Saga/);
+  assert.equal(/\bby Ada\b/i.test(titlePage), false);
+  assert.equal(titlePage.includes('bodymatter'), false);
+  const copyright = await zip.file('OEBPS/copyright.xhtml')!.async('string');
+  assert.match(copyright, /Copyright © 2026 Ada Harbor/);
+  assert.match(copyright, /All rights reserved/);
+  assert.match(copyright, /This is fiction/);
+  assert.match(copyright, /Ebook ISBN 9780306406157/);
+  assert.match(copyright, /First edition/);
+  assert.equal(copyright.includes('Paperback'), false);
+  assert.equal(copyright.includes('Hardcover'), false);
+  const nav = await zip.file('OEBPS/nav.xhtml')!.async('string');
+  const toc = nav.split('epub:type="landmarks"')[0] ?? '';
+  assert.match(toc, /also-by\.xhtml/);
+  assert.match(toc, /about\.xhtml/);
+  assert.equal(toc.includes('dedication.xhtml'), false);
+  assert.equal(toc.includes('title.xhtml'), false);
+  assert.equal(toc.includes('copyright.xhtml'), false);
+  assert.equal(toc.includes('epigraph.xhtml'), false);
+  assert.match(await zip.file('OEBPS/ch-0001.xhtml')!.async('string'), /epub:type="bodymatter"/);
+  assert.match(await zip.file('OEBPS/dedication.xhtml')!.async('string'), /For the harbor cats/);
+  assert.equal(zip.file('OEBPS/halftitle.xhtml'), null);
+
+  const emptyOptional = await unzip(await buildEpubBlob(sample(), options({
+    includePublicationPages: true,
+    copyrightYear: 2024,
+  }), now));
+  assert.equal(emptyOptional.file('OEBPS/dedication.xhtml'), null);
+  assert.equal(emptyOptional.file('OEBPS/epigraph.xhtml'), null);
+  assert.equal(emptyOptional.file('OEBPS/also-by.xhtml'), null);
+  assert.equal(emptyOptional.file('OEBPS/about.xhtml'), null);
+  assert.ok(emptyOptional.file('OEBPS/title.xhtml'));
+});
+
+test('a missing copyright year blocks publication pages and not a plain ebook', async () => {
+  await assert.rejects(
+    () => buildEpubBlob(sample(), options({ includePublicationPages: true, copyrightYear: null }), now),
+    /copyright year/,
+  );
+  const zip = await unzip(await buildEpubBlob(sample(), options({ copyrightYear: null }), now));
+  assert.equal(zip.file('OEBPS/title.xhtml'), null);
 });
