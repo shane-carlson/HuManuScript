@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { ManuscriptDocument } from '../core/document.ts';
 import {
   layoutPublication,
@@ -13,6 +13,18 @@ import { manuscriptTypographyStyle } from '../core/typography.ts';
 import type { InlineMark } from '../core/types.ts';
 
 const FORMAT_KEY = 'humanuscript.publicationFormat';
+const READER_SIZE_KEY = 'humanuscript.publicationReaderSize';
+const READER_SIZES = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28];
+
+function loadReaderSize(fallback: number): number {
+  try {
+    const saved = Number(sessionStorage.getItem(READER_SIZE_KEY));
+    if (READER_SIZES.includes(saved)) return saved;
+  } catch {
+    /* session storage may be unavailable */
+  }
+  return READER_SIZES.reduce((best, size) => Math.abs(size - fallback) < Math.abs(best - fallback) ? size : best, READER_SIZES[0]!);
+}
 
 function loadFormat(): PublicationFormatId {
   try {
@@ -40,13 +52,22 @@ export function PublicationView({
   seriesLabel?: string | null;
 }) {
   const [formatId, setFormatId] = useState<PublicationFormatId>(loadFormat);
+  const [readerSize, setReaderSize] = useState(() => loadReaderSize(13));
   useEffect(() => {
     saveFormat(formatId);
   }, [formatId]);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(READER_SIZE_KEY, String(readerSize));
+    } catch {
+      /* session storage may be unavailable */
+    }
+  }, [readerSize]);
   const format = publicationFormat(formatId);
+  const bodyPt = format.kind === 'reader' ? readerSize : format.bodyPt;
   const layout = useMemo(
-    () => layoutPublication(doc, format, { bookTitle, seriesLabel }),
-    [doc, format, bookTitle, seriesLabel],
+    () => layoutPublication(doc, format, { bookTitle, seriesLabel }, bodyPt),
+    [doc, format, bookTitle, seriesLabel, bodyPt],
   );
   const textPages = layout.pages.filter((page) => page.kind === 'text').length;
   const typeStyle = {
@@ -77,17 +98,23 @@ export function PublicationView({
       </div>
       <p className="publication__meta">
         {format.trim}
-        {format.kind === 'print'
-          ? ` · Title page${textPages ? ` and ${textPages} ${textPages === 1 ? 'page' : 'pages'}` : ''}`
-          : ' · Reflowable'}
+        {` · Title page${textPages ? ` and ${textPages} ${textPages === 1 ? 'page' : 'pages'}` : ''}`}
       </p>
-      <div className={`publication__stage${format.kind === 'reflow' ? ' is-reflow' : ''}`}>
-        {layout.pages.map((page, index) => (
-          page.kind === 'screen' ? (
-            <ReaderFrame key="screen" page={page} formatId={format.id} style={typeStyle} />
-          ) : (
-            <PrintPage key={`${page.kind}-${page.number ?? index}`} page={page} format={format} style={typeStyle} />
-          )
+      <div className={`publication__stage${format.kind === 'reader' ? ' is-reader' : ''}`}>
+        {format.kind === 'reader' ? (
+          <ReaderFrame
+            pages={layout.pages}
+            formatId={format.id}
+            format={format}
+            style={typeStyle}
+            bodyPt={bodyPt}
+            onSmaller={() => setReaderSize((size) => READER_SIZES[Math.max(0, READER_SIZES.indexOf(size) - 1)] ?? size)}
+            onLarger={() => setReaderSize((size) => READER_SIZES[Math.min(READER_SIZES.length - 1, READER_SIZES.indexOf(size) + 1)] ?? size)}
+            canSmaller={READER_SIZES.indexOf(bodyPt) > 0}
+            canLarger={READER_SIZES.indexOf(bodyPt) < READER_SIZES.length - 1}
+          />
+        ) : layout.pages.map((page, index) => (
+          <PrintPage key={`${page.kind}-${page.number ?? index}`} page={page} format={format} style={typeStyle} />
         ))}
       </div>
     </section>
@@ -110,8 +137,7 @@ function PrintPage({
       aria-label={label}
       style={{
         ...style,
-        ['--pub-w' as string]: String(format.widthIn),
-        ['--pub-h' as string]: String(format.heightIn),
+        ...pageBox(format),
       }}
     >
       <p className="pub-page__header">{page.header}</p>
@@ -123,26 +149,96 @@ function PrintPage({
   );
 }
 
+function pageBox(format: ReturnType<typeof publicationFormat>): CSSProperties {
+  return {
+    ['--pub-w' as string]: String(format.widthIn),
+    ['--pub-h' as string]: String(format.heightIn),
+    ['--pub-mx' as string]: String(format.marginXIn),
+    ['--pub-my' as string]: String(format.marginYIn),
+  };
+}
+
 function ReaderFrame({
-  page,
+  pages,
   formatId,
+  format,
   style,
+  bodyPt,
+  onSmaller,
+  onLarger,
+  canSmaller,
+  canLarger,
 }: {
-  page: PublicationPage;
+  pages: PublicationPage[];
   formatId: PublicationFormatId;
+  format: ReturnType<typeof publicationFormat>;
   style: CSSProperties;
+  bodyPt: number;
+  onSmaller: () => void;
+  onLarger: () => void;
+  canSmaller: boolean;
+  canLarger: boolean;
 }) {
   const tablet = formatId === 'tablet';
+  const scroller = useRef<HTMLDivElement>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  useEffect(() => {
+    setPageIndex(0);
+    scroller.current?.scrollTo({ top: 0 });
+  }, [pages, bodyPt, formatId]);
+  const syncIndex = () => {
+    const node = scroller.current;
+    if (!node || node.clientHeight <= 0) return;
+    setPageIndex(Math.min(pages.length - 1, Math.max(0, Math.round(node.scrollTop / node.clientHeight))));
+  };
+  const turn = (direction: number) => {
+    const node = scroller.current;
+    if (!node) return;
+    node.scrollBy({ top: direction * node.clientHeight, behavior: 'smooth' });
+  };
   return (
     <div className={`pub-reader${tablet ? ' pub-reader--tablet' : ''}`}>
       <div className="pub-reader__bezel">
         <span>{tablet ? 'Tablet' : 'E-reader'}</span>
-        <span>Reflow</span>
+        <span>{pages.length ? `${pageIndex + 1} / ${pages.length}` : ''}</span>
       </div>
-      <article className="pub-reader__screen" aria-label={tablet ? 'Tablet reader' : 'E-reader'} style={style}>
-        <TitleBlock page={page} />
-        <Flow nodes={page.nodes} />
-      </article>
+      <div className="pub-reader__controls">
+        <button type="button" onClick={() => turn(-1)} disabled={pageIndex <= 0}>Previous page</button>
+        <div className="pub-reader__size" role="group" aria-label="Text size">
+          <button type="button" onClick={onSmaller} disabled={!canSmaller} aria-label="Smaller text">A−</button>
+          <span aria-live="polite">{bodyPt}</span>
+          <button type="button" onClick={onLarger} disabled={!canLarger} aria-label="Larger text">A+</button>
+        </div>
+        <button type="button" onClick={() => turn(1)} disabled={pageIndex >= pages.length - 1}>Next page</button>
+      </div>
+      <div
+        className="pub-reader__viewport"
+        ref={scroller}
+        tabIndex={0}
+        aria-label={tablet ? 'Tablet pages' : 'E-reader pages'}
+        style={pageBox(format)}
+        onScroll={syncIndex}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+            event.preventDefault();
+            turn(1);
+          } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+            event.preventDefault();
+            turn(-1);
+          }
+        }}
+        onClick={(event) => {
+          if (!(event.target instanceof Element) || event.target.closest('button, a')) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          if (x > rect.width * 0.78) turn(1);
+          else if (x < rect.width * 0.22) turn(-1);
+        }}
+      >
+        {pages.map((page, index) => (
+          <PrintPage key={`${page.kind}-${page.number ?? index}`} page={page} format={format} style={style} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -163,7 +259,8 @@ function Flow({ nodes }: { nodes: PublicationNode[] }) {
     if (node.kind === 'chapter' || node.kind === 'section' || node.kind === 'scene' || node.kind === 'ornament' || node.kind === 'gap') {
       seenProse = false;
     }
-    const flush = !seenProse;
+    const continued = (node.kind === 'paragraph' || node.kind === 'blockquote') && node.continued === true;
+    const flush = !seenProse || continued;
     if (node.kind === 'paragraph' || node.kind === 'blockquote') seenProse = true;
     return <FlowNode key={nodeKey(node, index)} node={node} flush={flush} />;
   });
