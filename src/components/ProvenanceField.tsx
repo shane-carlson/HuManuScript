@@ -159,10 +159,6 @@ export function ProvenanceField({
   onInsertPageBreak,
   onInsertDivider,
   onInsertBlockquote,
-  canInsertDictation = false,
-  onInsertDictation,
-  canUnselectInsert = false,
-  onUnselectInsert,
   headingKind = null,
   onUnwrapHeading,
   onDeleteHeading,
@@ -201,10 +197,6 @@ export function ProvenanceField({
   onInsertPageBreak?: () => void;
   onInsertDivider?: () => void;
   onInsertBlockquote?: () => void;
-  canInsertDictation?: boolean;
-  onInsertDictation?: () => void;
-  canUnselectInsert?: boolean;
-  onUnselectInsert?: () => void;
   headingKind?: 'chapter' | 'scene' | 'section' | null;
   onUnwrapHeading?: () => void;
   onDeleteHeading?: () => void;
@@ -607,10 +599,6 @@ export function ProvenanceField({
       onInsertPageBreak={() => onInsertPageBreak?.()}
       onInsertDivider={() => onInsertDivider?.()}
       onInsertBlockquote={() => onInsertBlockquote?.()}
-      canInsertDictation={canInsertDictation}
-      onInsertDictation={onInsertDictation}
-      canUnselectInsert={canUnselectInsert}
-      onUnselectInsert={onUnselectInsert}
       headingKind={headingKind}
       onUnwrapHeading={onUnwrapHeading}
       onDeleteHeading={onDeleteHeading}

@@ -9,8 +9,6 @@ import {
   emptyBlock,
   emptyTableRows,
   headingLabels,
-  insertGapHoverLabel,
-  insertGapSelectedLabel,
   paragraphRangeIds,
   setBlockKind as setKindBlocks,
 } from './manuscript.ts';
@@ -75,15 +73,13 @@ test('table size clamps to 2×2 through 4×8', () => {
   assert.equal(emptyTableRows(3, 5)[0]!.length, 5);
 });
 
-test('drop and insertion labels name the landing spot', () => {
+test('drop labels name the landing spot', () => {
   assert.equal(dropPlaceLabel(emptyBlock('chapter', 'c')), 'Drop chapter here');
   assert.equal(dropPlaceLabel(emptyBlock('scene', 's')), 'Drop scene here');
   assert.equal(dropPlaceLabel(emptyBlock('section', 'n')), 'Drop section here');
   assert.equal(dropPlaceLabel(emptyBlock('paragraph', 'p')), 'Drop paragraph here');
   assert.equal(dropPlaceLabel(emptyBlock('image', 'i')), 'Drop image here');
   assert.equal(dropPlaceLabel(emptyBlock('table', 't')), 'Drop table here');
-  assert.equal(insertGapHoverLabel(), 'Click to insert dictation here');
-  assert.equal(insertGapSelectedLabel(), 'Dictation inserts here');
   assert.equal(headingLabels('scene').confirm, 'Delete this scene and all of its content?');
   assert.equal(headingLabels('chapter').unwrap, 'Remove chapter header');
 });
