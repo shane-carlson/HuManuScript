@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SessionCaptureExport } from './SessionCapture.tsx';
 import { type CertificationPageIdentity } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
+import { PrintInteriorTab } from './PrintInteriorTab.tsx';
 import { EpubExportError } from '../core/epubExport.ts';
 import { type EpubChoicePatch, type EpubChoiceView } from '../core/epubSettings.ts';
 import {
@@ -94,7 +95,7 @@ const TARGETS: TargetInfo[] = [
     id: 'pdf',
     name: 'PDF',
     icon: '📕',
-    blurb: 'A reading PDF. Print-on-demand still needs a trim-size PDF from another tool.',
+    blurb: 'A letter-size reading PDF. The certification summary is page one. The trim-size file is the Format for Print tab.',
     format: 'pdf',
     steps: ['Download the .pdf below.', 'Share or print. The summary is page one; the manuscript starts on the next page.'],
   },
@@ -126,7 +127,8 @@ export function ExportPane({
   onEnsureEpubUuid: () => string;
   onSaveEpubChoices: (patch: EpubChoicePatch) => void;
 }) {
-  const [panel, setPanel] = useState<'files' | 'epub'>('files');
+  const [panel, setPanel] = useState<'files' | 'epub' | 'print'>('files');
+  const [printOpened, setPrintOpened] = useState(false);
   const [target, setTarget] = useState<TargetInfo>(TARGETS[0]!);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -212,15 +214,18 @@ export function ExportPane({
       <div className="export-pane__head">
         <div>
           <h2>Export</h2>
-          <p>Writer files keep the certification summary. EPUB is the reflowable ebook.</p>
+          <p>Writer files keep the certification summary. EPUB is the reflowable ebook. Format for Print is the trim-size PDF.</p>
         </div>
-        <div className="book-pill">
-          <span aria-hidden="true">📖</span>
-          <b>{title}</b>
-          <span className="book-pill__meta">
-            · {stats.chapters} ch · {stats.words} words · {doc.points.length} seal{doc.points.length === 1 ? '' : 's'}
-          </span>
-        </div>
+        <BookGrid
+          title={title}
+          author={form.author}
+          seriesLabel={seriesLabel}
+          words={stats.words}
+          chapters={stats.chapters}
+          scenes={stats.scenes}
+          sections={stats.sections}
+          seals={doc.points.length}
+        />
       </div>
 
       <div className="export-tabs" role="tablist" aria-label="Export">
@@ -247,6 +252,21 @@ export function ExportPane({
           onClick={() => setPanel('epub')}
         >
           EPUB
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="export-tab-print"
+          aria-selected={panel === 'print'}
+          aria-controls="export-panel-print"
+          tabIndex={panel === 'print' ? 0 : -1}
+          className={panel === 'print' ? 'is-active' : ''}
+          onClick={() => {
+            setPrintOpened(true);
+            setPanel('print');
+          }}
+        >
+          Format for Print
         </button>
       </div>
 
@@ -320,8 +340,61 @@ export function ExportPane({
         />
       </div>
 
+      {printOpened ? (
+        <div role="tabpanel" id="export-panel-print" aria-labelledby="export-tab-print" hidden={panel !== 'print'}>
+          <PrintInteriorTab
+            doc={doc}
+            title={title}
+            seriesLabel={seriesLabel}
+            form={form}
+            onUpdate={updateForm}
+          />
+        </div>
+      ) : null}
+
       <SessionCaptureExport doc={doc} title={title} />
     </div>
+  );
+}
+
+function BookGrid({
+  title,
+  author,
+  seriesLabel,
+  words,
+  chapters,
+  scenes,
+  sections,
+  seals,
+}: {
+  title: string;
+  author: string;
+  seriesLabel: string | null;
+  words: number;
+  chapters: number;
+  scenes: number;
+  sections: number;
+  seals: number;
+}) {
+  const cells = [
+    ['Title', title],
+    ['Author', author.trim() || 'Not set'],
+    ['Series', seriesLabel || 'Standalone'],
+    ['Words', String(words)],
+    ['Chapters', String(chapters)],
+    ['Scenes', String(scenes)],
+    ['Sections', String(sections)],
+    ['Seals', String(seals)],
+  ];
+  return (
+    <dl className="export-book-grid" aria-label="This book">
+      {cells.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
