@@ -306,14 +306,6 @@ export function headingLabels(kind: 'chapter' | 'scene' | 'section'): {
   };
 }
 
-export function insertGapHoverLabel(): string {
-  return 'Click to insert dictation here';
-}
-
-export function insertGapSelectedLabel(): string {
-  return 'Dictation inserts here';
-}
-
 export function dropPlaceLabel(block: ManuscriptBlock | undefined): string {
   if (!block) return 'Drop here';
   if (block.type === 'chapter') return 'Drop chapter here';
