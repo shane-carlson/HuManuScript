@@ -206,6 +206,8 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
+  const [focusCertCollapsed, setFocusCertCollapsed] = useState(true);
+  const [focusNotesCollapsed, setFocusNotesCollapsed] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed());
   const [notesWidth, setNotesWidth] = useState(() => loadNotesWidth());
   const [certWidth, setCertWidth] = useState(() => loadCertificationWidth());
@@ -220,7 +222,13 @@ export function Editor({
   if (focusMode !== trackedFocus) {
     setTrackedFocus(focusMode);
     if (!focusMode) setViewPercent(100);
+    if (focusMode) {
+      setFocusNotesCollapsed(true);
+      setFocusCertCollapsed(true);
+    }
   }
+  const notesCollapsedView = focusMode ? focusNotesCollapsed : notesCollapsed;
+  const certCollapsedView = focusMode ? focusCertCollapsed : certCollapsed;
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -802,10 +810,10 @@ export function Editor({
     />
     <div
       ref={editorLayoutRef}
-      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsed ? ' is-cert-collapsed' : ''}${notesCollapsed ? ' is-notes-collapsed' : ''}`}
+      className={`editor-layout${focusMode ? ' is-focus' : ' has-notes'}${certCollapsedView ? ' is-cert-collapsed' : ''}${notesCollapsedView ? ' is-notes-collapsed' : ''}`}
       style={{
-        '--pane-notes': notesCollapsed ? '52px' : `${notesWidth}px`,
-        '--pane-cert': certCollapsed ? '52px' : `${certWidth}px`,
+        '--pane-notes': notesCollapsedView ? '52px' : `${notesWidth}px`,
+        '--pane-cert': certCollapsedView ? '52px' : `${certWidth}px`,
       } as CSSProperties}
     >
       {focusMode && (
@@ -1729,7 +1737,7 @@ export function Editor({
         </div>
       </main>
 
-      {!focusMode && !notesCollapsed && (
+      {!focusMode && !notesCollapsedView && (
         <PaneGrab
           label="Resize notes pane"
           className="pane-grab--notes"
@@ -1737,18 +1745,20 @@ export function Editor({
           min={LAYOUT_PANE_LIMITS.notesWidth.min}
           max={LAYOUT_PANE_LIMITS.notesWidth.max}
           direction={-1}
-          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, certCollapsed ? 52 : certWidth, LAYOUT_PANE_LIMITS.notesWidth)}
+          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, certCollapsedView ? 52 : certWidth, LAYOUT_PANE_LIMITS.notesWidth)}
           onChange={setNotesWidth}
           onCommit={saveNotesWidth}
         />
       )}
-      {!focusMode && (
-        <NotesRail
+      <NotesRail
           doc={doc}
           activeBlockId={noteBlockId}
           saveError={saveError}
-          collapsed={notesCollapsed}
-          onToggleCollapsed={() => setNotesCollapsed((collapsed) => !collapsed)}
+          collapsed={notesCollapsedView}
+          onToggleCollapsed={() => {
+            if (focusMode) setFocusNotesCollapsed((collapsed) => !collapsed);
+            else setNotesCollapsed((collapsed) => !collapsed);
+          }}
           onChange={publish}
           onShowBlock={(blockId) => {
             if (viewMode === 'raw' || viewMode === 'preview' || viewMode === 'publication') setViewMode('manuscript');
@@ -1760,8 +1770,7 @@ export function Editor({
             });
           }}
         />
-      )}
-      {!focusMode && !certCollapsed && (
+      {!focusMode && !certCollapsedView && (
         <PaneGrab
           label="Resize certification pane"
           className="pane-grab--cert"
@@ -1769,22 +1778,24 @@ export function Editor({
           min={LAYOUT_PANE_LIMITS.certificationWidth.min}
           max={LAYOUT_PANE_LIMITS.certificationWidth.max}
           direction={-1}
-          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, notesCollapsed ? 52 : notesWidth, LAYOUT_PANE_LIMITS.certificationWidth)}
+          getMax={() => paneRoom(editorLayoutRef.current?.clientWidth ?? Number.NaN, notesCollapsedView ? 52 : notesWidth, LAYOUT_PANE_LIMITS.certificationWidth)}
           onChange={setCertWidth}
           onCommit={saveCertificationWidth}
         />
       )}
-      {!focusMode && (
-      <aside className={`points${certCollapsed ? ' is-collapsed' : ''}`}>
+      <aside className={`points${certCollapsedView ? ' is-collapsed' : ''}`}>
         <button
           type="button"
-          className={`cert-collapse-toggle${certCollapsed ? ' is-collapsed-mark' : ''}`}
-          onClick={() => setCertCollapsed((c) => !c)}
-          aria-expanded={!certCollapsed}
-          aria-label={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
-          data-tooltip={certCollapsed ? 'Expand certification pane' : 'Collapse certification pane'}
+          className={`cert-collapse-toggle${certCollapsedView ? ' is-collapsed-mark' : ''}`}
+          onClick={() => {
+            if (focusMode) setFocusCertCollapsed((collapsed) => !collapsed);
+            else setCertCollapsed((collapsed) => !collapsed);
+          }}
+          aria-expanded={!certCollapsedView}
+          aria-label={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
+          data-tooltip={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
         >
-          {certCollapsed ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
+          {certCollapsedView ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>
         <div className="points-body">
           <div className="points-head">
@@ -1854,7 +1865,6 @@ export function Editor({
           <button type="button" className="primary" onClick={() => downloadJson(`${name}.certification.json`, certificationExport(doc, new Date().toISOString()))}>Download certification record</button>
         </div>
       </aside>
-      )}
     </div>
     {tablePicker && (
       <TableGridPicker
