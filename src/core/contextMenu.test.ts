@@ -10,8 +10,8 @@ import {
   wordAroundOffset,
 } from './contextMenu.ts';
 import { suggestSpellings } from './spellSuggest.ts';
-import { countOriginWords } from './certification.ts';
-import { editField, emptyDocument, insertStructure } from './document.ts';
+import { contentHash, countOriginWords, SPELL_CHECK_COMMENT } from './certification.ts';
+import { acceptSpellcheckSuggestion, editField, emptyDocument, insertStructure } from './document.ts';
 import { sequenceIds } from './uid.ts';
 
 test('wordAroundOffset returns the word under the caret, including the trailing boundary', () => {
@@ -134,7 +134,7 @@ test('placeContextMenu flips above and to the left when the anchor is near that 
   assert.equal(placed.left, 760 - 200);
 });
 
-test('spellcheck replacement is an other insertion and is not keyboard-certified', async () => {
+test('spellcheck replacement stays inside the keyboard seal and records the spellcheck note', async () => {
   const ids = sequenceIds('id');
   const now = '2026-10-16T12:00:00.000Z';
   let doc = insertStructure(emptyDocument(ids()), 'paragraph', 0, ids());
@@ -154,30 +154,38 @@ test('spellcheck replacement is an other insertion and is not keyboard-certified
   const before = countOriginWords(doc.blocks[0]!.text, doc.provenance[blockId]!.text);
   assert.equal(before.certified, 2);
   assert.equal(doc.points.length, 1);
+  const pointId = doc.points[0]!.id;
 
   const change = spellcheckReplacement({ start: 0, end: 3, insert: 'the', at: now });
-  assert.equal(change.origin, 'other');
-  assert.equal(change.event.inputType, 'insertReplacementText');
+  assert.equal(change.origin, null);
+  assert.equal(change.check, 'spellcheck');
+  assert.equal(change.event, null);
 
-  doc = await editField({
+  doc = await acceptSpellcheckSuggestion({
     doc,
     blockId,
     field: 'text',
-    ...change,
+    start: change.start,
+    end: change.end,
+    insert: change.insert,
     now,
     newId: ids,
   });
   const text = doc.blocks[0]!.text;
   assert.equal(text, 'the light');
   const spans = doc.provenance[blockId]!.text;
-  const replacement = spans.find((span) => text.slice(span.start, span.end) === 'the');
-  assert.equal(replacement?.origin, 'other');
-  assert.equal(replacement?.certificationId, undefined);
-  const remnant = spans.find((span) => text.slice(span.start, span.end).includes('light'));
-  assert.equal(remnant?.origin, 'keyboard');
+  assert.equal(spans.length, 1);
+  assert.equal(spans[0]!.origin, 'keyboard');
+  assert.equal(spans[0]!.certificationId, pointId);
+  assert.equal(spans.some((span) => span.origin === 'paste' || span.origin === 'drop' || span.origin === 'other'), false);
   const after = countOriginWords(text, spans);
-  assert.equal(after.certified, 1);
-  assert.equal(after.uncertified, 1);
+  assert.equal(after.certified, 2);
+  assert.equal(after.uncertified, 0);
   assert.equal(doc.points.length, 1);
-  assert.equal(doc.points[0]!.text.includes('teh'), false);
+  assert.equal(doc.points[0]!.id, pointId);
+  assert.equal(doc.points[0]!.origin, 'keyboard');
+  assert.equal(doc.points[0]!.text, 'the light');
+  assert.equal(doc.points[0]!.contentHash, await contentHash('the light'));
+  assert.equal(doc.points[0]!.spellcheck?.comment, SPELL_CHECK_COMMENT);
+  assert.equal(doc.points[0]!.spellcheck?.generative, false);
 });

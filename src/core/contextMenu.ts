@@ -1,5 +1,3 @@
-import type { InputEvidence, InsertionOrigin } from './certification.ts';
-
 /** Gap between the menu and the viewport edge. */
 export const MENU_MARGIN = 8;
 
@@ -110,8 +108,9 @@ export function collectSpellSuggestions(args: {
 }
 
 /**
- * A spelling replacement is an ordinary non-keyboard edit.
- * `origin: 'other'` matches find-and-replace: the new letters are not keyboard-sealed.
+ * A spelling replacement revises the passage in place.
+ * It is not a paste, drop, or other insertion. A keyboard or dictation seal stays sealed.
+ * `at` is unused: the certification note records the check, not an insertion event.
  */
 export function spellcheckReplacement(args: {
   start: number;
@@ -122,21 +121,19 @@ export function spellcheckReplacement(args: {
   start: number;
   end: number;
   insert: string;
-  origin: InsertionOrigin;
-  event: InputEvidence;
+  origin: null;
+  check: 'spellcheck';
+  event: null;
   caret: number;
 } {
+  void args.at;
   return {
     start: args.start,
     end: args.end,
     insert: args.insert,
-    origin: 'other',
-    event: {
-      at: args.at,
-      inputType: 'insertReplacementText',
-      data: args.insert,
-      trusted: true,
-    },
+    origin: null,
+    check: 'spellcheck',
+    event: null,
     caret: args.start + args.insert.length,
   };
 }

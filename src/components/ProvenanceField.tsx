@@ -14,6 +14,8 @@ export interface FieldCommit {
   end: number;
   insert: string;
   origin: InsertionOrigin | null;
+  /** A spelling revision. Not a new paste, drop, or other insertion. */
+  check?: 'spellcheck';
   pasteHint?: string;
   event: InputEvidence | null;
   caret: number;
@@ -203,7 +205,12 @@ export function ProvenanceField({
   const caret = useRef<number | null>(null);
   const skipPaste = useRef(false);
   const textRef = useRef(text);
-  const pending = useRef<{ origin: InsertionOrigin | null; inputType: string; trusted: boolean } | null>(null);
+  const pending = useRef<{
+    origin: InsertionOrigin | null;
+    inputType: string;
+    trusted: boolean;
+    check?: 'spellcheck';
+  } | null>(null);
   const lastKey = useRef<string | null>(null);
   const lastKeyAt = useRef<number | null>(null);
   const seenToken = useRef(renderToken);
@@ -320,6 +327,10 @@ export function ProvenanceField({
           sinceLastMs,
         });
         if (classified.kind === 'ignore') return;
+        if (classified.kind === 'spellcheck') {
+          pending.current = { origin: null, inputType, trusted: input.isTrusted, check: 'spellcheck' };
+          return;
+        }
         if (classified.kind === 'split') {
           e.preventDefault();
           const at = selection().start;
@@ -359,6 +370,20 @@ export function ProvenanceField({
         textRef.current = next;
         const meta = pending.current;
         pending.current = null;
+        if (meta?.check === 'spellcheck' || meta?.inputType === 'insertReplacementText') {
+          const caretPos = selection().end;
+          caret.current = caretPos;
+          onCommit({
+            start: change.start,
+            end: change.end,
+            insert: change.insert,
+            origin: null,
+            check: 'spellcheck',
+            event: null,
+            caret: caretPos,
+          });
+          return;
+        }
         const typedKey = lastKey.current;
         lastKey.current = null;
         const sinceLastMs = lastKeyAt.current != null ? Date.now() - lastKeyAt.current : null;

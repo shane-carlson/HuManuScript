@@ -1251,7 +1251,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .view-toggle {
   gap: 0;
 }
-.canvas-note, .points-empty, .lineage { color: var(--text-dim); font-size: 0.86rem; }
+.canvas-note, .points-empty, .lineage, .point-check { color: var(--text-dim); font-size: 0.86rem; }
 .point-list { list-style: none; padding: 0 0 16px; margin: 0 0 12px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
 .point-list li {
   border: 1px solid var(--border);

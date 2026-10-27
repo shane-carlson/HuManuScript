@@ -5,6 +5,7 @@ import {
   chapterOrder,
   displayTitle,
   dragPreviewLabel,
+  acceptSpellcheckSuggestion,
   editField,
   insertHeadingWithParagraph,
   insertStructure,
@@ -359,6 +360,21 @@ export function Editor({
   };
 
   const applyCommit = (blockId: string, field: 'title' | 'text', change: FieldCommit) => {
+    if (change.check === 'spellcheck') {
+      commit((current) =>
+        acceptSpellcheckSuggestion({
+          doc: current,
+          blockId,
+          field,
+          start: change.start,
+          end: change.end,
+          insert: change.insert,
+          now: new Date().toISOString(),
+          newId: ids.current,
+        }),
+      );
+      return;
+    }
     commit((current) =>
       editField({
         doc: current,
@@ -1182,6 +1198,8 @@ export function Editor({
                   <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
+                  {point.spellcheck?.used && <p className="point-check">{point.spellcheck.comment}</p>}
+                  {point.grammar?.used && <p className="point-check">{point.grammar.comment}</p>}
                   {point.lineage && <p className="lineage">{point.lineage}</p>}
                 </li>
               ))}
