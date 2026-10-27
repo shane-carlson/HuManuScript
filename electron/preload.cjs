@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('humanuscript', {
     read: (provider, filename) => ipcRenderer.invoke('humanuscript:cloud-read', provider, filename),
   },
   setCaptureGrant: (grant) => ipcRenderer.invoke('humanuscript:capture-grant', grant),
+  license: {
+    getStatus: () => ipcRenderer.invoke('humanuscript:license-status'),
+    activate: (key) => ipcRenderer.invoke('humanuscript:license-activate', key),
+    buy: () => ipcRenderer.invoke('humanuscript:license-buy'),
+  },
   getSpellSuggestions: (word) => {
     if (typeof word !== 'string' || !word.trim()) return [];
     try {

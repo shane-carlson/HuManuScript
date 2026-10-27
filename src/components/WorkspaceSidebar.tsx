@@ -7,6 +7,8 @@ import {
   type Library,
 } from '../core/library.ts';
 import type { WorkspaceTab } from '../storage.ts';
+import type { useLicense } from '../hooks/useLicense.ts';
+import { LicenseBanner } from './LicenseBanner.tsx';
 
 export function WorkspaceSidebar({
   library,
@@ -16,6 +18,7 @@ export function WorkspaceSidebar({
   onTabChange,
   onLibraryChange,
   newId,
+  license,
 }: {
   library: Library;
   tab: WorkspaceTab;
@@ -24,6 +27,7 @@ export function WorkspaceSidebar({
   onTabChange: (tab: WorkspaceTab) => void;
   onLibraryChange: (library: Library) => void;
   newId: () => string;
+  license: ReturnType<typeof useLicense>;
 }) {
   const active = library.books.find((b) => b.id === library.activeBookId) ?? library.books[0];
 
@@ -85,6 +89,8 @@ export function WorkspaceSidebar({
           <button
             type="button"
             className="workspace-books__new"
+            disabled={!license.mayWrite}
+            title={license.mayWrite ? undefined : 'A license is required to start another book'}
             onClick={() => onLibraryChange(createBook(library, newId(), 'Untitled book'))}
           >
             New book
@@ -119,6 +125,7 @@ export function WorkspaceSidebar({
         </div>
       </section>
       </div>
+      <LicenseBanner license={license} />
     </aside>
   );
 }

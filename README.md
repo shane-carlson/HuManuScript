@@ -89,7 +89,25 @@ npm run dev:electron   # Vite + Electron against localhost:47321
 
 ## What came from Speak Fiction
 
-The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. A speech engine and licensing are out of scope; dictated text that the platform already inserts is sealed as its own origin. The Electron shell, `pack:mac`, and `pack:win` scripts build the local installers.
+The public GitHub repository `shane-carlson/SpeakFiction` is the same project as the private Origin mirror (`githubNodeId` `R_kgDOT7fwgg`). Its editor is a React 18, TypeScript, and Vite app inside an Electron shell. HuManuScript keeps that renderer stack (React, TypeScript, Vite) and the manuscript operations that matter for writing: block structure, rich-text marks, and reorder. A speech engine is out of scope; dictated text that the platform already inserts is sealed as its own origin. The Electron shell, `pack:mac`, and `pack:win` scripts build the local installers.
+
+## Polar license
+
+Packaged builds run a **15-day trial** from the first launch, then require a Polar license to keep writing. The library, version history, and export stay available after the trial. One key activates **3 machines**. Unpackaged `npm run dev` and `npm run dev:electron` skip the gate. Force it while developing with `HUMANUSCRIPT_LICENSE_GATE=1`.
+
+HuManuScript uses [Polar](https://polar.sh) as merchant of record. Polar emails the key. The app never ships a Polar organization access token or webhook secret.
+
+Buy opens [the checkout link](https://buy.polar.sh/polar_cl_eIHOifn9kcCTQijdu9kyp7anFWbu9kqVqEIke2EDeo8) in the browser. Paste the key Polar emailed. The desktop app calls Polar’s customer-portal `activate` and `validate` endpoints with the organization id and the key, then remembers a valid key in `license.json` under Electron’s user data directory:
+
+| Platform | Path |
+| --- | --- |
+| macOS | `~/Library/Application Support/HuManuScript/license.json` |
+| Windows | `%APPDATA%\HuManuScript\license.json` |
+| Linux | `~/.config/HuManuScript/license.json` |
+
+Offline, a licensed copy keeps working for 7 days. Updates do not require a new key. The license file stays in user data when the app binary is replaced.
+
+Public ids live in `electron/polarConfig.cjs` (organization `cfd3c2a6-2654-4565-8c15-e8ca7d25bff6`, product `6488b14c-d63a-4814-b29f-c9ba42ec132f`). Override them when packing with `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID`, `POLAR_BENEFIT_ID`, `POLAR_CHECKOUT_URL`, or `POLAR_SERVER=sandbox`.
 
 ## Certification, briefly
 

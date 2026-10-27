@@ -277,6 +277,109 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   min-height: 0;
   width: 100%;
 }
+.workspace-sidebar.is-collapsed .license-banner {
+  display: none;
+}
+.license-banner {
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.license-banner strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+.license-banner-trial {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.license-banner-expired {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+}
+.license-banner-grace {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+}
+.license-banner-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.license-banner-buy {
+  width: 100%;
+  justify-content: center;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+.license-banner .license-actions {
+  margin-top: 8px;
+}
+.license-banner .license-key-form {
+  flex-wrap: wrap;
+}
+.license-gate {
+  margin: 0 0 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-elev));
+  border-radius: 16px;
+}
+.license-gate h3 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+.license-gate .sub {
+  margin: 8px 0 14px;
+  color: var(--text-dim);
+}
+.license-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.license-key-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.license-key-form input {
+  flex: 1 1 160px;
+  min-width: 0;
+  width: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.license-error {
+  color: var(--warn);
+  font-size: 0.82rem;
+}
+.license-privacy,
+.license-actions .hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+.writing-locked {
+  opacity: 0.72;
+}
+@media (max-width: 720px) {
+  .license-key-form {
+    flex-direction: column;
+  }
+  .license-key-form button,
+  .license-banner-buy {
+    width: 100%;
+  }
+}
 .manuscript-stats-bar {
   background: var(--bg-elev);
   border: 1px solid var(--border);
