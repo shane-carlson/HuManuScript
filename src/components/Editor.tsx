@@ -208,6 +208,8 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
+  const [focusCertCollapsed, setFocusCertCollapsed] = useState(true);
+  const [focusNotesCollapsed, setFocusNotesCollapsed] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed());
   const [notesWidth, setNotesWidth] = useState(() => loadNotesWidth());
   const [certWidth, setCertWidth] = useState(() => loadCertificationWidth());
@@ -222,9 +224,13 @@ export function Editor({
   if (focusMode !== trackedFocus) {
     setTrackedFocus(focusMode);
     if (!focusMode) setViewPercent(100);
+    if (focusMode) {
+      setFocusNotesCollapsed(true);
+      setFocusCertCollapsed(true);
+    }
   }
-  const notesCollapsedView = focusMode ? false : notesCollapsed;
-  const certCollapsedView = focusMode ? false : certCollapsed;
+  const notesCollapsedView = focusMode ? focusNotesCollapsed : notesCollapsed;
+  const certCollapsedView = focusMode ? focusCertCollapsed : certCollapsed;
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1810,7 +1816,10 @@ export function Editor({
           activeBlockId={noteBlockId}
           saveError={saveError}
           collapsed={notesCollapsedView}
-          onToggleCollapsed={focusMode ? undefined : () => setNotesCollapsed((collapsed) => !collapsed)}
+          onToggleCollapsed={() => {
+            if (focusMode) setFocusNotesCollapsed((collapsed) => !collapsed);
+            else setNotesCollapsed((collapsed) => !collapsed);
+          }}
           onChange={publish}
           onShowBlock={(blockId) => {
             if (viewMode === 'raw' || viewMode === 'preview' || viewMode === 'publication') setViewMode('manuscript');
@@ -1836,18 +1845,19 @@ export function Editor({
         />
       )}
       <aside className={`points${certCollapsedView ? ' is-collapsed' : ''}`}>
-        {!focusMode && (
         <button
           type="button"
           className={`cert-collapse-toggle${certCollapsedView ? ' is-collapsed-mark' : ''}`}
-          onClick={() => setCertCollapsed((collapsed) => !collapsed)}
+          onClick={() => {
+            if (focusMode) setFocusCertCollapsed((collapsed) => !collapsed);
+            else setCertCollapsed((collapsed) => !collapsed);
+          }}
           aria-expanded={!certCollapsedView}
           aria-label={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
           data-tooltip={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
         >
           {certCollapsedView ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>
-        )}
         <div className="points-body">
           <div className="points-head">
             <div className="points-head__brand">
