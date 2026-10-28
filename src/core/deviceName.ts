@@ -21,6 +21,8 @@ export type AvailableUpdate = {
 
 export type HumanuscriptBridge = {
   getDeviceName?: () => Promise<string> | string;
+  /** Keyboard and microphone names. Absent in a browser, which cannot ask the OS. */
+  getInputDevices?: () => Promise<{ keyboard?: string | null; microphone?: string | null } | null> | { keyboard?: string | null; microphone?: string | null };
   /** Newer GitHub Release, if the packaged app found one. Absent in a browser. */
   getUpdateAvailable?: () => AvailableUpdate | null;
   onUpdateAvailable?: (listener: (update: AvailableUpdate) => void) => () => void;

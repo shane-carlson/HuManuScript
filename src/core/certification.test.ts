@@ -11,6 +11,7 @@ import {
   stripInvalidKeyboardSeals,
   syncBlockPoints,
 } from './certification.ts';
+import { inputSourceLine, typingRateLine } from './inputSource.ts';
 import { certificationBannerText, buildCertificationPageModel, certificationPagePlain, deviceStatLine } from './certificationPage.ts';
 import { UNAVAILABLE_DEVICE_LABEL } from './deviceName.ts';
 import {
@@ -603,4 +604,319 @@ test('chapter drag moves the following paragraph with the chapter', () => {
     next.map((b) => b.id),
     ['c2', 'c1', 'p1'],
   );
+});
+
+const HELLO_HASH = '185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969';
+
+test('the content hash is still the SHA-256 of the span text alone', async () => {
+  assert.equal(await contentHash('Hello'), HELLO_HASH);
+});
+
+test('a new seal records the keyboard and the key pace without hashing them', async () => {
+  const ids = sequenceIds('src');
+  const devices = { keyboard: 'Keychron K2', microphone: 'Blue Yeti' };
+  const first = applyTextChange({
+    text: '',
+    spans: [],
+    marks: [],
+    start: 0,
+    end: 0,
+    insert: 'A',
+    origin: 'keyboard',
+    newId: ids,
+  });
+  let sealed = await syncBlockPoints({
+    blockId: 'b',
+    text: first.text,
+    spans: first.spans,
+    points: [],
+    evidence: {
+      spanIds: first.evidenceSpanIds,
+      event: { at: '2026-10-28T15:00:00.000Z', inputType: 'insertText', data: 'A', trusted: true },
+    },
+    now: '2026-10-28T15:00:00.000Z',
+    newId: ids,
+    typingDevice: 'studio.local',
+    inputDevices: devices,
+  });
+  assert.equal(sealed.points[0]!.contentHash, await contentHash('A'));
+  assert.deepEqual(sealed.points[0]!.priorHashes, []);
+  assert.deepEqual(sealed.points[0]!.inputSource, { kind: 'keyboard', name: 'Keychron K2' });
+  assert.equal(inputSourceLine(sealed.points[0]!), 'Input: Keychron K2');
+  assert.equal(typingRateLine(sealed.points[0]!), 'Typing rate unknown');
+
+  const second = applyTextChange({
+    text: first.text,
+    spans: sealed.spans,
+    marks: [],
+    start: 1,
+    end: 1,
+    insert: 'B',
+    origin: 'keyboard',
+    newId: ids,
+  });
+  sealed = await syncBlockPoints({
+    blockId: 'b',
+    text: second.text,
+    spans: second.spans,
+    points: sealed.points,
+    evidence: {
+      spanIds: second.evidenceSpanIds,
+      event: { at: '2026-10-28T15:00:01.000Z', inputType: 'insertText', data: 'B', trusted: true },
+    },
+    now: '2026-10-28T15:00:01.000Z',
+    newId: ids,
+    typingDevice: 'studio.local',
+    inputDevices: devices,
+  });
+  assert.equal(sealed.points[0]!.text, 'AB');
+  assert.equal(sealed.points[0]!.contentHash, await contentHash('AB'));
+  assert.deepEqual(sealed.points[0]!.priorHashes, []);
+  assert.equal(sealed.points[0]!.inputSource?.name, 'Keychron K2');
+  assert.equal(typingRateLine(sealed.points[0]!), 'Typing rate: 60 keys/min');
+});
+
+test('unknown input and an unknown rate still seal the text', async () => {
+  const ids = sequenceIds('unk');
+  const changed = applyTextChange({
+    text: '',
+    spans: [],
+    marks: [],
+    start: 0,
+    end: 0,
+    insert: 'Hi',
+    origin: 'keyboard',
+    newId: ids,
+  });
+  const sealed = await syncBlockPoints({
+    blockId: 'b',
+    text: changed.text,
+    spans: changed.spans,
+    points: [],
+    evidence: {
+      spanIds: changed.evidenceSpanIds,
+      event: { at: now, inputType: 'insertText', data: 'Hi', trusted: true },
+    },
+    now,
+    newId: ids,
+    inputDevices: { keyboard: '  ', microphone: null },
+  });
+  assert.equal(sealed.points.length, 1);
+  assert.equal(sealed.points[0]!.text, 'Hi');
+  assert.equal(sealed.points[0]!.contentHash, await contentHash('Hi'));
+  assert.deepEqual(sealed.points[0]!.priorHashes, []);
+  assert.deepEqual(sealed.points[0]!.inputSource, { kind: 'keyboard', name: null });
+  assert.equal(sealed.points[0]!.keyboardPace, undefined);
+  assert.equal(inputSourceLine(sealed.points[0]!), 'Input source unknown');
+  assert.equal(typingRateLine(sealed.points[0]!), 'Typing rate unknown');
+});
+
+test('dictation records the microphone and does not invent a typing rate', async () => {
+  const ids = sequenceIds('mic');
+  const changed = applyTextChange({
+    text: '',
+    spans: [],
+    marks: [],
+    start: 0,
+    end: 0,
+    insert: 'spoken words',
+    origin: 'dictation',
+    newId: ids,
+  });
+  const sealed = await syncBlockPoints({
+    blockId: 'b',
+    text: changed.text,
+    spans: changed.spans,
+    points: [],
+    evidence: {
+      spanIds: changed.evidenceSpanIds,
+      event: { at: now, inputType: 'insertFromDictation', data: 'spoken words', trusted: true },
+    },
+    now,
+    newId: ids,
+    inputDevices: { keyboard: 'Keychron K2', microphone: 'Blue Yeti' },
+  });
+  assert.equal(sealed.points[0]!.contentHash, await contentHash('spoken words'));
+  assert.deepEqual(sealed.points[0]!.priorHashes, []);
+  assert.deepEqual(sealed.points[0]!.inputSource, { kind: 'microphone', name: 'Blue Yeti' });
+  assert.equal(inputSourceLine(sealed.points[0]!), 'Input: Blue Yeti');
+  assert.equal(typingRateLine(sealed.points[0]!), 'Typing rate unknown');
+  assert.equal(sealed.points[0]!.keyboardPace, undefined);
+});
+
+test('an already-sealed span keeps its hash and prior hashes when a keyboard can be named', async () => {
+  const hash = await contentHash('Hello');
+  const prior = [await contentHash('Hell')];
+  const point = {
+    id: 'p1',
+    blockId: 'b',
+    spanId: 's1',
+    text: 'Hello',
+    contentHash: hash,
+    sealedAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    origin: 'keyboard' as const,
+    evidence: { inputTypes: ['insertText'], eventCount: 5, events: [] },
+    priorHashes: prior,
+    typingDevice: 'writers-mac.local',
+  };
+  const synced = await syncBlockPoints({
+    blockId: 'b',
+    text: 'Hello',
+    spans: [{ id: 's1', start: 0, end: 5, origin: 'keyboard', certificationId: 'p1' }],
+    points: [point],
+    evidence: null,
+    now: '2026-10-28T15:00:00.000Z',
+    newId: () => 'unused',
+    typingDevice: 'other-machine',
+    inputDevices: { keyboard: 'Keychron K2', microphone: 'Blue Yeti' },
+  });
+  assert.equal(synced.points.length, 1);
+  assert.equal(synced.points[0]!.contentHash, hash);
+  assert.equal(synced.points[0]!.contentHash, HELLO_HASH);
+  assert.deepEqual(synced.points[0]!.priorHashes, prior);
+  assert.equal(synced.points[0]!.inputSource, undefined);
+  assert.equal(synced.points[0]!.keyboardPace, undefined);
+  assert.equal(synced.points[0]!.typingDevice, 'writers-mac.local');
+  assert.equal(synced.points[0]!.updatedAt, '2026-01-01T00:00:00.000Z');
+  assert.equal(inputSourceLine(synced.points[0]!), 'Input source unknown');
+  assert.equal(typingRateLine(synced.points[0]!), 'Typing rate unknown');
+});
+
+test('more typing on an old seal does not invent a source or rewrite prior hashes', async () => {
+  const hash = await contentHash('Hi');
+  const prior = ['prior-hash'];
+  const point = {
+    id: 'p1',
+    blockId: 'b',
+    spanId: 's1',
+    text: 'Hi',
+    contentHash: hash,
+    sealedAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    origin: 'keyboard' as const,
+    evidence: { inputTypes: ['insertText'], eventCount: 2, events: [] },
+    priorHashes: prior,
+  };
+  const changed = applyTextChange({
+    text: 'Hi',
+    spans: [{ id: 's1', start: 0, end: 2, origin: 'keyboard', certificationId: 'p1' }],
+    marks: [],
+    start: 2,
+    end: 2,
+    insert: '!',
+    origin: 'keyboard',
+    newId: () => 's2',
+  });
+  const synced = await syncBlockPoints({
+    blockId: 'b',
+    text: changed.text,
+    spans: changed.spans,
+    points: [point],
+    evidence: {
+      spanIds: changed.evidenceSpanIds,
+      event: { at: '2026-10-28T15:00:01.000Z', inputType: 'insertText', data: '!', trusted: true },
+    },
+    now: '2026-10-28T15:00:01.000Z',
+    newId: () => 'new',
+    inputDevices: { keyboard: 'Keychron K2', microphone: null },
+  });
+  assert.equal(synced.points[0]!.text, 'Hi!');
+  assert.equal(synced.points[0]!.contentHash, await contentHash('Hi!'));
+  assert.deepEqual(synced.points[0]!.priorHashes, prior);
+  assert.equal(synced.points[0]!.inputSource, undefined);
+  assert.equal(synced.points[0]!.keyboardPace, undefined);
+});
+
+test('a device name that arrives after the seal does not change the hash', async () => {
+  const ids = sequenceIds('late');
+  const changed = applyTextChange({
+    text: '',
+    spans: [],
+    marks: [],
+    start: 0,
+    end: 0,
+    insert: 'A',
+    origin: 'keyboard',
+    newId: ids,
+  });
+  const sealedAt = '2026-10-28T15:00:00.000Z';
+  const first = await syncBlockPoints({
+    blockId: 'b',
+    text: changed.text,
+    spans: changed.spans,
+    points: [],
+    evidence: {
+      spanIds: changed.evidenceSpanIds,
+      event: { at: sealedAt, inputType: 'insertText', data: 'A', trusted: true },
+    },
+    now: sealedAt,
+    newId: ids,
+    inputDevices: { keyboard: null, microphone: null },
+  });
+  const hash = first.points[0]!.contentHash;
+  const prior = [...first.points[0]!.priorHashes];
+  const named = await syncBlockPoints({
+    blockId: 'b',
+    text: changed.text,
+    spans: first.spans,
+    points: first.points,
+    evidence: null,
+    now: '2026-10-28T15:00:01.000Z',
+    newId: ids,
+    inputDevices: { keyboard: 'Apple Internal Keyboard', microphone: null },
+  });
+  assert.equal(named.points[0]!.contentHash, hash);
+  assert.deepEqual(named.points[0]!.priorHashes, prior);
+  assert.equal(named.points[0]!.updatedAt, sealedAt);
+  assert.deepEqual(named.points[0]!.inputSource, { kind: 'keyboard', name: 'Apple Internal Keyboard' });
+  assert.equal(inputSourceLine(named.points[0]!), 'Input: Apple Internal Keyboard');
+});
+
+test('a split remnant keeps the input source and hashes only its own text', async () => {
+  const ids = sequenceIds('split-src');
+  let doc = insertStructure(emptyDocument(ids()), 'paragraph', 0, ids());
+  const blockId = doc.blocks[0]!.id;
+  const changed = applyTextChange({
+    text: '',
+    spans: [],
+    marks: [],
+    start: 0,
+    end: 0,
+    insert: 'Hello',
+    origin: 'keyboard',
+    newId: ids,
+  });
+  const sealed = await syncBlockPoints({
+    blockId,
+    text: 'Hello',
+    spans: changed.spans,
+    points: [],
+    evidence: {
+      spanIds: changed.evidenceSpanIds,
+      event: { at: now, inputType: 'insertText', data: 'H', trusted: true },
+    },
+    now,
+    newId: ids,
+    inputDevices: { keyboard: 'Apple Internal Keyboard', microphone: null },
+  });
+  doc = {
+    ...doc,
+    blocks: doc.blocks.map((block) => (block.id === blockId ? { ...block, text: 'Hello' } : block)),
+    provenance: { [blockId]: { title: [], text: sealed.spans } },
+    points: sealed.points,
+  };
+  const originalHash = doc.points[0]!.contentHash;
+  assert.equal(originalHash, HELLO_HASH);
+  doc = await splitParagraph({ doc, blockId, offset: 2, now, newId: ids });
+  const left = doc.points.find((point) => point.text === 'He');
+  const right = doc.points.find((point) => point.text === 'llo');
+  assert.ok(left);
+  assert.ok(right);
+  assert.equal(left!.contentHash, await contentHash('He'));
+  assert.equal(right!.contentHash, await contentHash('llo'));
+  assert.deepEqual(left!.priorHashes, []);
+  assert.deepEqual(right!.priorHashes, [originalHash]);
+  assert.equal(left!.inputSource?.name, 'Apple Internal Keyboard');
+  assert.equal(right!.inputSource?.name, 'Apple Internal Keyboard');
 });

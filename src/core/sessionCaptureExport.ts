@@ -9,6 +9,7 @@
 import { jsPDF } from 'jspdf';
 import type { CertificationPoint } from './certification.ts';
 import { certificationFactLines, formatExportDateTime, type CertificationPageModel } from './certificationPage.ts';
+import { inputSourceLine, typingRateLine } from './inputSource.ts';
 import {
   CAPTURE_PAGE,
   captureCellSize,
@@ -203,6 +204,8 @@ export function detailedSealText(point: CertificationPoint): string[] {
     `Span ${point.spanId}`,
   ];
   if (point.typingDevice?.trim()) lines.push(`Device: ${point.typingDevice.trim()}`);
+  lines.push(inputSourceLine(point));
+  lines.push(typingRateLine(point));
   const types = point.evidence.inputTypes.join(', ') || 'keyboard';
   const count = point.evidence.eventCount;
   lines.push(`${count} observed input event${count === 1 ? '' : 's'} · ${types}`);

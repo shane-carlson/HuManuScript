@@ -45,6 +45,7 @@ import {
 } from '../core/manuscript.ts';
 import { createIdFactory } from '../core/uid.ts';
 import { formatTypingDeviceLabel, getTypingDeviceLabel, shortPlatformLabel } from '../core/deviceName.ts';
+import { getInputDeviceNames, inputSourceLine, typingRateLine } from '../core/inputSource.ts';
 import { buildCertificationPageModel } from '../core/certificationPage.ts';
 import {
   GRAMMAR_SCOPE_LABELS,
@@ -259,6 +260,7 @@ export function Editor({
     void getTypingDeviceLabel().then((label) => {
       if (!cancel) setLiveDevice(label);
     });
+    void getInputDeviceNames();
     return () => {
       cancel = true;
     };
@@ -1886,6 +1888,8 @@ export function Editor({
                   <blockquote>{point.text}</blockquote>
                   <code data-sha256={point.contentHash} data-tooltip={point.contentHash} data-tooltip-wrap="true">{point.contentHash.slice(0, 16)}…</code>
                   <DeviceLine stored={point.typingDevice} live={liveDevice} />
+                  <p className="point-device">{inputSourceLine(point)}</p>
+                  <p className="point-device">{typingRateLine(point)}</p>
                   <p>{point.evidence.eventCount} observed input event{point.evidence.eventCount === 1 ? '' : 's'} · {point.evidence.inputTypes.join(', ') || 'keyboard'}</p>
                   {point.spellcheck?.used && <p className="point-check">{point.spellcheck.comment}</p>}
                   {point.grammar?.used && <p className="point-check">{point.grammar.comment}</p>}

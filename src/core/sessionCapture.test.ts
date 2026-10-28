@@ -568,6 +568,9 @@ test('a detailed seal is one record for the passage, not a line per keystroke', 
   assert.ok(lines.some((line) => line.startsWith('Updated ')));
   assert.ok(lines.some((line) => line.startsWith('Sealed ')));
   assert.ok(lines.some((line) => line === 'Device: Studio Mac'));
+  const deviceAt = lines.indexOf('Device: Studio Mac');
+  assert.equal(lines[deviceAt + 1], 'Input source unknown');
+  assert.equal(lines[deviceAt + 2], 'Typing rate unknown');
 
   const meta: SealWindowMeta = {
     id: point.id,
@@ -581,4 +584,31 @@ test('a detailed seal is one record for the passage, not a line per keystroke', 
   assert.equal(summary.includes('Hello there'), false);
   assert.equal(summary.includes('insertText · H'), false);
   assert.equal(summary.includes('hash-typed'), true);
+});
+
+test('detailed report places the input source and typing rate next to the device', () => {
+  const typed = detailedPoint('paced');
+  typed.inputSource = { kind: 'keyboard', name: 'Keychron K2' };
+  typed.keyboardPace = {
+    keystrokes: 31,
+    firstAt: '2026-10-27T12:00:00.000Z',
+    lastAt: '2026-10-27T12:00:10.000Z',
+  };
+  const typedLines = detailedSealText(typed);
+  const typedDevice = typedLines.indexOf('Device: Studio Mac');
+  assert.equal(typedLines[typedDevice + 1], 'Input: Keychron K2');
+  assert.equal(typedLines[typedDevice + 2], 'Typing rate: 180 keys/min');
+
+  const spoken = detailedPoint('spoken');
+  spoken.origin = 'dictation';
+  spoken.inputSource = { kind: 'microphone', name: 'Blue Yeti' };
+  spoken.keyboardPace = {
+    keystrokes: 8,
+    firstAt: '2026-10-27T12:00:00.000Z',
+    lastAt: '2026-10-27T12:00:04.000Z',
+  };
+  const spokenLines = detailedSealText(spoken);
+  const spokenDevice = spokenLines.indexOf('Device: Studio Mac');
+  assert.equal(spokenLines[spokenDevice + 1], 'Input: Blue Yeti');
+  assert.equal(spokenLines[spokenDevice + 2], 'Typing rate unknown');
 });

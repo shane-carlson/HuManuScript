@@ -36,6 +36,7 @@ ipcRenderer.on('humanuscript:update-available', (_event, payload) => {
 
 contextBridge.exposeInMainWorld('humanuscript', {
   getDeviceName: () => ipcRenderer.invoke('humanuscript:device-name'),
+  getInputDevices: () => ipcRenderer.invoke('humanuscript:input-devices'),
   getUpdateAvailable: () => availableUpdate,
   onUpdateAvailable: (listener) => {
     if (typeof listener !== 'function') return () => {};

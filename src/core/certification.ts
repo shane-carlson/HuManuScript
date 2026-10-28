@@ -7,13 +7,25 @@
  * counted as keyboard, paste, or other. Paste, drop, and other insertions
  * stay uncertified. A spelling correction or a Harper grammar fix inside a
  * seal is not a new insertion: the span stays keyboard or dictation, and the
- * point records which check was used.
+ * point records which check was used. A new seal also records the input
+ * device when the OS can name it, and the pace of typed keys. Neither fact
+ * is part of the content hash. A seal that already exists keeps that hash
+ * and its earlier hashes.
  *
  * Browser events are evidence of how text entered this editor. They are not
  * proof against someone simulating events.
  */
 
 import { getTypingDeviceLabel } from './deviceName.ts';
+import {
+  backfillInputSource,
+  getInputDeviceNames,
+  inputSourceFor,
+  noteKeyboardPace,
+  type InputDeviceNames,
+  type InputSource,
+  type KeyboardPace,
+} from './inputSource.ts';
 import type { InlineMark } from './types.ts';
 import { normalizeMarks } from './richText.ts';
 
@@ -59,7 +71,10 @@ export interface CertificationPoint {
   spanId: string;
   /** Plain text this point currently seals. */
   text: string;
-  /** SHA-256 hex of `text` (UTF-8). */
+  /**
+   * SHA-256 hex of `text` (UTF-8).
+   * Input source and typing rate are stored beside this hash. They are not hashed.
+   */
   contentHash: string;
   sealedAt: string;
   updatedAt: string;
@@ -74,6 +89,17 @@ export interface CertificationPoint {
   lineage?: string;
   /** Computer name (Electron) or best-effort platform label (browser); omitted when unknown. */
   typingDevice?: string;
+  /**
+   * Keyboard for typed text, or microphone for dictated text.
+   * Absent on seals written before this field. A null name means the OS could not say.
+   * Not part of `contentHash`.
+   */
+  inputSource?: InputSource;
+  /**
+   * Timed keystrokes for typed text. Absent when the pace was not observed.
+   * Not part of `contentHash`.
+   */
+  keyboardPace?: KeyboardPace;
   /**
    * Present only after the writer accepts a Harper suggestion inside this seal.
    * Harper is a local rule checker. This record cannot say a generative model was used.
@@ -781,10 +807,17 @@ export async function syncBlockPoints(args: {
   now: string;
   newId: () => string;
   typingDevice?: string | null;
+  /**
+   * Keyboard and microphone names. Omit to ask Electron.
+   * Null records the source as unknown without asking.
+   */
+  inputDevices?: InputDeviceNames | null;
   /** Block coordinates of the edit that produced `text`, so check notes move with the letters. */
   textEdit?: { start: number; end: number; insertLength: number };
 }): Promise<{ spans: ProvenanceSpan[]; points: CertificationPoint[] }> {
   const typingDevice = args.typingDevice ?? (await getTypingDeviceLabel());
+  const inputDevices =
+    args.inputDevices === undefined ? await getInputDeviceNames() : args.inputDevices ?? { keyboard: null, microphone: null };
   const spans = normalizeSpans(args.text, args.spans, args.newId).map((s) => ({ ...s }));
   const pool = new Map(args.points.map((p) => [p.id, p]));
   const usedCert = new Set<string>();
@@ -847,6 +880,7 @@ export async function syncBlockPoints(args: {
         evidence: { inputTypes: [], eventCount: 0, events: [] },
         priorHashes: [],
         typingDevice: typingDevice ?? undefined,
+        inputSource: inputSourceFor(sealedOrigin, inputDevices),
       };
       span.certificationId = id;
     } else {
@@ -869,6 +903,8 @@ export async function syncBlockPoints(args: {
       const inputTypes = point.evidence.inputTypes.includes(event.inputType)
         ? point.evidence.inputTypes
         : [...point.evidence.inputTypes, event.inputType];
+      const fresh = point.evidence.eventCount === 0;
+      const hadPace = point.keyboardPace != null;
       point = {
         ...point,
         updatedAt: args.now,
@@ -878,7 +914,12 @@ export async function syncBlockPoints(args: {
           events: [...point.evidence.events, event].slice(-MAX_EVIDENCE_EVENTS),
         },
       };
+      if (point.origin === 'keyboard' && (fresh || hadPace)) {
+        const pace = noteKeyboardPace(point.keyboardPace, event);
+        if (pace) point = { ...point, keyboardPace: pace };
+      }
     }
+    point = backfillInputSource(point, inputDevices, args.now);
     if (previousSealText != null && previousSealText !== slice) {
       if (point.grammar) {
         point = {
