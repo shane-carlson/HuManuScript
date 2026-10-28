@@ -206,8 +206,6 @@ export function Editor({
   const [rawRange, setRawRange] = useState<{ start: number; end: number } | null>(null);
   const [certCollapsed, setCertCollapsed] = useState(() => loadCertificationCollapsed());
   const [notesCollapsed, setNotesCollapsed] = useState(() => loadNotesCollapsed());
-  const [focusCertCollapsed, setFocusCertCollapsed] = useState(true);
-  const [focusNotesCollapsed, setFocusNotesCollapsed] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed());
   const [notesWidth, setNotesWidth] = useState(() => loadNotesWidth());
   const [certWidth, setCertWidth] = useState(() => loadCertificationWidth());
@@ -222,13 +220,9 @@ export function Editor({
   if (focusMode !== trackedFocus) {
     setTrackedFocus(focusMode);
     if (!focusMode) setViewPercent(100);
-    if (focusMode) {
-      setFocusNotesCollapsed(true);
-      setFocusCertCollapsed(true);
-    }
   }
-  const notesCollapsedView = focusMode ? focusNotesCollapsed : notesCollapsed;
-  const certCollapsedView = focusMode ? focusCertCollapsed : certCollapsed;
+  const notesCollapsedView = focusMode ? false : notesCollapsed;
+  const certCollapsedView = focusMode ? false : certCollapsed;
   const pointListRef = useRef<HTMLOListElement>(null);
   const textDrag = useRef<{ blockId: string; start: number; end: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -904,7 +898,7 @@ export function Editor({
       <main className={`canvas manuscript-surface${showPreview ? ' is-preview' : ''}${showPublication ? ' is-publication' : ''}`}>
         <div className={`canvas-head${showReplace ? ' is-replace-open' : ''}`}>
         <div
-          className={`toolbar${railCollapsed ? ' is-collapsed' : ''}`}
+          className={`toolbar${!focusMode && railCollapsed ? ' is-collapsed' : ''}`}
           role="toolbar"
           aria-label="Manuscript tools"
           onMouseDown={(event) => {
@@ -913,32 +907,42 @@ export function Editor({
             event.preventDefault();
           }}
         >
+          {!focusMode && (
           <button
             type="button"
             className="toolbar-rail-toggle"
             aria-pressed={railCollapsed}
-            aria-label={railCollapsed ? 'Expand editor tools' : 'Collapse editor tools'}
+            aria-label={railCollapsed ? 'Expand' : 'Collapse'}
             data-tooltip={railCollapsed ? 'Expand editor tools' : 'Collapse editor tools to one row'}
             data-rail-essential="true"
             onClick={() => setRailCollapsed((value) => !value)}
           >
+            <span
+              className="toolbar-rail-chevron"
+              data-direction={railCollapsed ? 'down' : 'up'}
+              aria-hidden="true"
+            >
+              ›
+            </span>
             {railCollapsed ? 'Expand' : 'Collapse'}
           </button>
+          )}
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-structure">Structure</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-structure">
               {viewMode === 'raw' ? (
                 ([
-                  ['chapter', 'Chapter', <IconChapter key="chapter" />],
-                  ['scene', 'Scene', <IconScene key="scene" />],
-                  ['section', 'Section', <IconSection key="section" />],
-                  ['paragraph', 'Paragraph', <IconParagraph key="paragraph" />],
-                  ['blockquote', 'Block quote', <IconBlockQuote key="quote" />],
-                ] as const).map(([kind, label, icon]) => (
+                  ['chapter', 'Chapter', <IconChapter key="chapter" />, true],
+                  ['scene', 'Scene', <IconScene key="scene" />, false],
+                  ['section', 'Section', <IconSection key="section" />, false],
+                  ['paragraph', 'Paragraph', <IconParagraph key="paragraph" />, true],
+                  ['blockquote', 'Block quote', <IconBlockQuote key="quote" />, false],
+                ] as const).map(([kind, label, icon, essential]) => (
                   focusMode ? (
                     <ToolbarIconButton
                       key={kind}
                       label={label}
+                      essential={essential}
                       active={Boolean(rawRange && rawKindAt(doc, rawRange.start, rawRange.end) === kind)}
                       disabled={!rawRange || rawRange.end <= rawRange.start}
                       onClick={() => assignHighlighted(kind)}
@@ -950,6 +954,7 @@ export function Editor({
                     key={kind}
                     type="button"
                     className={`toolbar-text-btn${rawRange && rawKindAt(doc, rawRange.start, rawRange.end) === kind ? ' is-active' : ''}`}
+                    data-rail-essential={essential ? 'true' : undefined}
                     disabled={!rawRange || rawRange.end <= rawRange.start}
                     onClick={() => assignHighlighted(kind)}
                   >
@@ -959,7 +964,7 @@ export function Editor({
                 ))
               ) : (
                 <>
-              <ToolbarIconButton label="Chapter" onClick={() => openChapter(docRef.current.blocks.length)}>
+              <ToolbarIconButton label="Chapter" essential onClick={() => openChapter(docRef.current.blocks.length)}>
                 <IconChapter />
               </ToolbarIconButton>
               <ToolbarIconButton label="Scene" onClick={() => commit((current) => insertStructure(current, 'scene', current.blocks.length, ids.current()))}>
@@ -968,7 +973,7 @@ export function Editor({
               <ToolbarIconButton label="Section" onClick={() => commit((current) => insertStructure(current, 'section', current.blocks.length, ids.current()))}>
                 <IconSection />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Paragraph" onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
+              <ToolbarIconButton label="Paragraph" essential onClick={() => commit((current) => insertStructure(current, 'paragraph', current.blocks.length, ids.current()))}>
                 <IconParagraph />
               </ToolbarIconButton>
                 </>
@@ -1031,10 +1036,10 @@ export function Editor({
           <div className="toolbar-group">
             <span className="toolbar-group__label" id="toolbar-breaks">Breaks</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-breaks">
-              <ToolbarIconButton label="Page break" onClick={() => insertNear('pageBreak')}>
+              <ToolbarIconButton label="Page break" essential onClick={() => insertNear('pageBreak')}>
                 <IconPageBreak />
               </ToolbarIconButton>
-              <ToolbarIconButton label="Scene break" onClick={() => insertNear('divider')}>
+              <ToolbarIconButton label="Scene break" essential onClick={() => insertNear('divider')}>
                 <IconSceneBreak />
               </ToolbarIconButton>
             </div>
@@ -1800,10 +1805,7 @@ export function Editor({
           activeBlockId={noteBlockId}
           saveError={saveError}
           collapsed={notesCollapsedView}
-          onToggleCollapsed={() => {
-            if (focusMode) setFocusNotesCollapsed((collapsed) => !collapsed);
-            else setNotesCollapsed((collapsed) => !collapsed);
-          }}
+          onToggleCollapsed={focusMode ? undefined : () => setNotesCollapsed((collapsed) => !collapsed)}
           onChange={publish}
           onShowBlock={(blockId) => {
             if (viewMode === 'raw' || viewMode === 'preview' || viewMode === 'publication') setViewMode('manuscript');
@@ -1829,19 +1831,18 @@ export function Editor({
         />
       )}
       <aside className={`points${certCollapsedView ? ' is-collapsed' : ''}`}>
+        {!focusMode && (
         <button
           type="button"
           className={`cert-collapse-toggle${certCollapsedView ? ' is-collapsed-mark' : ''}`}
-          onClick={() => {
-            if (focusMode) setFocusCertCollapsed((collapsed) => !collapsed);
-            else setCertCollapsed((collapsed) => !collapsed);
-          }}
+          onClick={() => setCertCollapsed((collapsed) => !collapsed)}
           aria-expanded={!certCollapsedView}
           aria-label={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
           data-tooltip={certCollapsedView ? 'Expand certification pane' : 'Collapse certification pane'}
         >
           {certCollapsedView ? <CertificationMark size={26} /> : <span className="cert-collapse-chevron" aria-hidden="true">›</span>}
         </button>
+        )}
         <div className="points-body">
           <div className="points-head">
             <div className="points-head__brand">

@@ -98,6 +98,7 @@ export function NotesRail({
           <p className="eyebrow">Beside the page</p>
           <h2>Notes</h2>
         </div>
+        {onToggleCollapsed && (
         <button
           type="button"
           className="notes-rail__toggle"
@@ -109,6 +110,7 @@ export function NotesRail({
         >
           {collapsed ? <span className="notes-rail__mark">Notes</span> : <span className="notes-rail__chevron" aria-hidden="true">›</span>}
         </button>
+        )}
         <div className="notes-rail__tabs" role="tablist" aria-label="Notes">
           <button type="button" role="tab" aria-selected={tab === 'characters'} onClick={() => setTab('characters')}>
             Characters

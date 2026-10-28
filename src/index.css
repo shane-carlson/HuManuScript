@@ -2302,6 +2302,9 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .toolbar-rail-toggle {
   align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   height: 28px;
   padding: 0 8px;
   border-radius: 8px;
@@ -2310,8 +2313,21 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   color: var(--text);
   font-family: var(--sans);
   font-size: 0.72rem;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
+.toolbar-rail-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9em;
+  height: 0.9em;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.toolbar-rail-chevron[data-direction='up'] { transform: rotate(-90deg); }
+.toolbar-rail-chevron[data-direction='down'] { transform: rotate(90deg); }
 .toolbar.is-collapsed {
   flex-wrap: nowrap;
   align-items: center;
@@ -2319,6 +2335,11 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   margin-bottom: 0;
   overflow-x: auto;
 }
+.toolbar.is-collapsed > * { flex-shrink: 0; }
+.toolbar.is-collapsed .toolbar-group {
+  min-width: max-content;
+}
+.toolbar.is-collapsed .toolbar-group--end { margin-left: 0; }
 .toolbar.is-collapsed .toolbar-rail-toggle { align-self: center; }
 .toolbar.is-collapsed .toolbar-group__label,
 .toolbar.is-collapsed .toolbar-history-find,
