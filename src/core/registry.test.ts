@@ -16,8 +16,11 @@ import {
   readRegistryReceipts,
   REGISTRY_NAME,
   registryBaseUrl,
+  registryCheckUrl,
+  registryCodeUrl,
   registryPageUrl,
   registryRegistrationsUrl,
+  exportWritesRegistryInstructions,
   registeredMessage,
   sha256Hex,
   sha256Utf8,
@@ -355,7 +358,17 @@ test('registry base URL defaults to the Sidequests page and can be overridden', 
     `https://www.readywriter.one/api/registrations/${CODE}`,
   );
   assert.equal(registryRegistrationsUrl('http://127.0.0.1:8741/registry'), 'http://127.0.0.1:8741/registry/registrations');
+  assert.equal(registryCheckUrl(null), 'https://www.readywriter.one/sidequests/certified-manuscript-registry');
+  assert.equal(registryCheckUrl('http://127.0.0.1:8741/registry'), 'http://127.0.0.1:8741/registry');
+  assert.equal(
+    registryCodeUrl(null, CODE),
+    `https://www.readywriter.one/sidequests/certified-manuscript-registry/c/${CODE}`,
+  );
   assert.equal(REGISTRY_NAME, 'Certified Manuscript Registry');
+  assert.equal(exportWritesRegistryInstructions('docx'), true);
+  assert.equal(exportWritesRegistryInstructions('pdf'), true);
+  assert.equal(exportWritesRegistryInstructions('epub'), false);
+  assert.equal(exportWritesRegistryInstructions('print'), false);
 });
 
 test('POST sends the summary and keeps the code, and a dead registry does not throw', async () => {
@@ -414,9 +427,11 @@ test('POST sends the summary and keeps the code, and a dead registry does not th
   assert.equal(result.receipt.deleteToken, 'token-token-token-token');
   assert.equal(result.receipt.fileSha256, 'e'.repeat(64));
   assert.equal(result.pageUrl, `http://127.0.0.1:8741/registry/c/${CODE}`);
-  assert.match(registeredMessage(true), /Certified Manuscript Registry/);
-  assert.match(registeredMessage(true), /manuscript text was not uploaded/);
-  assert.match(registeredMessage(false), /summary and the two checksums/);
+  assert.match(registeredMessage(true, true), /Certified Manuscript Registry/);
+  assert.match(registeredMessage(true, true), /manuscript text was not uploaded/);
+  assert.match(registeredMessage(true, true), /certification summary in this file/);
+  assert.match(registeredMessage(false, true), /summary and the two checksums/);
+  assert.match(registeredMessage(false, false), /EPUB and Format for Print/);
   assert.match(unregisteredMessage(), /not registered/);
 
   const down: typeof fetch = async () => {

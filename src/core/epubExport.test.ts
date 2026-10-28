@@ -291,12 +291,43 @@ test('a linked picture, a non jpeg-png, a bad isbn, and a missing author fail th
 });
 
 test('the manuscript exporter builds the epub and still omits the certification summary', async () => {
-  const blob = await exportManuscriptBlob(sample(), 'epub', now, { bookTitle: 'Harbor Light', seriesLabel: 'Book 2 of Harbor Saga' }, options());
+  const notice = {
+    checkUrl: 'https://www.readywriter.one/sidequests/certified-manuscript-registry',
+    code: null,
+    codeUrl: null,
+    author: 'Ada Harbor',
+    published: '2026',
+    exportedAtLabel: '14 October 2026, 18:00 UTC',
+    registeredAtLabel: null,
+    title: 'Harbor Light',
+    seriesLabel: null,
+    manuscriptId: 'ms-epub',
+    filename: 'harbor-light.epub',
+    formatLabel: 'EPUB 3 (.epub)',
+    byteLength: null,
+    fileSha256: null,
+    canonicalSha256: 'ab'.repeat(32),
+  };
+  const blob = await exportManuscriptBlob(
+    sample(),
+    'epub',
+    now,
+    { bookTitle: 'Harbor Light', seriesLabel: 'Book 2 of Harbor Saga' },
+    options(),
+    undefined,
+    notice,
+  );
   const zip = await unzip(blob);
+  const names = Object.keys(zip.files);
+  const joined = (
+    await Promise.all(names.map(async (name) => zip.file(name)?.async('string') ?? ''))
+  ).join('\n');
   const ch1 = await zip.file('OEBPS/ch-0001.xhtml')!.async('string');
   const opf = await zip.file('OEBPS/content.opf')!.async('string');
   assert.match(ch1, /Before the break/);
   assert.equal(ch1.includes('certification summary'), false);
+  assert.equal(joined.includes('Certified Manuscript Registry'), false);
+  assert.equal(joined.includes('readywriter.one'), false);
   assert.equal(opf.includes('Book 2 of Harbor Saga'), false);
   assert.equal(opf.includes('dc:publisher'), false);
   await assert.rejects(() => exportManuscriptBlob(sample(), 'epub', now), /export form/);

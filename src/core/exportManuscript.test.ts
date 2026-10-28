@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import JSZip from 'jszip';
+import { registryInstructionLines, type RegistryInstruction } from './certificationPage.ts';
 import { emptyDocument, insertStructure, type ManuscriptDocument } from './document.ts';
 import {
   EXPORT_FORMAT_LABELS,
+  exportFilename,
   exportManuscriptBlob,
   MARKDOWN_PAGE_BREAK,
   PLAIN_PAGE_BREAK,
   type ExportFormat,
 } from './exportManuscript.ts';
+import { canonicalTextDigest, sha256Hex } from './registry.ts';
 import { setManuscriptTypography } from './typography.ts';
 import { sequenceIds } from './uid.ts';
 
@@ -213,6 +216,96 @@ test('publication pages are off for every writer file until the switch is on', a
     () => exportManuscriptBlob(doc, 'pdf', now, identity, undefined, { ...pages, author: ' ' }),
     /author name/,
   );
+});
+
+function writerNotice(over: Partial<RegistryInstruction> = {}): RegistryInstruction {
+  return {
+    checkUrl: 'https://www.readywriter.one/sidequests/certified-manuscript-registry',
+    code: null,
+    codeUrl: null,
+    author: 'Ada Harbor',
+    published: '2026',
+    exportedAtLabel: '14 October 2026, 18:00 UTC',
+    registeredAtLabel: null,
+    title: 'Harbor Light',
+    seriesLabel: 'Book 2 of Harbor Saga',
+    manuscriptId: 'ms-harbor',
+    filename: 'harbor-light.txt',
+    formatLabel: 'Plain text (.txt)',
+    byteLength: null,
+    fileSha256: null,
+    canonicalSha256: 'ab'.repeat(32),
+    ...over,
+  };
+}
+
+test('registry instructions lead the certification summary and name the author, year, and checksum', () => {
+  const lines = registryInstructionLines(writerNotice());
+  const text = lines.join('\n');
+  assert.equal(lines[0], 'Certified Manuscript Registry');
+  assert.match(text, /Check the certification: https:\/\/www\.readywriter\.one\/sidequests\/certified-manuscript-registry$/m);
+  assert.match(text, /Author: Ada Harbor/);
+  assert.match(text, /Published: 2026/);
+  assert.match(text, /Exported: 14 October 2026, 18:00 UTC/);
+  assert.match(text, /Title: Harbor Light/);
+  assert.match(text, /Series: Book 2 of Harbor Saga/);
+  assert.match(text, /Manuscript id: ms-harbor/);
+  assert.match(text, /left out of these bytes/);
+  assert.equal(text.includes('File SHA-256:'), false);
+  assert.equal(text.includes('Registered:'), false);
+  assert.equal(text.includes('delete'), false);
+  const proved = registryInstructionLines(
+    writerNotice({
+      code: 'HMS-7K4Q-M2NP-9CWF-R8KD-3T8W-QMVR-AB',
+      codeUrl: 'https://www.readywriter.one/sidequests/certified-manuscript-registry/c/HMS-7K4Q-M2NP-9CWF-R8KD-3T8W-QMVR-AB',
+      registeredAtLabel: '28 October 2026, 15:04 UTC',
+      byteLength: 120,
+      fileSha256: 'cd'.repeat(32),
+      author: ' ',
+      published: null,
+    }),
+  ).join('\n');
+  assert.match(proved, /Registry code: HMS-7K4Q-M2NP-9CWF-R8KD-3T8W-QMVR-AB/);
+  assert.match(proved, /Code link: https:\/\/www\.readywriter\.one\/sidequests\/certified-manuscript-registry\/c\/HMS-/);
+  assert.match(proved, /Registered: 28 October 2026, 15:04 UTC/);
+  assert.match(proved, /File SHA-256: cdcd/);
+  assert.match(proved, /Author: Not recorded/);
+  assert.match(proved, /Published: Not recorded/);
+  assert.equal(proved.includes('deleteToken'), false);
+});
+
+test('writer exports put the registry block at the top of the summary; a file without it stays plain', async () => {
+  const doc = manuscriptWithBreaks();
+  const digest = await canonicalTextDigest(doc);
+  const formats: ExportFormat[] = ['plain', 'markdown', 'rtf', 'scrivener-rtf', 'docx', 'odt', 'pdf'];
+  for (const format of formats) {
+    const notice = writerNotice({
+      canonicalSha256: digest.sha256,
+      filename: exportFilename('Harbor Light', format),
+      formatLabel: EXPORT_FORMAT_LABELS[format],
+      manuscriptId: doc.manuscriptId,
+    });
+    const bare = await fileText(await exportManuscriptBlob(doc, format, now, identity));
+    assert.equal(bare.includes('readywriter.one'), false, format);
+    assert.equal(bare.includes('Certified Manuscript Registry'), false, format);
+
+    const blob = await exportManuscriptBlob(doc, format, now, identity, undefined, undefined, notice);
+    const text = await fileText(blob);
+    const summaryAt = text.indexOf('HuManuScript certification summary');
+    const registryAt = text.indexOf('Certified Manuscript Registry');
+    const bannerAt = text.indexOf('how a manuscript is written');
+    const bodyAt = text.indexOf('Before the break');
+    assert.ok(summaryAt >= 0 && registryAt > summaryAt && bannerAt > registryAt && bodyAt > bannerAt, format);
+    assert.match(text, /Author: Ada Harbor/, format);
+    assert.match(text, /Published: 2026/, format);
+    assert.match(text, /Exported: 14 October 2026, 18:00 UTC/, format);
+    assert.match(text, new RegExp(digest.sha256), format);
+    assert.match(text, /www\.readywriter\.one\/sidequests\/certified-manuscript-registry/, format);
+    assert.equal(text.includes('File SHA-256:'), false, format);
+    assert.equal(/HMS-[0-9A-HJKMNP-TV-Z]/.test(text), false, format);
+    const fileHash = await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+    assert.equal(text.includes(fileHash), false, format);
+  }
 });
 
 async function fileText(blob: Blob): Promise<string> {

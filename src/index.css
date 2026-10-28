@@ -1349,6 +1349,11 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   word-break: break-all;
 }
 .registry-code-block { display: grid; gap: 6px; }
+.registry-instructions { display: grid; gap: 6px; }
+.registry-instructions h4 { margin: 0; font-size: 0.95rem; }
+.registry-instructions p { margin: 0; }
+.registry-instructions a { word-break: break-all; }
+.registry-instructions__gap { height: 4px; }
 .registry-receipts { margin-top: 14px; }
 .registry-receipts h4 { margin: 0 0 8px; font-size: 0.95rem; }
 .registry-receipts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

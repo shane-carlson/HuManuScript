@@ -76,6 +76,25 @@ export function registryRegistrationsUrl(baseUrl: string, code?: string): string
 }
 
 /**
+ * The public check page. readywriter.one redirects to www, and the instructions
+ * use that host. Another registry base is left as given.
+ */
+export function registryCheckUrl(override?: string | null): string {
+  const base = registryBaseUrl(override);
+  try {
+    const url = new URL(base);
+    if (url.hostname === 'readywriter.one') url.hostname = 'www.readywriter.one';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return base;
+  }
+}
+
+export function registryCodeUrl(override: string | null | undefined, code: string): string {
+  return `${registryCheckUrl(override)}/c/${encodeURIComponent(code)}`;
+}
+
+/**
  * Plain-text walk of the document model, before export formatting.
  * Unicode NFC. Prose blocks contribute `text`. Any other block contributes a
  * non-empty title. Table cells, image bytes, notes, and the certification page
@@ -220,11 +239,19 @@ export interface RegistrationBody {
   report?: string;
 }
 
-export function registeredMessage(includedDetailedReport: boolean): string {
+export function registeredMessage(includedDetailedReport: boolean, wroteInstructions: boolean): string {
   const report = includedDetailedReport
     ? 'The detailed certification report was included. The manuscript text was not uploaded.'
     : 'The summary and the two checksums were registered.';
-  return `Registered with the ${REGISTRY_NAME}. Send this code with the file. The code is not inside the file. ${report} The download is the same file that was hashed.`;
+  const where = wroteInstructions
+    ? 'The certification summary in this file starts with how to check it.'
+    : 'EPUB and Format for Print leave those instructions out of the file.';
+  return `Registered with the ${REGISTRY_NAME}. Send this code with the file. The code is not inside the file. ${where} ${report} The download is the same file that was hashed.`;
+}
+
+/** Writer files lead with the certification summary. EPUB and print-on-demand do not. */
+export function exportWritesRegistryInstructions(format: string): boolean {
+  return format !== 'epub' && format !== 'print';
 }
 
 export function unregisteredMessage(): string {

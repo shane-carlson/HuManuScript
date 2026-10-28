@@ -214,7 +214,11 @@ export function ExportPreview({ model, doc }: { model: CertificationPageModel; d
     <section className="export-preview" aria-label="Export preview">
       <div className="export-preview__head">
         <h3>Export preview</h3>
-        <p>The certification summary page, then a page break, then the manuscript with no certification highlights.</p>
+        <p>
+          The certification summary page, then a page break, then the manuscript with no certification highlights. A
+          writer-file download adds the Certified Manuscript Registry instructions at the top of that summary. EPUB and
+          Format for Print leave them out.
+        </p>
       </div>
       <div className="export-sheet">
         <CertificationSummaryPage model={model} />

@@ -1,6 +1,29 @@
 import { useState } from 'react';
+import { REGISTRY_NOTICE_HEADING } from '../core/certificationPage.ts';
 import { REGISTRY_NAME, type RegistryReceipt } from '../core/registry.ts';
 import { type RegistryExportController } from './useRegistryExport.ts';
+
+function InstructionLines({ lines }: { lines: string[] }) {
+  return (
+    <div className="registry-instructions">
+      {lines.map((line, index) => {
+        if (!line) return <div key={index} className="registry-instructions__gap" />;
+        if (line === REGISTRY_NOTICE_HEADING) return <h4 key={index}>{line}</h4>;
+        const url = line.match(/https?:\/\/\S+/)?.[0];
+        if (url) {
+          const label = line.slice(0, line.indexOf(url)).replace(/:\s*$/, '');
+          return (
+            <p key={index}>
+              {label ? `${label}: ` : null}
+              <a href={url} target="_blank" rel="noreferrer">{url}</a>
+            </p>
+          );
+        }
+        return <p key={index}>{line}</p>;
+      })}
+    </div>
+  );
+}
 
 export function RegistryExportCard({
   receipts,
@@ -14,8 +37,9 @@ export function RegistryExportCard({
     <section className="registry-card" aria-labelledby="registry-heading">
       <h3 id="registry-heading">{REGISTRY_NAME}</h3>
       <p>
-        A download can register the certification summary and two checksums. The file is not uploaded. The code stays
-        beside the file, in the mail or on a slip, and is not written into it.
+        A download can register the certification summary and two checksums. The file is not uploaded. Word, RTF,
+        Scrivener, ODT, Markdown, text, and PDF put these instructions at the top of the certification summary. EPUB
+        and Format for Print leave them out. The HMS- code stays beside the file, so the checksum still matches.
       </p>
       <label className="field" htmlFor="registry-title">
         Title on the {REGISTRY_NAME}
@@ -62,14 +86,7 @@ export function RegistryExportCard({
         ) : null}
         {registry.status?.kind === 'registered' ? (
           <div className="registry-code-block">
-            <p>
-              <span className="registry-code">{registry.status.code}</span>
-            </p>
-            <p>
-              <a href={registry.status.pageUrl} target="_blank" rel="noreferrer">
-                {registry.status.pageUrl}
-              </a>
-            </p>
+            <InstructionLines lines={registry.status.instructions} />
             <p className="hint">For {registry.status.filename}. The download is the same file that was hashed.</p>
             <button
               type="button"
@@ -104,6 +121,9 @@ export function RegistryExportCard({
               <li key={receipt.code}>
                 <span className="registry-code">{receipt.code}</span>
                 <span className="hint">{receipt.filename}</span>
+                <a href={registry.codeUrl(receipt.code)} target="_blank" rel="noreferrer">
+                  {registry.codeUrl(receipt.code)}
+                </a>
                 <button type="button" className="ghost" disabled={registry.busy} onClick={() => void registry.remove(receipt)}>
                   Remove from the {REGISTRY_NAME}
                 </button>

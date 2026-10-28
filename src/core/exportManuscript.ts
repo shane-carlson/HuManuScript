@@ -21,8 +21,10 @@ import {
   buildCertificationPageModel,
   certificationFactLines,
   certificationPagePlain,
+  REGISTRY_NOTICE_HEADING,
   type CertificationPageIdentity,
   type CertificationPageModel,
+  type RegistryInstruction,
 } from './certificationPage.ts';
 import type { ManuscriptDocument } from './document.ts';
 import { displayTitle } from './document.ts';
@@ -79,14 +81,15 @@ function rtfEscape(text: string): string {
   return out;
 }
 
+function certificationSectionHeading(line: string): boolean {
+  return line === 'Certified versus pasted' || line === 'Statistics' || line === REGISTRY_NOTICE_HEADING;
+}
+
 function certificationRtf(model: CertificationPageModel): string {
   return certificationFactLines(model)
     .map((line) => {
       if (!line.trim()) return '\\par';
-      const heading =
-        line === 'HuManuScript certification summary' ||
-        line === 'Certified versus pasted' ||
-        line === 'Statistics';
+      const heading = line === 'HuManuScript certification summary' || certificationSectionHeading(line);
       if (heading) return `\\pard{\\b ${rtfEscape(line)}\\par}`;
       return `\\pard ${rtfEscape(line)}\\par`;
     })
@@ -261,11 +264,10 @@ function wrapRtf(inner: string, type: ManuscriptTypography): string {
 }
 
 function certificationMarkdown(model: CertificationPageModel): string {
-  const headings = new Set(['Certified versus pasted', 'Statistics']);
   return certificationFactLines(model)
     .map((line) => {
       if (line === 'HuManuScript certification summary') return '# HuManuScript certification summary';
-      if (headings.has(line)) return `## ${line}`;
+      if (certificationSectionHeading(line)) return `## ${line}`;
       return line;
     })
     .join('\n');
@@ -284,7 +286,6 @@ function docxRun(type: ManuscriptTypography, text: string, extra?: { bold?: bool
 }
 
 function certificationDocxParagraphs(model: CertificationPageModel, type: ManuscriptTypography): Paragraph[] {
-  const headings = new Set(['HuManuScript certification summary', 'Certified versus pasted', 'Statistics']);
   return certificationFactLines(model).map((line) => {
     if (!line) return new Paragraph('');
     if (line === 'HuManuScript certification summary') {
@@ -293,7 +294,7 @@ function certificationDocxParagraphs(model: CertificationPageModel, type: Manusc
         children: [docxRun(type, line, { bold: true, sizePt: type.sizePt + 4 })],
       });
     }
-    if (headings.has(line)) {
+    if (certificationSectionHeading(line)) {
       return new Paragraph({
         heading: HeadingLevel.HEADING_2,
         children: [docxRun(type, line, { bold: true, sizePt: type.sizePt + 2 })],
@@ -418,14 +419,13 @@ function xmlEscape(text: string): string {
 const ODT_PAGE_BREAK = '<text:p text:style-name="PageBreak"/>';
 
 function certificationOdtBody(model: CertificationPageModel): string {
-  const headings = new Set(['Certified versus pasted', 'Statistics']);
   return certificationFactLines(model)
     .map((line) => {
       if (!line) return '<text:p text:style-name="TextBody"/>';
       if (line === 'HuManuScript certification summary') {
         return `<text:h text:style-name="Heading_20_1">${xmlEscape(line)}</text:h>`;
       }
-      if (headings.has(line)) return `<text:h text:style-name="Heading_20_2">${xmlEscape(line)}</text:h>`;
+      if (certificationSectionHeading(line)) return `<text:h text:style-name="Heading_20_2">${xmlEscape(line)}</text:h>`;
       return `<text:p text:style-name="TextBody">${xmlEscape(line)}</text:p>`;
     })
     .join('');
@@ -563,7 +563,8 @@ async function buildPdfBlob(
   const margin = 18;
   const width = 210 - margin * 2;
   let y = 20;
-  // The summary stays at a fixed size so it remains one page. The manuscript uses the book size.
+  // Without a registry notice the summary stays on one page. With one, lines may continue
+  // so the checksum and the check link are not clipped. The manuscript uses the book size.
   doc.setFont(face, 'bold');
   doc.setFontSize(16);
   doc.text('HuManuScript certification summary', margin, y);
@@ -575,12 +576,12 @@ async function buildPdfBlob(
       y += 3;
       continue;
     }
-    const heading = line === 'Certified versus pasted' || line === 'Statistics';
+    const heading = certificationSectionHeading(line);
     if (heading) {
       y += 1;
       doc.setFont(face, 'bold');
     }
-    y = pdfAddWrapped(doc, line, margin, y, width, 5, false);
+    y = pdfAddWrapped(doc, line, margin, y, width, 5, model.registryNotice != null);
     if (heading) doc.setFont(face, 'normal');
   }
   if (matter) paintPdfPages(doc, matter.front, face, type.sizePt, margin, width);
@@ -700,6 +701,7 @@ export async function exportManuscriptBlob(
   identity: CertificationPageIdentity = {},
   epub?: EpubBuildOptions,
   publication?: PublicationFileOptions,
+  registryNotice?: RegistryInstruction | null,
 ): Promise<Blob> {
   if (format === 'epub') {
     if (!epub) throw new Error('EPUB export needs the author, language, and identifier from the export form.');
@@ -711,6 +713,7 @@ export async function exportManuscriptBlob(
   }
   const liveDevice = await getTypingDeviceLabel();
   const model = buildCertificationPageModel(doc, exportedAt, identity, liveDevice);
+  if (registryNotice) model.registryNotice = registryNotice;
   const type = resolveManuscriptTypography(doc);
   const matter = publication?.includePublicationPages
     ? buildPrintMatter({

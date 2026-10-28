@@ -1,13 +1,18 @@
 import { useRef, useState } from 'react';
 import { appVersion } from 'virtual:app-version';
+import { formatExportDateTime, registryInstructionLines, type RegistryInstruction } from '../core/certificationPage.ts';
 import { getTypingDeviceLabel } from '../core/deviceName.ts';
 import type { ManuscriptDocument } from '../core/document.ts';
+import { EXPORT_FORMAT_LABELS, type ExportFormat } from '../core/exportManuscript.ts';
 import {
   buildRegistrationBody,
   canonicalManuscriptText,
   deleteRegistration,
+  exportWritesRegistryInstructions,
   registeredMessage,
   registryBaseUrl,
+  registryCheckUrl,
+  registryCodeUrl,
   removeFailedMessage,
   removedMessage,
   sha256Hex,
@@ -35,6 +40,7 @@ interface HeldExport {
   byteLength: number;
   canonicalSha256: string;
   canonicalUtf8Bytes: number;
+  facts: RegistryExportFacts;
 }
 
 interface RegistrationChoice {
@@ -45,10 +51,25 @@ interface RegistrationChoice {
 }
 
 type Status =
-  | { kind: 'registered'; message: string; code: string; pageUrl: string; filename: string }
+  | { kind: 'registered'; message: string; code: string; pageUrl: string; filename: string; instructions: string[] }
   | { kind: 'missed'; message: string }
   | { kind: 'removed'; message: string }
   | { kind: 'remove-failed'; message: string };
+
+export interface RegistryExportFacts {
+  title: string;
+  seriesLabel: string | null;
+  includeDeviceNames: boolean;
+  includeDetailedReport: boolean;
+  author: string | null;
+  published: string | null;
+}
+
+function formatLabel(format: string): string {
+  if (format === 'print') return 'Format for Print';
+  if (format in EXPORT_FORMAT_LABELS) return EXPORT_FORMAT_LABELS[format as ExportFormat];
+  return format;
+}
 
 function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -69,6 +90,8 @@ export function useRegistryExport(args: {
   manuscriptId: string;
   defaultTitle: string;
   seriesLabel: string | null;
+  author: string;
+  published: string | null;
   onReceipt: (receipt: RegistryReceipt) => void;
   onRemoveReceipt: (code: string) => void;
 }) {
@@ -95,21 +118,51 @@ export function useRegistryExport(args: {
     includeDetailedReport,
   });
 
-  async function attempt(current: HeldExport, selected: RegistrationChoice): Promise<boolean> {
+  const liveFacts = (): RegistryExportFacts => ({
+    ...choice(),
+    author: args.author.trim() || null,
+    published: args.published,
+  });
+
+  function instructionFor(current: HeldExport, facts: RegistryExportFacts, proof?: {
+    code: string;
+    receivedAt: string;
+  }): RegistryInstruction {
+    const base = configuredBaseUrl();
+    return {
+      checkUrl: registryCheckUrl(base),
+      code: proof?.code ?? null,
+      codeUrl: proof ? registryCodeUrl(base, proof.code) : null,
+      author: facts.author,
+      published: facts.published,
+      exportedAtLabel: formatExportDateTime(current.exportedAt),
+      registeredAtLabel: proof ? formatExportDateTime(proof.receivedAt) : null,
+      title: facts.title.trim() || null,
+      seriesLabel: facts.seriesLabel,
+      manuscriptId: current.doc.manuscriptId,
+      filename: current.filename,
+      formatLabel: formatLabel(current.format),
+      byteLength: proof ? current.byteLength : null,
+      fileSha256: proof ? current.fileSha256 : null,
+      canonicalSha256: current.canonicalSha256,
+    };
+  }
+
+  async function attempt(current: HeldExport, facts: RegistryExportFacts): Promise<boolean> {
     try {
       const body = await buildRegistrationBody({
         doc: current.doc,
         appVersion: appVersion.version,
         exportedAt: current.exportedAt,
-        title: selected.title,
-        seriesLabel: selected.seriesLabel,
+        title: facts.title,
+        seriesLabel: facts.seriesLabel,
         filename: current.filename,
         byteLength: current.byteLength,
         fileSha256: current.fileSha256,
         canonicalSha256: current.canonicalSha256,
         canonicalUtf8Bytes: current.canonicalUtf8Bytes,
-        includeDeviceNames: selected.includeDeviceNames,
-        includeDetailedReport: selected.includeDetailedReport,
+        includeDeviceNames: facts.includeDeviceNames,
+        includeDetailedReport: facts.includeDetailedReport,
         liveDevice: current.liveDevice,
       });
       const result = await submitRegistration({
@@ -122,12 +175,16 @@ export function useRegistryExport(args: {
         return false;
       }
       args.onReceipt(result.receipt);
+      const wroteInstructions = exportWritesRegistryInstructions(current.format);
       setStatus({
         kind: 'registered',
-        message: registeredMessage(result.includedDetailedReport),
+        message: registeredMessage(result.includedDetailedReport, wroteInstructions),
         code: result.receipt.code,
-        pageUrl: result.pageUrl,
+        pageUrl: registryCodeUrl(configuredBaseUrl(), result.receipt.code),
         filename: result.receipt.filename,
+        instructions: registryInstructionLines(
+          instructionFor(current, facts, { code: result.receipt.code, receivedAt: result.receipt.receivedAt }),
+        ),
       });
       return true;
     } catch (error) {
@@ -137,8 +194,8 @@ export function useRegistryExport(args: {
     }
   }
 
-  async function publish(file: ProducedExport): Promise<void> {
-    const selected = choice();
+  async function publish(file: ProducedExport, pinned?: RegistryExportFacts): Promise<void> {
+    const facts = pinned ?? liveFacts();
     setBusy(true);
     setStatus(null);
     setCanRetry(false);
@@ -160,10 +217,11 @@ export function useRegistryExport(args: {
         byteLength: bytes.byteLength,
         canonicalSha256: canonical.sha256,
         canonicalUtf8Bytes: canonical.utf8Bytes,
+        facts,
       };
       held.current = current;
       frozen = true;
-      const registered = await attempt(current, selected);
+      const registered = await attempt(current, facts);
       setCanRetry(!registered);
     } catch (error) {
       console.error(error);
@@ -180,7 +238,7 @@ export function useRegistryExport(args: {
     if (!current || current.doc.manuscriptId !== args.manuscriptId) return;
     setBusy(true);
     try {
-      const registered = await attempt(current, choice());
+      const registered = await attempt(current, current.facts);
       setCanRetry(!registered);
     } finally {
       setBusy(false);
@@ -219,6 +277,7 @@ export function useRegistryExport(args: {
     retry,
     remove,
     canRetry,
+    codeUrl: (code: string) => registryCodeUrl(configuredBaseUrl(), code),
   };
 }
 
