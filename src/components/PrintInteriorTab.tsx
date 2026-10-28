@@ -167,7 +167,7 @@ export function PrintInteriorTab({
     <div className="print-interior">
       <p className="export-cert-note">
         This is the trim-size interior. The page you see is the file you download. The letter-size PDF on Writer files
-        stays the reading copy, and the certification summary is not in this one.
+        stays the reading copy. The certification summary and the registry instructions are not in this one.
       </p>
 
       <div className="publication__formats" role="group" aria-label="Trim size">

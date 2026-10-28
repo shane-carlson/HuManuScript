@@ -131,6 +131,8 @@ test('the print source keeps author text literal and omits the certification sum
   assert.match(trade, /#text\("She said "\)#emph\[#text\("#hello"\)\]#text\(" and \*no\*\."\)/);
   assert.doesNotMatch(trade, /HuManuScript/);
   assert.doesNotMatch(trade, /certification summary/);
+  assert.doesNotMatch(trade, /Certified Manuscript Registry/);
+  assert.doesNotMatch(trade, /readywriter\.one/);
   assert.match(trade, /Paperback ISBN 9780306406157/);
   assert.match(trade, /width: 6in/);
   assert.match(pocket, /width: 4\.25in/);

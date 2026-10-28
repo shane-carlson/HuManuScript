@@ -159,7 +159,8 @@ export function EpubExportTab({
   return (
     <div className="epub-editor">
       <p className="export-cert-note">
-        This file is a reflowable EPUB 3. The certification summary is not in it. Print-on-demand stays a PDF.
+        This file is a reflowable EPUB 3. The certification summary is not in it, and neither are the registry
+        instructions. Print-on-demand stays a PDF.
       </p>
       <form
         className="epub-options"

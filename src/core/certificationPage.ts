@@ -41,6 +41,69 @@ export function certificationBannerText(): string {
   return `${CERTIFICATION_PURPOSE} ${TRUST_STATEMENT}`;
 }
 
+/**
+ * Instructions for checking a registered export.
+ * The HMS- code, the registry clock, the file checksum, and the byte length are
+ * filled in after the registry accepts the file. They stay off the export:
+ * writing them in would change the bytes the file checksum describes.
+ */
+export interface RegistryInstruction {
+  checkUrl: string;
+  code: string | null;
+  codeUrl: string | null;
+  author: string | null;
+  /** Copyright year the author entered. The app does not store a publication day. */
+  published: string | null;
+  exportedAtLabel: string;
+  registeredAtLabel: string | null;
+  title: string | null;
+  seriesLabel: string | null;
+  manuscriptId: string;
+  filename: string;
+  formatLabel: string | null;
+  byteLength: number | null;
+  fileSha256: string | null;
+  canonicalSha256: string;
+}
+
+export const REGISTRY_NOTICE_HEADING = 'Certified Manuscript Registry';
+
+function recorded(value: string | null | undefined): string {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  return text ? text : 'Not recorded';
+}
+
+/** The same lines go on the certification summary and on the export screen. */
+export function registryInstructionLines(info: RegistryInstruction): string[] {
+  const lines = [
+    REGISTRY_NOTICE_HEADING,
+    '',
+    'Check this certification at the Certified Manuscript Registry. Read the summary there, then compare SHA-256 of the exact file bytes. The file is not uploaded, and the manuscript is not stored.',
+    `Check the certification: ${info.checkUrl}`,
+  ];
+  if (info.code && info.codeUrl) {
+    lines.push(`Registry code: ${info.code}`, `Code link: ${info.codeUrl}`);
+  } else {
+    lines.push(
+      'Registry code: HuManuScript shows the HMS- code when the registry accepts this file. Send that code with the file. It is left out of these bytes so the file checksum still matches.',
+    );
+  }
+  lines.push(
+    `Author: ${recorded(info.author)}`,
+    `Published: ${recorded(info.published)}`,
+    `Exported: ${info.exportedAtLabel}`,
+  );
+  if (info.registeredAtLabel) lines.push(`Registered: ${info.registeredAtLabel}`);
+  if (info.title?.trim()) lines.push(`Title: ${info.title.trim()}`);
+  if (info.seriesLabel?.trim()) lines.push(`Series: ${info.seriesLabel.trim()}`);
+  lines.push(`Manuscript id: ${info.manuscriptId}`, `File: ${info.filename}`);
+  if (info.formatLabel?.trim()) lines.push(`Format: ${info.formatLabel.trim()}`);
+  if (typeof info.byteLength === 'number') lines.push(`Bytes: ${info.byteLength}`);
+  if (info.fileSha256) lines.push(`File SHA-256: ${info.fileSha256}`);
+  lines.push(`Canonical text SHA-256: ${info.canonicalSha256}`);
+  return lines;
+}
+
 export interface CertificationPageModel {
   product: 'HuManuScript';
   bookTitle: string;
@@ -49,6 +112,8 @@ export interface CertificationPageModel {
   manuscriptId: string;
   exportedAt: string;
   exportedAtLabel: string;
+  /** Present on a writer-file export that is sent to the registry. EPUB and print omit it. */
+  registryNotice?: RegistryInstruction;
   /** Purpose and trust limit in one block. */
   banner: string;
   /** Distinct card labels for certified spans, in manuscript order. */
@@ -205,13 +270,9 @@ export function buildCertificationPageModel(
 
 /** Ordered lines of the one-page summary. Exporters and the preview render these facts. */
 export function certificationFactLines(model: CertificationPageModel): string[] {
-  const lines = [
-    'HuManuScript certification summary',
-    '',
-    model.banner,
-    '',
-    `Book: ${model.bookTitle}`,
-  ];
+  const lines = ['HuManuScript certification summary', ''];
+  if (model.registryNotice) lines.push(...registryInstructionLines(model.registryNotice), '');
+  lines.push(model.banner, '', `Book: ${model.bookTitle}`);
   if (model.seriesLabel) lines.push(`Series: ${model.seriesLabel}`);
   lines.push(
     `Manuscript: ${model.manuscriptTitle}`,

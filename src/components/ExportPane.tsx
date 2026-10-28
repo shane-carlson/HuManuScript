@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { type CertificationPageIdentity } from '../core/certificationPage.ts';
+import { formatExportDateTime, type CertificationPageIdentity, type RegistryInstruction } from '../core/certificationPage.ts';
 import { displayTitle, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
 import { PrintInteriorTab } from './PrintInteriorTab.tsx';
 import { EpubExportError } from '../core/epubExport.ts';
@@ -12,11 +12,12 @@ import {
   type ExportFormat,
   type PublicationFileOptions,
 } from '../core/exportManuscript.ts';
+import { parseCopyrightYear } from '../core/bookPages.ts';
 import { PublicationPagesError } from '../core/publicationPages.ts';
 import { EpubExportTab, PublicationSwitch } from './EpubExportTab.tsx';
 import { RegistryExportCard } from './RegistryExport.tsx';
-import { useRegistryExport, type ProducedExport } from './useRegistryExport.ts';
-import type { RegistryReceipt } from '../core/registry.ts';
+import { useRegistryExport, type ProducedExport, type RegistryExportFacts } from './useRegistryExport.ts';
+import { canonicalManuscriptText, registryCheckUrl, sha256Utf8, type RegistryReceipt } from '../core/registry.ts';
 
 interface TargetInfo {
   id: string;
@@ -162,6 +163,8 @@ export function ExportPane({
     manuscriptId: doc.manuscriptId,
     defaultTitle: registrationTitle,
     seriesLabel,
+    author: form.author,
+    published: parseCopyrightYear(form.copyrightYear)?.toString() ?? null,
     onReceipt: onSaveRegistryReceipt,
     onRemoveReceipt: onRemoveRegistryReceipt,
   });
@@ -199,15 +202,44 @@ export function ExportPane({
     setExportError('');
     try {
       const exportedAt = new Date().toISOString();
-      const blob = await exportManuscriptBlob(doc, target.format, exportedAt, identity, undefined, publication());
+      const facts: RegistryExportFacts = {
+        title: registry.title,
+        seriesLabel,
+        includeDeviceNames: registry.includeDeviceNames,
+        includeDetailedReport: registry.includeDetailedReport,
+        author: formRef.current.author.trim() || null,
+        published: parseCopyrightYear(formRef.current.copyrightYear)?.toString() ?? null,
+      };
+      const filename = exportFilename(title, target.format);
+      const canonical = await sha256Utf8(canonicalManuscriptText(doc));
+      const notice: RegistryInstruction = {
+        checkUrl: registryCheckUrl(
+          typeof import.meta.env.VITE_REGISTRY_BASE_URL === 'string' ? import.meta.env.VITE_REGISTRY_BASE_URL : null,
+        ),
+        code: null,
+        codeUrl: null,
+        author: facts.author,
+        published: facts.published,
+        exportedAtLabel: formatExportDateTime(exportedAt),
+        registeredAtLabel: null,
+        title: facts.title.trim() || null,
+        seriesLabel: facts.seriesLabel,
+        manuscriptId: doc.manuscriptId,
+        filename,
+        formatLabel: EXPORT_FORMAT_LABELS[target.format],
+        byteLength: null,
+        fileSha256: null,
+        canonicalSha256: canonical.sha256,
+      };
+      const blob = await exportManuscriptBlob(doc, target.format, exportedAt, identity, undefined, publication(), notice);
       if (formRef.current.includePublicationPages) onSaveEpubChoices(formRef.current);
       const file: ProducedExport = {
         blob,
-        filename: exportFilename(title, target.format),
+        filename,
         format: target.format,
         exportedAt,
       };
-      await registry.publish(file);
+      await registry.publish(file, facts);
     } catch (error) {
       console.error(error);
       if (error instanceof PublicationPagesError || error instanceof EpubExportError) setExportError(error.message);
@@ -283,8 +315,9 @@ export function ExportPane({
       <div role="tabpanel" id="export-panel-files" aria-labelledby="export-tab-files" hidden={panel !== 'files'}>
         <p className="export-cert-note">
           Word, RTF, ODT, Markdown, text, and PDF start with the one-page <strong>certification summary</strong>, then a
-          page break. The manuscript follows with no certification highlights. Publication pages stay off until you turn
-          them on.
+          page break. When the file is registered, that summary starts with how to check it. EPUB and Format for Print
+          leave that block out. The manuscript follows with no certification highlights. Publication pages stay off
+          until you turn them on.
         </p>
 
         <div className="stepper" aria-label="Export steps">
