@@ -12,6 +12,7 @@ import {
 } from '../core/epubSettings.ts';
 import { parseCopyrightYear } from '../core/bookPages.ts';
 import { exportCoverFilename, exportFilename, exportManuscriptBlob } from '../core/exportManuscript.ts';
+import type { ProducedExport } from './useRegistryExport.ts';
 import type { ManuscriptBlock } from '../core/types.ts';
 
 const BODY_SIZES: EpubBodySize[] = ['small', 'medium', 'large', 'xlarge'];
@@ -34,6 +35,8 @@ export function EpubExportTab({
   uuid,
   onUpdate,
   onEnsureUuid,
+  registering = false,
+  onRegisterDownload,
 }: {
   doc: ManuscriptDocument;
   title: string;
@@ -43,6 +46,8 @@ export function EpubExportTab({
   uuid: string;
   onUpdate: (patch: Partial<EpubChoicePatch>, save: boolean) => void;
   onEnsureUuid: () => string;
+  registering?: boolean;
+  onRegisterDownload?: (file: ProducedExport) => Promise<void>;
 }) {
   const [cover, setCover] = useState<(EpubImageSource & { name: string }) | null>(null);
   const [coverMessage, setCoverMessage] = useState('');
@@ -132,9 +137,12 @@ export function EpubExportTab({
     try {
       const epubUuid = onEnsureUuid();
       const options = buildOptions(epubUuid);
-      const blob = await exportManuscriptBlob(doc, 'epub', new Date().toISOString(), { bookTitle: title, seriesLabel }, options);
+      const exportedAt = new Date().toISOString();
+      const blob = await exportManuscriptBlob(doc, 'epub', exportedAt, { bookTitle: title, seriesLabel }, options);
       onUpdate({}, true);
-      downloadBlob(exportFilename(title, 'epub'), blob);
+      const file: ProducedExport = { blob, filename: exportFilename(title, 'epub'), format: 'epub', exportedAt };
+      if (onRegisterDownload) await onRegisterDownload(file);
+      else downloadBlob(file.filename, file.blob);
       if (cover) {
         const extension = cover.mediaType === 'image/png' ? 'png' : 'jpg';
         const coverBlob = new Blob([cover.bytes.slice()], { type: cover.mediaType });
@@ -556,7 +564,7 @@ export function EpubExportTab({
             ) : null}
           </div>
           {exportError ? <p className="export-error" role="alert">{exportError}</p> : null}
-          <button type="submit" className="primary export-download" disabled={!ready || exporting}>
+          <button type="submit" className="primary export-download" disabled={!ready || exporting || registering}>
             {exporting ? 'Exporting…' : 'Download EPUB'}
           </button>
           {!ready ? <p className="hint">Check this EPUB before download. Download stays off while a check reports a problem.</p> : null}

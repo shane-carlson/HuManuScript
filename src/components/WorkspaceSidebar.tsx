@@ -117,6 +117,11 @@ export function WorkspaceSidebar({
                   >
                     <span className="book-row__title">{bookDisplayTitle(book)}</span>
                     {membership && <span className="book-row__meta">{membership}</span>}
+                    {book.registryReceipts && book.registryReceipts.length > 0 ? (
+                      <span className="book-row__meta book-row__code">
+                        Certified Manuscript Registry {book.registryReceipts[book.registryReceipts.length - 1]!.code}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}

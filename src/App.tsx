@@ -11,10 +11,12 @@ import { LicenseGate } from './components/LicenseGate.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
 import { epubChoicesFromBook } from './core/epubSettings.ts';
 import {
+  addRegistryReceipt,
   assignSeriesToBook,
   bookDisplayTitle,
   ensureBookEpubUuid,
   formatSeriesBookNumber,
+  removeRegistryReceipt,
   saveBookEpubChoices,
   seriesMembershipLabel,
   setBookSeriesNumber,
@@ -417,6 +419,19 @@ export default function App() {
                     const bookId = activeBook?.id ?? lib?.activeBookId;
                     if (!lib || !bookId) return;
                     setLibrary(saveBookEpubChoices(lib, bookId, patch));
+                  }}
+                  registryReceipts={activeBook?.registryReceipts ?? []}
+                  onSaveRegistryReceipt={(receipt) => {
+                    const lib = libraryRef.current;
+                    const bookId = activeBook?.id ?? lib?.activeBookId;
+                    if (!lib || !bookId) return;
+                    setLibrary(addRegistryReceipt(lib, bookId, receipt));
+                  }}
+                  onRemoveRegistryReceipt={(code) => {
+                    const lib = libraryRef.current;
+                    const bookId = activeBook?.id ?? lib?.activeBookId;
+                    if (!lib || !bookId) return;
+                    setLibrary(removeRegistryReceipt(lib, bookId, code));
                   }}
                 />
               </div>

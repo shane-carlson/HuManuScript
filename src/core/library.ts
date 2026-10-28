@@ -3,6 +3,7 @@
  */
 
 import { emptyDocument, type ManuscriptDocument } from './document.ts';
+import { readRegistryReceipts, type RegistryReceipt } from './registry.ts';
 import { parseCopyrightYear } from './bookPages.ts';
 import {
   canonicalBcp47,
@@ -52,6 +53,11 @@ export interface Book {
   epubParagraphStyle?: EpubParagraphStyle;
   epubTextAlign?: EpubTextAlign;
   epubBodySize?: EpubBodySize;
+  /**
+   * Certified Manuscript Registry codes for files exported from this book.
+   * Kept beside the manuscript. Exporters do not read this field.
+   */
+  registryReceipts?: RegistryReceipt[];
 }
 
 export interface Library {
@@ -282,6 +288,37 @@ function writeIsbn(book: Book, key: 'ebookIsbn' | 'paperbackIsbn' | 'hardcoverIs
     const isbn = normalizeIsbn(trimmed);
     if (isbn) book[key] = isbn;
   }
+}
+
+export function addRegistryReceipt(library: Library, bookId: string, receipt: RegistryReceipt): Library {
+  return {
+    ...library,
+    books: library.books.map((book) =>
+      book.id === bookId
+        ? { ...book, registryReceipts: [...(book.registryReceipts ?? []), receipt] }
+        : book,
+    ),
+  };
+}
+
+export function removeRegistryReceipt(library: Library, bookId: string, code: string): Library {
+  return {
+    ...library,
+    books: library.books.map((book) => {
+      if (book.id !== bookId || !book.registryReceipts) return book;
+      const registryReceipts = book.registryReceipts.filter((item) => item.code !== code);
+      if (registryReceipts.length === 0) {
+        const next = { ...book };
+        delete next.registryReceipts;
+        return next;
+      }
+      return { ...book, registryReceipts };
+    }),
+  };
+}
+
+export function registryReceiptsForBook(book: Pick<Book, 'registryReceipts'> | null | undefined): RegistryReceipt[] {
+  return readRegistryReceipts(book?.registryReceipts);
 }
 
 export function createBook(library: Library, newBookId: string, title = 'Untitled book'): Library {

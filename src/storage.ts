@@ -11,6 +11,7 @@ import {
   type LayoutSession,
   type LayoutSessionFlags,
 } from './core/layoutSession.ts';
+import { readRegistryReceipts } from './core/registry.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
 
 export const LIBRARY_KEY = 'humanuscript.library.v2';
@@ -334,7 +335,11 @@ function hydrateBook(raw: Book): Book {
   const legacy = book as Book & { epubAuthor?: string; epubIsbn?: string };
   delete legacy.epubAuthor;
   delete legacy.epubIsbn;
-  return { ...book, ...readStoredEpubFields(raw), ...readStoredBookPages(raw) };
+  const next = { ...book, ...readStoredEpubFields(raw), ...readStoredBookPages(raw) };
+  const receipts = readRegistryReceipts(raw.registryReceipts);
+  if (receipts.length > 0) next.registryReceipts = receipts;
+  else delete next.registryReceipts;
+  return next;
 }
 
 export function loadLibrary(): LoadResult {

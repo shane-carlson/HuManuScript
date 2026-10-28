@@ -14,6 +14,9 @@ import {
 } from '../core/exportManuscript.ts';
 import { PublicationPagesError } from '../core/publicationPages.ts';
 import { EpubExportTab, PublicationSwitch } from './EpubExportTab.tsx';
+import { RegistryExportCard } from './RegistryExport.tsx';
+import { useRegistryExport, type ProducedExport } from './useRegistryExport.ts';
+import type { RegistryReceipt } from '../core/registry.ts';
 
 interface TargetInfo {
   id: string;
@@ -100,15 +103,6 @@ const TARGETS: TargetInfo[] = [
   },
 ];
 
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ExportPane({
   doc,
   bookTitle,
@@ -117,6 +111,9 @@ export function ExportPane({
   epubChoices,
   onEnsureEpubUuid,
   onSaveEpubChoices,
+  registryReceipts,
+  onSaveRegistryReceipt,
+  onRemoveRegistryReceipt,
 }: {
   doc: ManuscriptDocument;
   bookTitle?: string;
@@ -125,6 +122,9 @@ export function ExportPane({
   epubChoices: EpubChoiceView;
   onEnsureEpubUuid: () => string;
   onSaveEpubChoices: (patch: EpubChoicePatch) => void;
+  registryReceipts: RegistryReceipt[];
+  onSaveRegistryReceipt: (receipt: RegistryReceipt) => void;
+  onRemoveRegistryReceipt: (code: string) => void;
 }) {
   const [panel, setPanel] = useState<'files' | 'epub' | 'print'>('files');
   const [printOpened, setPrintOpened] = useState(false);
@@ -152,10 +152,19 @@ export function ExportPane({
 
   const stats = useMemo(() => manuscriptStats(doc.blocks), [doc.blocks]);
   const title = displayTitle(doc);
+  const registrationTitle = bookTitle?.trim() || title;
   const identity = useMemo<CertificationPageIdentity>(
     () => ({ bookTitle: bookTitle || title, seriesLabel }),
     [bookTitle, seriesLabel, title],
   );
+  const registry = useRegistryExport({
+    doc,
+    manuscriptId: doc.manuscriptId,
+    defaultTitle: registrationTitle,
+    seriesLabel,
+    onReceipt: onSaveRegistryReceipt,
+    onRemoveReceipt: onRemoveRegistryReceipt,
+  });
 
   const updateForm = (patch: Partial<EpubChoicePatch>, save: boolean) => {
     const next = { ...formRef.current, ...patch };
@@ -189,16 +198,16 @@ export function ExportPane({
     setExporting(true);
     setExportError('');
     try {
-      const blob = await exportManuscriptBlob(
-        doc,
-        target.format,
-        new Date().toISOString(),
-        identity,
-        undefined,
-        publication(),
-      );
+      const exportedAt = new Date().toISOString();
+      const blob = await exportManuscriptBlob(doc, target.format, exportedAt, identity, undefined, publication());
       if (formRef.current.includePublicationPages) onSaveEpubChoices(formRef.current);
-      downloadBlob(exportFilename(title, target.format), blob);
+      const file: ProducedExport = {
+        blob,
+        filename: exportFilename(title, target.format),
+        format: target.format,
+        exportedAt,
+      };
+      await registry.publish(file);
     } catch (error) {
       console.error(error);
       if (error instanceof PublicationPagesError || error instanceof EpubExportError) setExportError(error.message);
@@ -226,6 +235,8 @@ export function ExportPane({
           seals={doc.points.length}
         />
       </div>
+
+      <RegistryExportCard receipts={registryReceipts} registry={registry} />
 
       <div className="export-tabs" role="tablist" aria-label="Export">
         <button
@@ -320,7 +331,7 @@ export function ExportPane({
             Fill in the author and copyright year on the EPUB tab first.
           </p>
           {exportError ? <p className="export-error" role="alert">{exportError}</p> : null}
-          <button type="button" className="primary export-download" disabled={exporting} onClick={() => void runExport()}>
+          <button type="button" className="primary export-download" disabled={exporting || registry.busy} onClick={() => void runExport()}>
             {exporting ? 'Exporting…' : `Download for ${target.name}`}
           </button>
         </div>
@@ -336,6 +347,8 @@ export function ExportPane({
           uuid={epubChoices.uuid}
           onUpdate={updateForm}
           onEnsureUuid={onEnsureEpubUuid}
+          registering={registry.busy}
+          onRegisterDownload={registry.publish}
         />
       </div>
 
@@ -347,6 +360,8 @@ export function ExportPane({
             seriesLabel={seriesLabel}
             form={form}
             onUpdate={updateForm}
+            registering={registry.busy}
+            onRegisterDownload={registry.publish}
           />
         </div>
       ) : null}
