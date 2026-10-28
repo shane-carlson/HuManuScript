@@ -25,6 +25,19 @@ export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview' | 'publication';
 export type WorkspaceTab = 'manuscript' | 'export' | 'history';
 
+/** Names shown on the view pill and in the label beside it. */
+const EDITOR_VIEW_LABELS: Record<EditorViewMode, string> = {
+  raw: 'Raw write',
+  manuscript: 'Manuscript view',
+  highlights: 'Certification highlights',
+  preview: 'Export preview',
+  publication: 'Publication',
+};
+
+export function editorViewLabel(mode: EditorViewMode): string {
+  return EDITOR_VIEW_LABELS[mode];
+}
+
 /** A new session opens on the blank raw-write page. A choice made in this session stays. */
 export function editorViewFromStored(value: string | null | undefined): EditorViewMode {
   if (value === 'manuscript' || value === 'highlights' || value === 'preview' || value === 'publication' || value === 'raw') return value;

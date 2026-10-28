@@ -2726,6 +2726,29 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .point-grammar { color: var(--grammar-ink); font-size: 0.82rem; }
 .prov-plain { background: transparent; box-shadow: none; }
 .find-hit { outline: 2px solid var(--accent); }
+.view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.view-current {
+  flex: 0 1 auto;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.view-switch .view-toggle {
+  flex: 0 0 auto;
+}
 .view-toggle {
   display: inline-flex;
   border: 1px solid var(--border-strong);
@@ -2734,6 +2757,15 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 }
 .view-toggle {
   gap: 0;
+}
+.editor-layout.is-focus .view-current,
+.toolbar.is-collapsed .view-current {
+  max-width: 7.5rem;
+  font-size: 0.72rem;
+}
+.editor-layout.is-focus .view-switch,
+.toolbar.is-collapsed .view-switch {
+  gap: 6px;
 }
 .canvas-note, .points-empty, .lineage, .point-check { color: var(--text-dim); font-size: 0.86rem; }
 .point-list { list-style: none; padding: 0 0 16px; margin: 0 0 12px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
@@ -3302,6 +3334,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }
   .toolbar-group--end { margin-left: 0; }
+  .view-switch { gap: 6px; }
   .toolbar-history-find { flex-wrap: wrap; }
   .find input { min-width: 0; flex-basis: 8rem; width: 8rem; }
   .summary-rollup { grid-template-columns: 1fr; }
@@ -3349,4 +3382,11 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
     row-gap: 8px;
   }
   .focus-exit-bar p { flex: 1 1 100%; }
+}
+
+@media (max-width: 420px) {
+  .toolbar-group--end { min-width: 0; max-width: 100%; }
+  .toolbar-group--end .toolbar-group__icons { flex-wrap: wrap; }
+  .view-switch { min-width: 0; max-width: 100%; }
+  .view-current { min-width: 0; max-width: 9.5rem; }
 }

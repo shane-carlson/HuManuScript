@@ -63,6 +63,7 @@ import { openPassageCards, scrollDelta } from '../core/passageCard.ts';
 import {
   loadCertificationCollapsed,
   loadCertificationWidth,
+  editorViewLabel,
   loadEditorView,
   loadNotesCollapsed,
   loadNotesWidth,
@@ -1298,47 +1299,52 @@ export function Editor({
           <div className="toolbar-group toolbar-group--end">
             <span className="toolbar-group__label" id="toolbar-view">View</span>
             <div className="toolbar-group__icons" role="group" aria-labelledby="toolbar-view">
-              <div className="view-toggle" role="group" aria-label="Editor view">
-                <ToolbarIconButton
-                  label="Raw write"
-                  essential
-                  active={viewMode === 'raw'}
-                  onClick={() => setViewMode('raw')}
-                >
-                  <IconRawWrite />
-                </ToolbarIconButton>
-                <ToolbarIconButton
-                  label="Manuscript view"
-                  essential
-                  active={viewMode === 'manuscript'}
-                  onClick={() => setViewMode('manuscript')}
-                >
-                  <IconManuscriptView />
-                </ToolbarIconButton>
-                <ToolbarIconButton
-                  label="Certification highlights"
-                  essential
-                  active={viewMode === 'highlights'}
-                  onClick={() => setViewMode('highlights')}
-                >
-                  <IconCertificationView />
-                </ToolbarIconButton>
-                <ToolbarIconButton
-                  label="Export preview"
-                  essential
-                  active={viewMode === 'preview'}
-                  onClick={openPreview}
-                >
-                  <IconExportPreview />
-                </ToolbarIconButton>
-                <ToolbarIconButton
-                  label="Publication"
-                  essential
-                  active={viewMode === 'publication'}
-                  onClick={() => setViewMode('publication')}
-                >
-                  <IconPublication />
-                </ToolbarIconButton>
+              <div className="view-switch">
+                <span className="view-current" title={editorViewLabel(viewMode)} aria-live="polite">
+                  {editorViewLabel(viewMode)}
+                </span>
+                <div className="view-toggle" role="group" aria-label="Editor view">
+                  <ToolbarIconButton
+                    label={editorViewLabel('raw')}
+                    essential
+                    active={viewMode === 'raw'}
+                    onClick={() => setViewMode('raw')}
+                  >
+                    <IconRawWrite />
+                  </ToolbarIconButton>
+                  <ToolbarIconButton
+                    label={editorViewLabel('manuscript')}
+                    essential
+                    active={viewMode === 'manuscript'}
+                    onClick={() => setViewMode('manuscript')}
+                  >
+                    <IconManuscriptView />
+                  </ToolbarIconButton>
+                  <ToolbarIconButton
+                    label={editorViewLabel('highlights')}
+                    essential
+                    active={viewMode === 'highlights'}
+                    onClick={() => setViewMode('highlights')}
+                  >
+                    <IconCertificationView />
+                  </ToolbarIconButton>
+                  <ToolbarIconButton
+                    label={editorViewLabel('preview')}
+                    essential
+                    active={viewMode === 'preview'}
+                    onClick={openPreview}
+                  >
+                    <IconExportPreview />
+                  </ToolbarIconButton>
+                  <ToolbarIconButton
+                    label={editorViewLabel('publication')}
+                    essential
+                    active={viewMode === 'publication'}
+                    onClick={() => setViewMode('publication')}
+                  >
+                    <IconPublication />
+                  </ToolbarIconButton>
+                </div>
               </div>
               {!focusMode ? (
                 <button type="button" className="focus-enter" data-tooltip="Full screen" data-rail-essential="true" aria-label="Full screen" onClick={() => onFocusModeChange?.(true)}>
