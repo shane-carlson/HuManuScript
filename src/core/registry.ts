@@ -258,6 +258,39 @@ export function unregisteredMessage(): string {
   return `This file was not registered with the ${REGISTRY_NAME}. The download is still your export.`;
 }
 
+export type RegistrationFailure =
+  | { ok: false; kind: 'http'; url: string; status: number; detail: string }
+  | { ok: false; kind: 'invalid'; url: string; status: number; detail: string }
+  | { ok: false; kind: 'network'; url: string };
+
+/** The specific line shown under the unregistered sentence. */
+export function registrationFailureDetail(failure: RegistrationFailure): string {
+  if (failure.kind === 'network') {
+    return `The request to ${failure.url} did not get a response (network, CORS, or timeout).`;
+  }
+  const reply = failure.detail ? ` ${failure.detail}` : '';
+  if (failure.kind === 'invalid') {
+    return `The registry returned HTTP ${failure.status} for ${failure.url}, but the response was not a registration code.${reply}`;
+  }
+  return `The registry returned HTTP ${failure.status} for ${failure.url}.${reply}`;
+}
+
+const RESPONSE_DETAIL_LIMIT = 600;
+
+function responseDetail(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: unknown };
+    if (parsed && typeof parsed === 'object' && typeof parsed.message === 'string' && parsed.message.trim()) {
+      return parsed.message.trim().slice(0, RESPONSE_DETAIL_LIMIT);
+    }
+  } catch {
+    // The registry sometimes answers with a plain body.
+  }
+  return trimmed.slice(0, RESPONSE_DETAIL_LIMIT);
+}
+
 export function removedMessage(): string {
   return `That code was removed from the ${REGISTRY_NAME}.`;
 }
@@ -597,7 +630,7 @@ export type RegistrationResult =
       pageUrl: string;
       includedDetailedReport: boolean;
     }
-  | { ok: false };
+  | RegistrationFailure;
 
 export async function submitRegistration(args: {
   baseUrl: string;
@@ -607,17 +640,26 @@ export async function submitRegistration(args: {
 }): Promise<RegistrationResult> {
   assertRegistrationOmitsManuscript(args.body, emptySecretsDoc(args.body.manuscriptId));
   const fetchImpl = args.fetchImpl ?? fetch;
+  const url = registryRegistrationsUrl(args.baseUrl);
   try {
-    const response = await fetchImpl(registryRegistrationsUrl(args.baseUrl), {
+    const response = await fetchImpl(url, {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify(args.body),
       credentials: 'omit',
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) return { ok: false };
-    const payload: unknown = await response.json();
-    if (!isRegistrationResponse(payload)) return { ok: false };
+    const text = await response.text();
+    if (!response.ok) return { ok: false, kind: 'http', url, status: response.status, detail: responseDetail(text) };
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return { ok: false, kind: 'invalid', url, status: response.status, detail: responseDetail(text) };
+    }
+    if (!isRegistrationResponse(payload)) {
+      return { ok: false, kind: 'invalid', url, status: response.status, detail: responseDetail(text) };
+    }
     const receipt: RegistryReceipt = {
       code: payload.code,
       receivedAt: payload.receivedAt,
@@ -636,7 +678,7 @@ export async function submitRegistration(args: {
       includedDetailedReport: args.body.report != null,
     };
   } catch {
-    return { ok: false };
+    return { ok: false, kind: 'network', url };
   }
 }
 

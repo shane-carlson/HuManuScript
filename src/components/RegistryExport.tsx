@@ -80,9 +80,12 @@ export function RegistryExportCard({
       <div className="registry-status" aria-live="polite">
         {registry.busy ? <p>Contacting the {REGISTRY_NAME}…</p> : null}
         {registry.status ? (
-          <p className={registry.status.kind === 'missed' || registry.status.kind === 'remove-failed' ? 'export-error' : undefined}>
-            {registry.status.message}
-          </p>
+          <>
+            <p className={registry.status.kind === 'missed' || registry.status.kind === 'remove-failed' ? 'export-error' : undefined}>
+              {registry.status.message}
+            </p>
+            {registry.status.kind === 'missed' ? <p className="export-error">{registry.status.detail}</p> : null}
+          </>
         ) : null}
         {registry.status?.kind === 'registered' ? (
           <div className="registry-code-block">

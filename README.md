@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-A download can also register with the **Certified Manuscript Registry**, a Sidequests page on readywriter.one. The app freezes the export, hashes those exact bytes and a plain-text walk of the manuscript, and sends the certification summary plus both checksums. The file is not uploaded. The returned `HMS-` code is kept next to the book. It is not written into the file, because writing it in after the hash would change the bytes. The same bytes are what get downloaded. If the registry cannot be reached, the download still succeeds and the export says the file was not registered.
+A download can also register with the **Certified Manuscript Registry**, a Sidequests page on readywriter.one. The app freezes the export, hashes those exact bytes and a plain-text walk of the manuscript, and sends the certification summary plus both checksums. The file is not uploaded. The returned `HMS-` code is kept next to the book. It is not written into the file, because writing it in after the hash would change the bytes. The same bytes are what get downloaded. If the registry cannot be reached, the download still succeeds. The export says the file was not registered, then the HTTP status and the registry's reply, or that the request to the registration URL got no response.
 
 Word, RTF, Scrivener, ODT, Markdown, plain text, and the letter-size PDF put the check instructions at the top of the certification summary: the public registry page, the author’s name, the copyright year when one was entered, the export time, and the canonical text SHA-256. The code, the registry’s received time, and the file SHA-256 are shown on the export screen after the registry accepts the file. EPUB and Format for Print do not include that block.
 

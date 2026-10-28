@@ -24,6 +24,7 @@ import {
   registeredMessage,
   sha256Hex,
   sha256Utf8,
+  registrationFailureDetail,
   submitRegistration,
   unregisteredMessage,
   type RegistrationBody,
@@ -438,7 +439,38 @@ test('POST sends the summary and keeps the code, and a dead registry does not th
     throw new Error('offline');
   };
   const missed = await submitRegistration({ baseUrl: DEFAULT_REGISTRY_BASE_URL, body, format: 'docx', fetchImpl: down });
-  assert.deepEqual(missed, { ok: false });
+  assert.equal(missed.ok, false);
+  if (missed.ok) return;
+  assert.equal(missed.kind, 'network');
+  assert.equal(missed.url, 'https://www.readywriter.one/api/registrations');
+  assert.match(registrationFailureDetail(missed), /did not get a response/);
+  assert.match(registrationFailureDetail(missed), /network, CORS, or timeout/);
+  assert.match(registrationFailureDetail(missed), /https:\/\/www\.readywriter\.one\/api\/registrations/);
+
+  const refused: typeof fetch = async () =>
+    new Response(JSON.stringify({ error: 'rejected', message: 'Registration refused. The field "title" is missing.' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  const httpFailure = await submitRegistration({ baseUrl: DEFAULT_REGISTRY_BASE_URL, body, format: 'docx', fetchImpl: refused });
+  assert.equal(httpFailure.ok, false);
+  if (httpFailure.ok) return;
+  assert.equal(httpFailure.kind, 'http');
+  assert.equal(httpFailure.status, 400);
+  const httpDetail = registrationFailureDetail(httpFailure);
+  assert.match(httpDetail, /HTTP 400/);
+  assert.match(httpDetail, /The field "title" is missing/);
+  assert.equal(httpDetail.includes(unregisteredMessage()), false);
+
+  const odd: typeof fetch = async () => new Response('not-json', { status: 200, headers: { 'content-type': 'text/plain' } });
+  const invalid = await submitRegistration({ baseUrl: 'http://127.0.0.1:8741/registry', body, format: 'docx', fetchImpl: odd });
+  assert.equal(invalid.ok, false);
+  if (invalid.ok) return;
+  assert.equal(invalid.kind, 'invalid');
+  assert.equal(invalid.status, 200);
+  assert.match(registrationFailureDetail(invalid), /HTTP 200/);
+  assert.match(registrationFailureDetail(invalid), /not-json/);
+  assert.match(registrationFailureDetail(invalid), /127\.0\.0\.1:8741\/registry\/registrations/);
 });
 
 test('delete sends the token in the body and header, and not in the URL', async () => {

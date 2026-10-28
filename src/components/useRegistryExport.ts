@@ -10,9 +10,11 @@ import {
   deleteRegistration,
   exportWritesRegistryInstructions,
   registeredMessage,
+  registrationFailureDetail,
   registryBaseUrl,
   registryCheckUrl,
   registryCodeUrl,
+  registryRegistrationsUrl,
   removeFailedMessage,
   removedMessage,
   sha256Hex,
@@ -52,7 +54,7 @@ interface RegistrationChoice {
 
 type Status =
   | { kind: 'registered'; message: string; code: string; pageUrl: string; filename: string; instructions: string[] }
-  | { kind: 'missed'; message: string }
+  | { kind: 'missed'; message: string; detail: string }
   | { kind: 'removed'; message: string }
   | { kind: 'remove-failed'; message: string };
 
@@ -171,7 +173,7 @@ export function useRegistryExport(args: {
         format: current.format,
       });
       if (!result.ok) {
-        setStatus({ kind: 'missed', message: unregisteredMessage() });
+        setStatus({ kind: 'missed', message: unregisteredMessage(), detail: registrationFailureDetail(result) });
         return false;
       }
       args.onReceipt(result.receipt);
@@ -189,9 +191,15 @@ export function useRegistryExport(args: {
       return true;
     } catch (error) {
       console.error(error);
-      setStatus({ kind: 'missed', message: unregisteredMessage() });
+      setStatus({ kind: 'missed', message: unregisteredMessage(), detail: registrationNotSentDetail(error) });
       return false;
     }
+  }
+
+  function registrationNotSentDetail(error: unknown): string {
+    const url = registryRegistrationsUrl(configuredBaseUrl());
+    const reason = error instanceof Error && error.message ? error.message : 'The registration could not be prepared.';
+    return `The request to ${url} was not sent. ${reason}`;
   }
 
   async function publish(file: ProducedExport, pinned?: RegistryExportFacts): Promise<void> {
@@ -225,7 +233,7 @@ export function useRegistryExport(args: {
       setCanRetry(!registered);
     } catch (error) {
       console.error(error);
-      setStatus({ kind: 'missed', message: unregisteredMessage() });
+      setStatus({ kind: 'missed', message: unregisteredMessage(), detail: registrationNotSentDetail(error) });
       setCanRetry(frozen);
     } finally {
       downloadBlob(file.filename, downloadable);
