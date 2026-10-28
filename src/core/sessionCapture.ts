@@ -571,7 +571,7 @@ export const SESSION_CAPTURE_REPORTS: readonly {
     kind: 'detailed',
     label: 'Detailed certification report',
     detail:
-      'All pictures in time order, with every certification field for the passages in each window. A one-page summary leads.',
+      'All pictures in time order. Each sealed passage is one record — the text, the hash, the time, and the other certification details — not a line per keystroke. A one-page summary leads.',
   },
   {
     kind: 'summary',

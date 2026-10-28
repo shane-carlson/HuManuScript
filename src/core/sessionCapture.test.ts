@@ -472,7 +472,9 @@ test('the three reports share a timeline and differ by pictures and certificatio
   assert.equal(summaryLines.includes(SPELL_CHECK_COMMENT), false);
   assert.equal(summaryLines.includes('hash-inside'), true);
   assert.equal(detailedLines.includes('UNIQUE_PASSAGE_inside'), true);
-  assert.equal(detailedLines.includes('UNIQUE_EVIDENCE_inside'), true);
+  assert.equal(detailedLines.includes('UNIQUE_EVIDENCE_inside'), false);
+  assert.match(detailedLines, /1 observed input event · insertText/);
+  assert.equal(detailedLines.includes('27 October 2026, 12:04 UTC · insertText'), false);
   assert.equal(detailedLines.includes('Studio Mac'), true);
   assert.equal(detailedLines.includes('prior-inside'), true);
   assert.equal(detailedLines.includes('block-inside'), true);
@@ -521,7 +523,8 @@ test('the three reports share a timeline and differ by pictures and certificatio
 
   assert.ok(detailed.indexOf('HuManuScript certification summary') >= 0);
   assert.ok(detailed.indexOf('HuManuScript certification summary') < detailed.indexOf('UNIQUE_PASSAGE_inside'));
-  assert.equal(detailed.includes('UNIQUE_EVIDENCE_inside'), true);
+  assert.equal(detailed.includes('UNIQUE_EVIDENCE_inside'), false);
+  assert.equal(detailed.includes('1 observed input event'), true);
   assert.equal(detailed.includes('DCTDecode'), true);
 
   assert.equal(highLevel.includes('HuManuScript certification summary'), false);
@@ -538,4 +541,44 @@ test('the three reports share a timeline and differ by pictures and certificatio
   assert.equal(sealsOnly.includes('hash-inside'), true);
   assert.equal(sealsOnly.includes('DCTDecode'), false);
   assert.ok(sealsOnly.length < highLevel.length);
+});
+
+test('a detailed seal is one record for the passage, not a line per keystroke', () => {
+  const point = detailedPoint('typed');
+  point.text = 'Hello there';
+  point.evidence = {
+    inputTypes: ['insertText'],
+    eventCount: 5,
+    events: ['H', 'e', 'l', 'l', 'o'].map((data, index) => ({
+      at: `2026-10-27T12:0${index}:01.000Z`,
+      inputType: 'insertText',
+      data,
+      trusted: index !== 2,
+    })),
+  };
+  const lines = detailedSealText(point);
+  assert.equal(lines.filter((line) => line === 'Hello there').length, 1);
+  assert.equal(lines.filter((line) => line === 'Keyboard, sealed').length, 1);
+  assert.equal(lines.filter((line) => line.includes('insertText')).length, 1);
+  assert.match(lines.join('\n'), /5 observed input events · insertText/);
+  assert.equal(lines.some((line) => line.includes('insertText · H')), false);
+  assert.equal(lines.some((line) => / · [Helo]$/.test(line)), false);
+  assert.equal(lines.some((line) => line.includes('untrusted')), false);
+  assert.ok(lines.some((line) => line.includes('hash-typed')));
+  assert.ok(lines.some((line) => line.startsWith('Updated ')));
+  assert.ok(lines.some((line) => line.startsWith('Sealed ')));
+  assert.ok(lines.some((line) => line === 'Device: Studio Mac'));
+
+  const meta: SealWindowMeta = {
+    id: point.id,
+    blockId: point.blockId,
+    contentHash: point.contentHash,
+    origin: point.origin,
+    sealedAt: point.sealedAt,
+    updatedAt: point.updatedAt,
+  };
+  const summary = sealSummaryText(meta).join('\n');
+  assert.equal(summary.includes('Hello there'), false);
+  assert.equal(summary.includes('insertText · H'), false);
+  assert.equal(summary.includes('hash-typed'), true);
 });

@@ -184,7 +184,12 @@ export function sealSummaryText(seal: SealWindowMeta): string[] {
   ];
 }
 
-/** Every certification field stored on the passage, for the detailed report. */
+/**
+ * One sealed span for the detailed report, grouped the way the certification
+ * pane shows it: the passage that was entered, the hash, the time, and the
+ * other certification details. Input events stay inside the seal. They are
+ * not printed one keystroke per line.
+ */
 export function detailedSealText(point: CertificationPoint): string[] {
   const origin = point.origin === 'dictation' ? 'Dictation, sealed' : 'Keyboard, sealed';
   const lines = [
@@ -201,12 +206,6 @@ export function detailedSealText(point: CertificationPoint): string[] {
   const types = point.evidence.inputTypes.join(', ') || 'keyboard';
   const count = point.evidence.eventCount;
   lines.push(`${count} observed input event${count === 1 ? '' : 's'} · ${types}`);
-  for (const event of point.evidence.events) {
-    const bits = [formatExportDateTime(event.at), event.inputType];
-    if (!event.trusted) bits.push('untrusted');
-    if (event.data) bits.push(event.data);
-    lines.push(bits.join(' · '));
-  }
   if (point.priorHashes.length > 0) {
     lines.push('Prior hashes');
     for (const hash of point.priorHashes) lines.push(hash);
@@ -281,8 +280,9 @@ function fitReportImage(srcW: number, srcH: number, maxW: number, maxH: number):
 
 /**
  * Certification-pane download.
- * Detailed: one-page certification summary, then each picture in time order
- * with every certification field for the passages in that window.
+ * Detailed: one-page certification summary, then each picture in time order.
+ * Each sealed span in that window is one record — the passage, the hash, the
+ * time, and the other certification details — not a line per keystroke.
  * High-level: the pictures and a short seal summary, and not the other fields.
  * Seal summaries: the same short lines, and no pictures.
  */
