@@ -1,6 +1,6 @@
 /**
  * Checks GitHub Releases when a packaged build opens, about once an hour,
- * and when Help → Check for updates is chosen. Same feed either way.
+ * and when File → Check for updates is chosen. Same feed either way.
  * A newer release is only announced. download() and install() run after the
  * person confirms, so nothing is fetched or applied on its own.
  * The electron-updater instance is passed in so tests do not load Electron.
