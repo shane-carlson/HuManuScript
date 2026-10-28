@@ -108,7 +108,7 @@ export function NotesRail({
           data-tooltip={collapsed ? 'Open notes' : 'Close notes'}
           onClick={onToggleCollapsed}
         >
-          {collapsed ? <span className="notes-rail__mark">Notes</span> : <span className="notes-rail__chevron" aria-hidden="true">›</span>}
+          {collapsed ? <StickyNoteIcon /> : <span className="notes-rail__chevron" aria-hidden="true">›</span>}
         </button>
         )}
         <div className="notes-rail__tabs" role="tablist" aria-label="Notes">
@@ -229,6 +229,42 @@ export function NotesRail({
       )}
       </div>
     </aside>
+  );
+}
+
+/** Yellow dog-eared note. Shown only while the notes pane is collapsed. */
+function StickyNoteIcon() {
+  return (
+    <svg
+      className="notes-rail__mark"
+      width="26"
+      height="26"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="#f4d35e"
+        stroke="#6e5316"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        d="M6.1 3.7h7.2L20.1 10.5v8.2c0 .9-.7 1.6-1.6 1.6H6.1c-.9 0-1.6-.7-1.6-1.6V5.3c0-.9.7-1.6 1.6-1.6z"
+      />
+      <path
+        fill="#e4bc3e"
+        stroke="#6e5316"
+        strokeWidth="1.15"
+        strokeLinejoin="round"
+        d="M13.3 3.85 19.95 10.5h-5.35a1.3 1.3 0 0 1-1.3-1.3V3.85z"
+      />
+      <path
+        fill="none"
+        stroke="#5c4514"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        d="M7.15 12.35h7.15M7.15 15.45h4.7"
+      />
+    </svg>
   );
 }
 

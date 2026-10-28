@@ -932,16 +932,14 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .notes-rail.is-collapsed .notes-rail__head { justify-content: center; }
 .notes-rail.is-collapsed .notes-rail__toggle {
   width: 44px;
-  min-height: 88px;
-  height: auto;
+  height: 44px;
+  min-height: 0;
   margin: 0;
-  padding: 10px 4px;
+  padding: 0;
+  border-radius: 10px;
 }
 .notes-rail__mark {
-  writing-mode: vertical-rl;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  display: block;
 }
 .notes-rail h2 { margin: 0 0 8px; font-size: 1.2rem; }
 .notes-rail__tabs {
@@ -3254,14 +3252,13 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
     width: auto;
   }
   .notes-rail.is-collapsed .notes-rail__toggle {
-    min-height: 0;
-    width: auto;
+    width: 36px;
     height: 36px;
-    padding: 4px 12px;
+    padding: 0;
   }
-  .notes-rail__mark {
-    writing-mode: horizontal-tb;
-    letter-spacing: 0.04em;
+  .notes-rail.is-collapsed .notes-rail__mark {
+    width: 22px;
+    height: 22px;
   }
   html, body, #root {
     height: auto;
