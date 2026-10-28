@@ -11,11 +11,13 @@ import {
   DEFAULT_REGISTRY_BASE_URL,
   deleteRegistration,
   findForbiddenKey,
+  isLiveReadyWriterRegistry,
   isRegistryCode,
   readRegistryReceipts,
   REGISTRY_NAME,
   registryBaseUrl,
   registryPageUrl,
+  registryRegistrationsUrl,
   registeredMessage,
   sha256Hex,
   sha256Utf8,
@@ -216,7 +218,7 @@ test('registration body is the summary and checksums, and the manuscript stays o
   assert.deepEqual(body.seals[0]!.spellcheck, { used: true, generative: false });
   assert.equal(body.seals[1]!.keyboardPace, undefined);
   assert.deepEqual(body.seals[1]!.inputSource, { kind: 'microphone' });
-  assert.equal(body.detailedReport, undefined);
+  assert.equal(body.report, undefined);
   assert.equal(findForbiddenKey(body), null);
   const encoded = json(body);
   for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT, 'The Pier opens the chapter']) {
@@ -226,7 +228,7 @@ test('registration body is the summary and checksums, and the manuscript stays o
   assert.equal(encoded.includes('contentHash'), false);
 });
 
-test('a cleared title is omitted and a series label is sent only for a series book', async () => {
+test('a cleared title is sent empty and a series label is sent only for a series book', async () => {
   const doc = sample();
   const canonical = await canonicalTextDigest(doc);
   const shared = {
@@ -242,7 +244,9 @@ test('a cleared title is omitted and a series label is sent only for a series bo
     includeDetailedReport: false,
   };
   const cleared = await buildRegistrationBody({ ...shared, title: '   ', seriesLabel: '  ' });
-  assert.equal('title' in cleared, false);
+  // The live registry requires the title key. A cleared title is an empty string,
+  // which the holder page shows as "the author did not include a title."
+  assert.equal(cleared.title, '');
   assert.equal('seriesLabel' in cleared, false);
   const series = await buildRegistrationBody({ ...shared, title: 'Harbor Light', seriesLabel: 'Book 2 of Harbor Saga' });
   assert.equal(series.seriesLabel, 'Book 2 of Harbor Saga');
@@ -290,7 +294,7 @@ test('the detailed report is generated from the manuscript and still omits the p
     includeDeviceNames: false,
     includeDetailedReport: false,
   });
-  assert.equal(skipped.detailedReport, undefined);
+  assert.equal(skipped.report, undefined);
 
   const body = await buildRegistrationBody({
     doc,
@@ -306,16 +310,15 @@ test('the detailed report is generated from the manuscript and still omits the p
     includeDeviceNames: true,
     includeDetailedReport: true,
   });
-  const report = body.detailedReport!;
-  assert.equal(report.name, 'Detailed certification report');
-  assert.equal(report.kind, 'detailed-certification-report');
-  assert.equal(report.seals[0]!.blockId, 'block-1');
-  assert.equal(report.seals[0]!.spanId, 'span-1');
-  assert.equal(report.seals[0]!.lineage?.startsWith('Split from certification '), true);
-  assert.equal(report.seals[0]!.spellcheck?.checks[0]!.at, '2026-10-19T12:00:00.000Z');
-  assert.equal(report.seals[0]!.grammar?.checks[0]!.lintKind, 'Agreement');
-  assert.equal(report.seals[0]!.grammar?.engine, 'harper');
-  assert.equal(report.seals[0]!.typingDevice, 'writers-mac.local');
+  const report = body.report!;
+  assert.match(report, /^Detailed certification report\n/);
+  assert.match(report, /Block: block-1/);
+  assert.match(report, /Span: span-1/);
+  assert.match(report, /Lineage: Split from certification /);
+  assert.match(report, /Spell check at 2026-10-19T12:00:00.000Z/);
+  assert.match(report, /Agreement/);
+  assert.match(report, /harper/);
+  assert.match(report, /Computer: writers-mac\.local/);
   const encoded = json(body);
   for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT]) {
     assert.equal(encoded.includes(secret), false, secret);
@@ -337,7 +340,21 @@ test('registry base URL defaults to the Sidequests page and can be overridden', 
   assert.equal(registryBaseUrl('https://readywriter.one/sidequests/certified-manuscript-registry/'), DEFAULT_REGISTRY_BASE_URL);
   assert.equal(registryBaseUrl('http://127.0.0.1:8741/registry'), 'http://127.0.0.1:8741/registry');
   assert.equal(registryBaseUrl('not a url'), DEFAULT_REGISTRY_BASE_URL);
-  assert.equal(registryPageUrl(DEFAULT_REGISTRY_BASE_URL, CODE), `${DEFAULT_REGISTRY_BASE_URL}/c/${CODE}`);
+  assert.equal(
+    registryPageUrl(DEFAULT_REGISTRY_BASE_URL, CODE),
+    `https://www.readywriter.one/sidequests/certified-manuscript-registry/c/${CODE}`,
+  );
+  assert.equal(isLiveReadyWriterRegistry(DEFAULT_REGISTRY_BASE_URL), true);
+  assert.equal(isLiveReadyWriterRegistry('https://www.readywriter.one/sidequests/certified-manuscript-registry'), true);
+  assert.equal(
+    registryRegistrationsUrl(DEFAULT_REGISTRY_BASE_URL),
+    'https://www.readywriter.one/api/registrations',
+  );
+  assert.equal(
+    registryRegistrationsUrl('https://www.readywriter.one/sidequests/certified-manuscript-registry/', CODE),
+    `https://www.readywriter.one/api/registrations/${CODE}`,
+  );
+  assert.equal(registryRegistrationsUrl('http://127.0.0.1:8741/registry'), 'http://127.0.0.1:8741/registry/registrations');
   assert.equal(REGISTRY_NAME, 'Certified Manuscript Registry');
 });
 
@@ -380,8 +397,18 @@ test('POST sends the summary and keeps the code, and a dead registry does not th
   if (!result.ok) return;
   assert.equal(seen.length, 1);
   assert.equal(seen[0]!.url, 'http://127.0.0.1:8741/registry/registrations');
+  const live = await submitRegistration({
+    baseUrl: DEFAULT_REGISTRY_BASE_URL,
+    body,
+    format: 'docx',
+    fetchImpl,
+  });
+  assert.equal(live.ok, true);
+  if (!live.ok) return;
+  assert.equal(seen[1]!.url, 'https://www.readywriter.one/api/registrations');
+  assert.equal(live.pageUrl, `https://www.readywriter.one/sidequests/certified-manuscript-registry/c/${CODE}`);
   assert.equal(seen[0]!.credentials, 'omit');
-  assert.equal(seen[0]!.body.detailedReport?.name, 'Detailed certification report');
+  assert.match(seen[0]!.body.report ?? '', /Detailed certification report/);
   assert.equal(json(seen[0]!.body).includes(PASSAGE), false);
   assert.equal(result.receipt.code, CODE);
   assert.equal(result.receipt.deleteToken, 'token-token-token-token');
@@ -399,12 +426,15 @@ test('POST sends the summary and keeps the code, and a dead registry does not th
   assert.deepEqual(missed, { ok: false });
 });
 
-test('delete sends the token in the body and not in the URL', async () => {
+test('delete sends the token in the body and header, and not in the URL', async () => {
   let url = '';
   let payload = '';
+  let header = '';
   const fetchImpl: typeof fetch = async (input, init) => {
     url = String(input);
     payload = String(init?.body);
+    const headers = new Headers(init?.headers);
+    header = headers.get('x-delete-token') ?? '';
     return new Response(null, { status: 204 });
   };
   const removed = await deleteRegistration({
@@ -414,9 +444,19 @@ test('delete sends the token in the body and not in the URL', async () => {
     fetchImpl,
   });
   assert.equal(removed, true);
-  assert.equal(url, `${DEFAULT_REGISTRY_BASE_URL}/registrations/${CODE}`);
+  assert.equal(url, `https://www.readywriter.one/api/registrations/${CODE}`);
   assert.equal(url.includes('token-token'), false);
+  assert.equal(header, 'token-token-token-token');
   assert.deepEqual(JSON.parse(payload), { deleteToken: 'token-token-token-token' });
+
+  const local = await deleteRegistration({
+    baseUrl: 'http://127.0.0.1:8741/registry',
+    code: CODE,
+    deleteToken: 'token-token-token-token',
+    fetchImpl,
+  });
+  assert.equal(local, true);
+  assert.equal(url, `http://127.0.0.1:8741/registry/registrations/${CODE}`);
   assert.equal(isRegistryCode(CODE), true);
   assert.equal(isRegistryCode('HMS-short'), false);
 });

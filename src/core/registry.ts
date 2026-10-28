@@ -5,9 +5,14 @@
  * walk of the open manuscript, then POSTs a certification summary. The manuscript
  * file is not uploaded. The returned HMS- code is kept beside the book.
  *
- * The registry is a Sidequests page on readywriter.one. `VITE_REGISTRY_BASE_URL`
- * overrides the default base (no trailing slash). POST {base}/registrations,
- * DELETE {base}/registrations/:code, and the holder page is {base}/c/:code.
+ * The holder page is a Sidequests path on readywriter.one. `VITE_REGISTRY_BASE_URL`
+ * overrides that page (no trailing slash). The holder link is {page}/c/:code.
+ *
+ * The live registry does not accept POST on that page path. readywriter.one
+ * redirects to www without a CORS header, and the www page path answers 405.
+ * Registration is POST https://www.readywriter.one/api/registrations, and
+ * DELETE is that collection plus the code. Another base still uses
+ * {base}/registrations.
  */
 
 import { contentHash, GRAMMAR_CHECK_COMMENT, SPELL_CHECK_COMMENT, type CertificationPoint } from './certification.ts';
@@ -38,7 +43,36 @@ export function registryBaseUrl(override?: string | null): string {
 }
 
 export function registryPageUrl(baseUrl: string, code: string): string {
-  return `${registryBaseUrl(baseUrl)}/c/${encodeURIComponent(code)}`;
+  const base = registryBaseUrl(baseUrl);
+  const page = isLiveReadyWriterRegistry(base)
+    ? 'https://www.readywriter.one/sidequests/certified-manuscript-registry'
+    : base;
+  return `${page}/c/${encodeURIComponent(code)}`;
+}
+
+/**
+ * Live Ready Writer One keeps the holder page under /sidequests and the
+ * registration API at the www origin. The apex host only redirects, and that
+ * redirect is not a CORS response, so the browser never delivers the POST.
+ */
+const LIVE_REGISTRY_API = 'https://www.readywriter.one/api/registrations';
+
+export function isLiveReadyWriterRegistry(baseUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(registryBaseUrl(baseUrl));
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host !== 'readywriter.one' && host !== 'www.readywriter.one') return false;
+  return url.pathname.replace(/\/+$/, '') === '/sidequests/certified-manuscript-registry';
+}
+
+/** POST this URL. Pass a code for DELETE of that registration. */
+export function registryRegistrationsUrl(baseUrl: string, code?: string): string {
+  const root = isLiveReadyWriterRegistry(baseUrl) ? LIVE_REGISTRY_API : `${registryBaseUrl(baseUrl)}/registrations`;
+  return code ? `${root}/${encodeURIComponent(code)}` : root;
 }
 
 /**
@@ -148,7 +182,7 @@ export interface RegistrationBody {
   recordVersion: 1;
   appVersion: string;
   manuscriptId: string;
-  title?: string;
+  title: string;
   seriesLabel?: string;
   exportedAt: string;
   trust: string;
@@ -178,7 +212,12 @@ export interface RegistrationBody {
   canonicalText: { sha256: string; utf8Bytes: number };
   includeDeviceNames: boolean;
   seals: RegistrationSeal[];
-  detailedReport?: DetailedCertificationReport;
+  /**
+   * Plain text of the detailed certification report. The live registry stores
+   * this string as the downloadable report. A JSON object under any other name
+   * is refused.
+   */
+  report?: string;
 }
 
 export function registeredMessage(includedDetailedReport: boolean): string {
@@ -300,6 +339,46 @@ export function buildDetailedCertificationReport(
   };
 }
 
+/** Plain text the holder can read. The manuscript wording stays out of it. */
+export function formatDetailedCertificationReport(report: DetailedCertificationReport): string {
+  const lines = [report.name, `Manuscript id: ${report.manuscriptId}`, `Exported: ${report.exportedAt}`, ''];
+  if (report.seals.length === 0) lines.push('No sealed passages were included.');
+  report.seals.forEach((seal, index) => {
+    lines.push(`Seal ${index + 1}`, `Id: ${seal.id}`, `Origin: ${seal.origin}`, `Input: ${seal.inputSource.kind}`);
+    if (seal.inputSource.name) lines.push(`Input source: ${seal.inputSource.name}`);
+    if (seal.typingDevice) lines.push(`Computer: ${seal.typingDevice}`);
+    lines.push(
+      `Sealed: ${seal.sealedAt}`,
+      `Updated: ${seal.updatedAt}`,
+      `Characters: ${seal.charLength}`,
+      `Earlier hashes: ${seal.priorHashCount}`,
+      `Input events: ${seal.eventCount}`,
+    );
+    if (seal.inputTypes.length > 0) lines.push(`Input types: ${seal.inputTypes.join(', ')}`);
+    if (seal.keyboardPace) {
+      lines.push(
+        `Typing: ${seal.keyboardPace.keystrokes} keystrokes from ${seal.keyboardPace.firstAt} to ${seal.keyboardPace.lastAt}`,
+      );
+    }
+    if (seal.lineage) lines.push(`Lineage: ${seal.lineage}`);
+    lines.push(`Block: ${seal.blockId}`, `Span: ${seal.spanId}`);
+    if (seal.spellcheck) {
+      lines.push(`Spell check: ${seal.spellcheck.comment}`);
+      for (const check of seal.spellcheck.checks) lines.push(`Spell check at ${check.at}`);
+    }
+    if (seal.grammar) {
+      lines.push(`Grammar check: ${seal.grammar.comment}`);
+      for (const check of seal.grammar.checks) {
+        lines.push(
+          `Grammar check at ${check.at} with ${check.engine} ${check.engineVersion}, ${check.dialect}, ${check.lintKind}, suggestion ${check.suggestion}`,
+        );
+      }
+    }
+    lines.push('');
+  });
+  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
+}
+
 function moveSpan(doc: ManuscriptDocument): RegistrationBody['moves'] {
   const times = doc.moves
     .map((move) => move.at)
@@ -345,8 +424,8 @@ export async function buildRegistrationBody(args: {
     recordVersion: 1,
     appVersion: args.appVersion,
     manuscriptId: args.doc.manuscriptId,
-    ...(title ? { title } : {}),
     ...(seriesLabel ? { seriesLabel } : {}),
+    title,
     exportedAt: args.exportedAt,
     trust: certificationBannerText(),
     totals: {
@@ -378,7 +457,11 @@ export async function buildRegistrationBody(args: {
     includeDeviceNames: args.includeDeviceNames,
     seals: args.doc.points.map((point) => publicSeal(point, args.includeDeviceNames, args.liveDevice)),
     ...(args.includeDetailedReport
-      ? { detailedReport: buildDetailedCertificationReport(args.doc, args.exportedAt, args.includeDeviceNames, args.liveDevice) }
+      ? {
+          report: formatDetailedCertificationReport(
+            buildDetailedCertificationReport(args.doc, args.exportedAt, args.includeDeviceNames, args.liveDevice),
+          ),
+        }
       : {}),
   };
   assertRegistrationOmitsManuscript(body, args.doc);
@@ -498,7 +581,7 @@ export async function submitRegistration(args: {
   assertRegistrationOmitsManuscript(args.body, emptySecretsDoc(args.body.manuscriptId));
   const fetchImpl = args.fetchImpl ?? fetch;
   try {
-    const response = await fetchImpl(`${registryBaseUrl(args.baseUrl)}/registrations`, {
+    const response = await fetchImpl(registryRegistrationsUrl(args.baseUrl), {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify(args.body),
@@ -523,7 +606,7 @@ export async function submitRegistration(args: {
       ok: true,
       receipt,
       pageUrl: registryPageUrl(args.baseUrl, payload.code),
-      includedDetailedReport: args.body.detailedReport != null,
+      includedDetailedReport: args.body.report != null,
     };
   } catch {
     return { ok: false };
@@ -554,9 +637,14 @@ export async function deleteRegistration(args: {
 }): Promise<boolean> {
   const fetchImpl = args.fetchImpl ?? fetch;
   try {
-    const response = await fetchImpl(`${registryBaseUrl(args.baseUrl)}/registrations/${encodeURIComponent(args.code)}`, {
+    const response = await fetchImpl(registryRegistrationsUrl(args.baseUrl, args.code), {
       method: 'DELETE',
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        // The live registry names this header in its CORS allow list.
+        'x-delete-token': args.deleteToken,
+      },
       body: JSON.stringify({ deleteToken: args.deleteToken }),
       credentials: 'omit',
       signal: AbortSignal.timeout(15_000),
