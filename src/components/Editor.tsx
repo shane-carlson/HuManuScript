@@ -1788,9 +1788,6 @@ export function Editor({
             <div className="ms-page-tail" data-page-tail="true" />
           </div>
         )}
-        {!focusMode && !showReading && (
-          <p className="canvas-note">Drag a handle to reorder a chapter with the prose under it, or move a paragraph. Moving text keeps a keyboard seal on that text. Dropping words in from another app does not.</p>
-        )}
         </div>
         </div>
       </main>
