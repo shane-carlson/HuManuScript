@@ -18,7 +18,7 @@
     "pack:mac:intel": "node scripts/pack-mac.cjs --intel",
     "pack:win": "node scripts/pack-win.cjs",
     "dispatch:pack-mac": "bash scripts/dispatch-pack-mac.sh",
-    "test": "node --experimental-strip-types --test src/core/*.test.ts scripts/app-version.test.cjs electron/*.test.cjs",
+    "test": "node --experimental-strip-types --test src/core/*.test.ts scripts/*.test.cjs electron/*.test.cjs",
     "lint": "oxlint",
     "preview": "vite preview --host 127.0.0.1 --port 47321 --strictPort"
   },
