@@ -1335,6 +1335,27 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .target-card__ico { font-size: 1.4rem; display: block; margin-bottom: 6px; }
 .target-card h3 { margin: 0 0 4px; font-size: 1rem; }
 .target-card p { margin: 0; font-size: 0.8rem; color: var(--text-dim); }
+.registry-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 0 0 16px;
+  background: var(--bg);
+}
+.registry-card h3 { margin: 0 0 6px; }
+.registry-card > p { margin: 0 0 12px; }
+.registry-status { display: grid; gap: 8px; margin-top: 12px; }
+.registry-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+  word-break: break-all;
+}
+.registry-code-block { display: grid; gap: 6px; }
+.registry-receipts { margin-top: 14px; }
+.registry-receipts h4 { margin: 0 0 8px; font-size: 0.95rem; }
+.registry-receipts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.registry-receipts li { display: grid; gap: 4px; }
+.book-row__code { word-break: break-all; }
 .export-detail.card { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--bg); }
 .export-detail .sub { color: var(--text-dim); font-size: 0.86rem; }
 .instruction-list { margin: 0 0 16px; padding-left: 1.2rem; }

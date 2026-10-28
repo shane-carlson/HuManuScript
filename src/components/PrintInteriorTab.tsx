@@ -19,6 +19,7 @@ import { otherBindingSizes, PUBLICATION_FORMATS, publicationFormat, type Publica
 import { compilePrintInterior, configurePrintTypstWasm, printPreviewSvg, type CompiledPrintInterior } from '../core/printTypst.ts';
 import type { EpubChoicePatch } from '../core/epubSettings.ts';
 import { PublicationSwitch } from './EpubExportTab.tsx';
+import type { ProducedExport } from './useRegistryExport.ts';
 
 configurePrintTypstWasm({ compiler: compilerWasm, renderer: rendererWasm });
 
@@ -55,12 +56,16 @@ export function PrintInteriorTab({
   seriesLabel,
   form,
   onUpdate,
+  registering = false,
+  onRegisterDownload,
 }: {
   doc: ManuscriptDocument;
   title: string;
   seriesLabel: string | null;
   form: EpubChoicePatch;
   onUpdate: (patch: Partial<EpubChoicePatch>, save: boolean) => void;
+  registering?: boolean;
+  onRegisterDownload?: (file: ProducedExport) => Promise<void>;
 }) {
   const [formatId, setFormatId] = useState<PublicationFormatId>(DEFAULT_PRINT_TRIM_ID);
   const [openSizes, setOpenSizes] = useState<'paperback' | 'hardcover' | null>(null);
@@ -260,9 +265,22 @@ export function PrintInteriorTab({
           <button
             type="button"
             className="primary export-download"
-            disabled={!live || viewStatus !== 'ready'}
+            disabled={!live || viewStatus !== 'ready' || registering}
             onClick={() => {
-              if (live) downloadBytes(printInteriorFilename(title, live.trim), live.pdf);
+              if (!live) return;
+              const bytes = live.pdf.slice();
+              const blob = new Blob([bytes], { type: 'application/pdf' });
+              const file: ProducedExport = {
+                blob,
+                filename: printInteriorFilename(title, live.trim),
+                format: 'print',
+                exportedAt: new Date().toISOString(),
+              };
+              if (onRegisterDownload) {
+                void onRegisterDownload(file);
+                return;
+              }
+              downloadBytes(file.filename, bytes);
             }}
           >
             {viewStatus === 'working' ? 'Setting the type…' : 'Download print interior'}
