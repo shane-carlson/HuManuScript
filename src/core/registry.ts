@@ -205,6 +205,11 @@ export interface RegistrationBody {
   appVersion: string;
   manuscriptId: string;
   title: string;
+  /**
+   * The manuscript’s author name. Omitted when that name is blank.
+   * Capped at 200 characters. Never invented.
+   */
+  author?: string;
   seriesLabel?: string;
   exportedAt: string;
   trust: string;
@@ -471,6 +476,21 @@ export function formatDetailedCertificationReport(report: DetailedCertificationR
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
+const MAX_REGISTRATION_AUTHOR = 200;
+
+/**
+ * The manuscript’s author name for the registry.
+ * Blank, missing, and whitespace-only names are omitted. The name is not filled in.
+ */
+export function registrationAuthor(raw: string | null | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const text = raw.replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  const chars = Array.from(text);
+  if (chars.length <= MAX_REGISTRATION_AUTHOR) return text;
+  return chars.slice(0, MAX_REGISTRATION_AUTHOR).join('');
+}
+
 function moveSpan(doc: ManuscriptDocument): RegistrationBody['moves'] {
   const times = doc.moves
     .map((move) => move.at)
@@ -490,6 +510,8 @@ export async function buildRegistrationBody(args: {
   exportedAt: string;
   title: string;
   seriesLabel?: string | null;
+  /** Manuscript author. Omit the field when this is blank. */
+  author?: string | null;
   filename: string;
   byteLength: number;
   fileSha256: string;
@@ -510,6 +532,7 @@ export async function buildRegistrationBody(args: {
   }, args.liveDevice);
   const title = args.title.trim();
   const seriesLabel = args.seriesLabel?.trim() || '';
+  const author = registrationAuthor(args.author);
   const checks: RegistrationBody['checks'] = {
     spellChecks: model.spellChecks,
     grammarChecks: model.grammarChecks,
@@ -523,6 +546,7 @@ export async function buildRegistrationBody(args: {
     manuscriptId: args.doc.manuscriptId,
     ...(seriesLabel ? { seriesLabel } : {}),
     title,
+    ...(author ? { author } : {}),
     exportedAt: args.exportedAt,
     trust: certificationBannerText(),
     totals: {
@@ -617,7 +641,7 @@ function manuscriptSecrets(doc: ManuscriptDocument): string[] {
   return [...secrets];
 }
 
-/** Refuse a body that would upload the manuscript. The working title is the one exception. */
+/** Refuse a body that would upload the manuscript. The title, series label, and author name are the exceptions. */
 export function assertRegistrationOmitsManuscript(body: unknown, doc: ManuscriptDocument): void {
   const forbidden = findForbiddenKey(body);
   if (forbidden) {
@@ -626,7 +650,7 @@ export function assertRegistrationOmitsManuscript(body: unknown, doc: Manuscript
   const secrets = manuscriptSecrets(doc).filter((secret) => secret.length >= 1);
   const walk = (value: unknown, path: string) => {
     if (typeof value === 'string') {
-      if (path === '$.title' || path === '$.seriesLabel') return;
+      if (path === '$.title' || path === '$.seriesLabel' || path === '$.author') return;
       for (const secret of secrets) {
         // Short seals can equal an origin or a product name. A passage long enough
         // to be the manuscript is the leak this check refuses.
