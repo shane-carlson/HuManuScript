@@ -158,6 +158,7 @@ export function useRegistryExport(args: {
         exportedAt: current.exportedAt,
         title: facts.title,
         seriesLabel: facts.seriesLabel,
+        author: facts.author,
         filename: current.filename,
         byteLength: current.byteLength,
         fileSha256: current.fileSha256,

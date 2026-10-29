@@ -6,6 +6,7 @@ import { addRegistryReceipt, createBook, removeRegistryReceipt } from './library
 import {
   assertRegistrationOmitsManuscript,
   buildRegistrationBody,
+  registrationAuthor,
   canonicalManuscriptText,
   canonicalTextDigest,
   DEFAULT_REGISTRY_BASE_URL,
@@ -223,6 +224,7 @@ test('registration body is the summary and checksums, and the manuscript stays o
   assert.equal(body.seals[1]!.keyboardPace, undefined);
   assert.deepEqual(body.seals[1]!.inputSource, { kind: 'microphone' });
   assert.equal(body.report, undefined);
+  assert.equal('author' in body, false);
   assert.equal(findForbiddenKey(body), null);
   const encoded = json(body);
   for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT, 'The Pier opens the chapter']) {
@@ -254,6 +256,104 @@ test('a cleared title is sent empty and a series label is sent only for a series
   assert.equal('seriesLabel' in cleared, false);
   const series = await buildRegistrationBody({ ...shared, title: 'Harbor Light', seriesLabel: 'Book 2 of Harbor Saga' });
   assert.equal(series.seriesLabel, 'Book 2 of Harbor Saga');
+});
+
+test('the manuscript author is sent, and a missing name is omitted', async () => {
+  const doc = sample();
+  const hashes = doc.points.map((point) => point.contentHash);
+  const prior = doc.points.map((point) => [...point.priorHashes]);
+  const canonical = await canonicalTextDigest(doc);
+  const shared = {
+    doc,
+    appVersion: '0.1.41',
+    exportedAt: '2026-10-28T15:04:00.000Z',
+    title: 'Harbor Light',
+    seriesLabel: null,
+    filename: 'Harbor-Light.docx',
+    byteLength: 184233,
+    fileSha256: 'a'.repeat(64),
+    canonicalSha256: canonical.sha256,
+    canonicalUtf8Bytes: canonical.utf8Bytes,
+    includeDeviceNames: false,
+    includeDetailedReport: false,
+  };
+  const named = await buildRegistrationBody({ ...shared, author: '  Ada   Harbor  ' });
+  assert.equal(named.author, 'Ada Harbor');
+  assert.equal(named.canonicalText.sha256, canonical.sha256);
+  assert.equal(named.file.sha256, 'a'.repeat(64));
+  assert.deepEqual(
+    doc.points.map((point) => point.contentHash),
+    hashes,
+  );
+  assert.deepEqual(
+    doc.points.map((point) => [...point.priorHashes]),
+    prior,
+  );
+  const encoded = json(named);
+  for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT]) {
+    assert.equal(encoded.includes(secret), false, secret);
+  }
+  assert.equal(encoded.includes('contentHash'), false);
+  assert.equal(encoded.includes('prior-hash-one'), false);
+
+  const posted: { url: string; body: RegistrationBody }[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    posted.push({ url: String(input), body: JSON.parse(String(init?.body)) as RegistrationBody });
+    return new Response(
+      JSON.stringify({ code: CODE, receivedAt: '2026-10-28T15:04:05.000Z', deleteToken: 'token-token-token-token' }),
+      { status: 201, headers: { 'content-type': 'application/json' } },
+    );
+  };
+  const sent = await submitRegistration({
+    baseUrl: DEFAULT_REGISTRY_BASE_URL,
+    body: named,
+    format: 'docx',
+    fetchImpl,
+  });
+  assert.equal(sent.ok, true);
+  assert.equal(posted[0]!.url, 'https://www.readywriter.one/api/registrations');
+  assert.equal(posted[0]!.body.author, 'Ada Harbor');
+  assert.equal(JSON.stringify(posted[0]!.body).includes(PASSAGE), false);
+
+  for (const author of [undefined, null, '', '   ', '\n\t']) {
+    const omitted = await buildRegistrationBody({ ...shared, author });
+    assert.equal('author' in omitted, false, JSON.stringify(author));
+  }
+
+  const long = `${'A'.repeat(199)}😀Z`;
+  const clipped = await buildRegistrationBody({ ...shared, author: long });
+  assert.equal(clipped.author, `${'A'.repeat(199)}😀`);
+  assert.equal(Array.from(clipped.author ?? '').length, 200);
+  assert.equal(clipped.author?.includes('Z'), false);
+  assert.equal(registrationAuthor(long), clipped.author);
+  assert.equal(registrationAuthor(null), undefined);
+});
+
+test('an author name that matches a short seal is still only the name', async () => {
+  const doc = sample();
+  const name = 'Ada Quinn Harbor';
+  doc.points[0] = { ...doc.points[0]!, text: name, contentHash: 'seal-hash-stays' };
+  const canonical = await canonicalTextDigest(doc);
+  const body = await buildRegistrationBody({
+    doc,
+    appVersion: '0.1.41',
+    exportedAt: '2026-10-28T15:04:00.000Z',
+    title: 'Harbor Light',
+    seriesLabel: null,
+    author: name,
+    filename: 'Harbor-Light.docx',
+    byteLength: 8,
+    fileSha256: 'f'.repeat(64),
+    canonicalSha256: canonical.sha256,
+    canonicalUtf8Bytes: canonical.utf8Bytes,
+    includeDeviceNames: false,
+    includeDetailedReport: false,
+  });
+  assert.equal(body.author, name);
+  assert.equal(doc.points[0]!.contentHash, 'seal-hash-stays');
+  assert.equal(json(body.seals).includes(name), false);
+  assert.equal(json(body).includes('seal-hash-stays'), false);
+  assert.equal(json(body).includes(PASSAGE), false);
 });
 
 test('device names are sent only when the author includes them', async () => {
