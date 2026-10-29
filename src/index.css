@@ -1628,6 +1628,15 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .stats--bar.stats--bar-one-row dd { font-size: 1.1rem; }
   .top { padding: 14px 14px 0; }
   .sync-status { max-width: 11rem; }
+  .sync-panel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+  }
   .empty, .status { margin-left: 14px; margin-right: 14px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }
