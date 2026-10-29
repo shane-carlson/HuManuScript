@@ -4,6 +4,8 @@ import { formatExportDateTime, registryInstructionLines, type RegistryInstructio
 import { getTypingDeviceLabel } from '../core/deviceName.ts';
 import type { ManuscriptDocument } from '../core/document.ts';
 import { EXPORT_FORMAT_LABELS, type ExportFormat } from '../core/exportManuscript.ts';
+import type { SealSource } from '../core/sessionCapture.ts';
+import { loadPassageCaptureImages } from '../sessionCaptureStore.ts';
 import {
   buildRegistrationBody,
   canonicalManuscriptText,
@@ -65,6 +67,17 @@ export interface RegistryExportFacts {
   includeDetailedReport: boolean;
   author: string | null;
   published: string | null;
+}
+
+function sealSources(doc: ManuscriptDocument): SealSource[] {
+  return doc.points.map((point) => ({
+    id: point.id,
+    blockId: point.blockId,
+    contentHash: point.contentHash,
+    origin: point.origin,
+    sealedAt: point.sealedAt,
+    updatedAt: point.updatedAt,
+  }));
 }
 
 function formatLabel(format: string): string {
@@ -152,6 +165,9 @@ export function useRegistryExport(args: {
 
   async function attempt(current: HeldExport, facts: RegistryExportFacts): Promise<boolean> {
     try {
+      const passageImages = facts.includeDetailedReport
+        ? await loadPassageCaptureImages(current.doc.manuscriptId, sealSources(current.doc))
+        : undefined;
       const body = await buildRegistrationBody({
         doc: current.doc,
         appVersion: appVersion.version,
@@ -166,6 +182,7 @@ export function useRegistryExport(args: {
         includeDeviceNames: facts.includeDeviceNames,
         includeDetailedReport: facts.includeDetailedReport,
         liveDevice: current.liveDevice,
+        passageImages,
       });
       const result = await submitRegistration({
         baseUrl: configuredBaseUrl(),
