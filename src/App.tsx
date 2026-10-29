@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { appVersion } from 'virtual:app-version';
+import logoUrl from '../build/icon.png';
 import { AppVersionLabel } from './components/AppVersionLabel.tsx';
 import { Editor } from './components/Editor.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
@@ -242,7 +243,9 @@ export default function App() {
     <div className={`app${focusActive ? ' is-manuscript-focus' : ''}`}>
       <header className="top app-chrome">
         <div className="brand">
-          <span className="mark" aria-hidden="true">H</span>
+          <span className="mark" aria-hidden="true">
+            <img src={logoUrl} alt="" width={40} height={40} />
+          </span>
           <div>
             <p className="wordmark">HuManuScript</p>
             <p className="tag">Helping authors document the humanity of their prose.</p>

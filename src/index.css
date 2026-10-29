@@ -104,10 +104,14 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: var(--text);
-  color: var(--bg);
-  font-family: var(--serif);
-  font-size: 22px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.mark img {
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
 }
 .wordmark { margin: 0; font-family: var(--serif); font-size: 1.35rem; letter-spacing: -0.03em; }
 .tag, .eyebrow { margin: 0; color: var(--text-dim); font-size: 0.82rem; }
