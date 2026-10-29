@@ -332,6 +332,67 @@ test('the detailed report is generated from the manuscript and still omits the p
   assert.equal(encoded.includes('dataUrl'), false);
 });
 
+test('seal pictures are included with that passage only on the detailed report', async () => {
+  const doc = sample();
+  const hashes = doc.points.map((point) => point.contentHash);
+  const picture = 'data:image/jpeg;base64,UGljdHVyZQ==';
+  const camera = 'data:image/jpeg;base64,Q2FtZXJh';
+  const passageImages = new Map([
+    [
+      'seal-typed',
+      [{ kind: 'composite' as const, at: '2026-10-18T16:11:40.000Z', width: 640, height: 360, dataUrl: picture }],
+    ],
+    [
+      'seal-spoken',
+      [{ kind: 'camera' as const, at: '2026-10-18T16:20:00.000Z', width: 320, height: 240, dataUrl: camera }],
+    ],
+  ]);
+  const canonical = await canonicalTextDigest(doc);
+  const shared = {
+    doc,
+    appVersion: '0.1.45',
+    exportedAt: '2026-10-28T15:04:00.000Z',
+    title: 'Harbor Light',
+    seriesLabel: null,
+    filename: 'Harbor-Light.pdf',
+    byteLength: 20,
+    fileSha256: 'd'.repeat(64),
+    canonicalSha256: canonical.sha256,
+    canonicalUtf8Bytes: canonical.utf8Bytes,
+    includeDeviceNames: false,
+    liveDevice: null,
+    passageImages,
+  };
+  const skipped = await buildRegistrationBody({ ...shared, includeDetailedReport: false });
+  assert.equal(skipped.report, undefined);
+  const skippedJson = json(skipped);
+  assert.equal(skippedJson.includes(picture), false);
+  assert.equal(skippedJson.includes(camera), false);
+
+  const body = await buildRegistrationBody({ ...shared, includeDetailedReport: true });
+  const report = body.report!;
+  const typedAt = report.indexOf('Id: seal-typed');
+  const spokenAt = report.indexOf('Id: seal-spoken');
+  const pictureAt = report.indexOf(picture);
+  const cameraAt = report.indexOf(camera);
+  assert.ok(typedAt >= 0 && spokenAt > typedAt);
+  assert.ok(pictureAt > typedAt && pictureAt < spokenAt);
+  assert.ok(cameraAt > spokenAt);
+  assert.match(report, /Screenshot with the camera in the upper left\nCaptured: 2026-10-18T16:11:40\.000Z\nSize: 640x360\n/);
+  assert.match(report, /Camera photo\nCaptured: 2026-10-18T16:20:00\.000Z\nSize: 320x240\n/);
+  assert.equal(json(body.seals).includes(picture), false);
+  assert.equal(json(body.seals).includes(camera), false);
+  assert.equal(findForbiddenKey(body), null);
+  assert.equal(json(body).includes('dataUrl'), false);
+  for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT]) {
+    assert.equal(json(body).includes(secret), false, secret);
+  }
+  assert.deepEqual(
+    doc.points.map((point) => point.contentHash),
+    hashes,
+  );
+});
+
 test('a body that names a forbidden field is refused before it can be sent', () => {
   const doc = emptyDocument('ms_harbor');
   const bad = { product: 'HuManuScript', seals: [{ text: PASSAGE }] };

@@ -559,6 +559,90 @@ export function readWritingSession(raw: string | null): WritingSessionState | nu
   }
 }
 
+export type PassageImageKind = 'screenshot' | 'camera' | 'composite';
+
+/** A stored JPEG tied to the seals updated in its capture window. Not part of a seal hash. */
+export interface PassageCaptureImage {
+  kind: PassageImageKind;
+  at: string;
+  width: number;
+  height: number;
+  dataUrl: string;
+}
+
+const PASSAGE_IMAGE_ORDER: Record<PassageImageKind, number> = {
+  screenshot: 0,
+  camera: 1,
+  composite: 2,
+};
+
+export function passageImageLabel(kind: PassageImageKind): string {
+  if (kind === 'camera') return 'Camera photo';
+  if (kind === 'screenshot') return 'Screenshot';
+  return 'Screenshot with the camera in the upper left';
+}
+
+function isPassageImageKind(kind: StoredCaptureKind): kind is PassageImageKind {
+  return kind === 'screenshot' || kind === 'camera' || kind === 'composite';
+}
+
+/**
+ * Pictures for each seal whose text was updated in that picture's window.
+ * A composite is the screenshot with the camera photo in the upper left, and
+ * it stands in for separate files from the same window. Older captures that
+ * stored a screenshot and a camera photo separately keep both. Seal hashes
+ * are not read or rewritten.
+ */
+export function imagesWithSeals(
+  thumbnails: CaptureThumbnailInput[],
+  points: SealSource[],
+): Map<string, PassageCaptureImage[]> {
+  const windows = new Map<string, CaptureThumbnailInput[]>();
+  for (const thumb of thumbnails) {
+    if (!isPassageImageKind(thumb.kind) || !thumb.dataUrl.startsWith('data:image/')) continue;
+    const key = `${thumb.sessionId}|${thumb.windowStart}|${thumb.windowEnd}`;
+    const list = windows.get(key) ?? [];
+    list.push(thumb);
+    windows.set(key, list);
+  }
+
+  const bySeal = new Map<string, PassageCaptureImage[]>();
+  for (const shots of windows.values()) {
+    const sample = shots[0];
+    if (!sample) continue;
+    const seals = sealsInWindow(points, sample.windowStart, sample.windowEnd);
+    if (seals.length === 0) continue;
+    const hasComposite = shots.some((shot) => shot.kind === 'composite');
+    const chosen = shots.filter((shot) =>
+      hasComposite ? shot.kind === 'composite' : shot.kind === 'screenshot' || shot.kind === 'camera',
+    );
+    chosen.sort(
+      (a, b) =>
+        a.at.localeCompare(b.at) ||
+        PASSAGE_IMAGE_ORDER[a.kind as PassageImageKind] - PASSAGE_IMAGE_ORDER[b.kind as PassageImageKind],
+    );
+    for (const seal of seals) {
+      const images = bySeal.get(seal.id) ?? [];
+      for (const shot of chosen) {
+        if (!isPassageImageKind(shot.kind)) continue;
+        images.push({
+          kind: shot.kind,
+          at: shot.at,
+          width: shot.width,
+          height: shot.height,
+          dataUrl: shot.dataUrl,
+        });
+      }
+      bySeal.set(seal.id, images);
+    }
+  }
+
+  for (const images of bySeal.values()) {
+    images.sort((a, b) => a.at.localeCompare(b.at) || PASSAGE_IMAGE_ORDER[a.kind] - PASSAGE_IMAGE_ORDER[b.kind]);
+  }
+  return bySeal;
+}
+
 /** One download from the certification pane. The writer picks exactly one. */
 export type SessionCaptureReportKind = 'detailed' | 'summary' | 'seals';
 
@@ -571,7 +655,7 @@ export const SESSION_CAPTURE_REPORTS: readonly {
     kind: 'detailed',
     label: 'Detailed certification report',
     detail:
-      'All pictures in time order. Each sealed passage is one record — the text, the hash, the time, and the other certification details — not a line per keystroke. A one-page summary leads.',
+      'Each sealed passage is one record, with the screenshots and camera photos from that passage. A one-page summary leads.',
   },
   {
     kind: 'summary',

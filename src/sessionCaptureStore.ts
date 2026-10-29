@@ -15,9 +15,13 @@ import {
   SESSION_STORE,
   THUMBNAIL_STORE,
   WRITING_SESSION_KEY,
+  imagesWithSeals,
   normalizeSessionCaptureSettings,
+  type CaptureThumbnailInput,
   readSessionCaptureSettings,
   readWritingSession,
+  type PassageCaptureImage,
+  type SealSource,
   type StoredCaptureKind,
   type CaptureReason,
   type SessionCaptureSettings,
@@ -152,6 +156,37 @@ export async function listStoredThumbnails(manuscriptId: string): Promise<Stored
   } finally {
     db.close();
   }
+}
+
+/** JPEGs tied to seals, for the detailed certification report. Does not rewrite seal hashes. */
+export async function loadPassageCaptureImages(
+  manuscriptId: string,
+  points: SealSource[],
+): Promise<Map<string, PassageCaptureImage[]>> {
+  const [sessions, thumbs] = await Promise.all([
+    listStoredSessions(manuscriptId),
+    listStoredThumbnails(manuscriptId),
+  ]);
+  const sessionIds = new Set(sessions.map((session) => session.id));
+  const thumbnails: CaptureThumbnailInput[] = [];
+  for (const thumb of thumbs) {
+    if (!sessionIds.has(thumb.sessionId)) continue;
+    if (thumb.kind !== 'camera' && thumb.kind !== 'screenshot' && thumb.kind !== 'composite') continue;
+    thumbnails.push({
+      id: thumb.id,
+      sessionId: thumb.sessionId,
+      at: thumb.at,
+      reason: thumb.reason,
+      kind: thumb.kind,
+      windowStart: thumb.windowStart,
+      windowEnd: thumb.windowEnd,
+      mime: 'image/jpeg' as const,
+      width: thumb.width,
+      height: thumb.height,
+      dataUrl: await blobToDataUrl(thumb.blob),
+    });
+  }
+  return imagesWithSeals(thumbnails, points);
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {

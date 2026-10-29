@@ -16,6 +16,7 @@
  */
 
 import { contentHash, GRAMMAR_CHECK_COMMENT, SPELL_CHECK_COMMENT, type CertificationPoint } from './certification.ts';
+import { passageImageLabel, type PassageCaptureImage } from './sessionCapture.ts';
 import { certificationBannerText, buildCertificationPageModel } from './certificationPage.ts';
 import { formatTypingDeviceLabel } from './deviceName.ts';
 import type { ManuscriptDocument } from './document.ts';
@@ -164,6 +165,8 @@ export interface DetailedReportSeal extends RegistrationSeal {
   blockId: string;
   spanId: string;
   lineage?: string;
+  /** Screenshots and camera photos captured while this passage was sealed. */
+  images?: PassageCaptureImage[];
   spellcheck?: {
     used: true;
     generative: false;
@@ -233,8 +236,8 @@ export interface RegistrationBody {
   seals: RegistrationSeal[];
   /**
    * Plain text of the detailed certification report. The live registry stores
-   * this string as the downloadable report. A JSON object under any other name
-   * is refused.
+   * this string as the downloadable report. Pictures sit with the seal they
+   * belong to. A JSON object under any other name is refused.
    */
   report?: string;
 }
@@ -380,14 +383,15 @@ function detailedSeal(point: CertificationPoint, includeDeviceNames: boolean, li
 
 /**
  * The detailed certification report, generated from the manuscript already open.
- * Session pictures, passage text, evidence payloads, and spelling or grammar
- * wording stay on the machine.
+ * Passage text, evidence payloads, and spelling or grammar wording stay on the
+ * machine. Screenshots and camera photos are attached to the seal they belong to.
  */
 export function buildDetailedCertificationReport(
   doc: ManuscriptDocument,
   exportedAt: string,
   includeDeviceNames: boolean,
   liveDevice?: string | null,
+  passageImages?: ReadonlyMap<string, readonly PassageCaptureImage[]>,
 ): DetailedCertificationReport {
   return {
     kind: 'detailed-certification-report',
@@ -395,8 +399,21 @@ export function buildDetailedCertificationReport(
     recordVersion: 1,
     manuscriptId: doc.manuscriptId,
     exportedAt,
-    seals: doc.points.map((point) => detailedSeal(point, includeDeviceNames, liveDevice)),
+    seals: doc.points.map((point) => {
+      const seal = detailedSeal(point, includeDeviceNames, liveDevice);
+      const images = passageImagesFor(passageImages, point.id);
+      if (images.length > 0) seal.images = images;
+      return seal;
+    }),
   };
+}
+
+function passageImagesFor(
+  passageImages: ReadonlyMap<string, readonly PassageCaptureImage[]> | undefined,
+  sealId: string,
+): PassageCaptureImage[] {
+  const images = passageImages?.get(sealId) ?? [];
+  return images.filter((image) => image.dataUrl.startsWith('data:image/'));
 }
 
 /** Plain text the holder can read. The manuscript wording stays out of it. */
@@ -434,6 +451,11 @@ export function formatDetailedCertificationReport(report: DetailedCertificationR
         );
       }
     }
+    for (const image of seal.images ?? []) {
+      lines.push(passageImageLabel(image.kind), `Captured: ${image.at}`);
+      if (image.width > 0 && image.height > 0) lines.push(`Size: ${image.width}x${image.height}`);
+      lines.push(image.dataUrl);
+    }
     lines.push('');
   });
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
@@ -466,6 +488,11 @@ export async function buildRegistrationBody(args: {
   includeDeviceNames: boolean;
   includeDetailedReport: boolean;
   liveDevice?: string | null;
+  /**
+   * Used only when the author includes the detailed report. Ignored otherwise,
+   * so a seal-summary registration does not carry pictures.
+   */
+  passageImages?: ReadonlyMap<string, readonly PassageCaptureImage[]>;
 }): Promise<RegistrationBody> {
   const model = buildCertificationPageModel(args.doc, args.exportedAt, {
     bookTitle: args.title,
@@ -519,7 +546,13 @@ export async function buildRegistrationBody(args: {
     ...(args.includeDetailedReport
       ? {
           report: formatDetailedCertificationReport(
-            buildDetailedCertificationReport(args.doc, args.exportedAt, args.includeDeviceNames, args.liveDevice),
+            buildDetailedCertificationReport(
+              args.doc,
+              args.exportedAt,
+              args.includeDeviceNames,
+              args.liveDevice,
+              args.passageImages,
+            ),
           ),
         }
       : {}),

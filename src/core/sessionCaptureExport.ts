@@ -16,8 +16,10 @@ import {
   captureDocumentHeader,
   cellsFromSchema,
   planCapturePages,
+  passageImageLabel,
   sessionCaptureReportLeadsWithSummary,
   sessionCaptureReportShowsImages,
+  type PassageCaptureImage,
   type PlannedCaptureCell,
   type SealWindowMeta,
   type SessionCaptureReportKind,
@@ -281,11 +283,34 @@ function fitReportImage(srcW: number, srcH: number, maxW: number, maxH: number):
   return fitBox(srcW || maxW, srcH || maxH, maxW, maxH);
 }
 
+/** Composites already linked to seals. Separate camera files are not in the schema. */
+function imagesBySealFromSchema(schema: SessionCaptureSchema): Map<string, PassageCaptureImage[]> {
+  const images = new Map<string, PassageCaptureImage[]>();
+  for (const session of schema.sessions) {
+    for (const capture of session.captures) {
+      const composite = capture.composite;
+      if (!composite?.dataUrl.startsWith('data:image/')) continue;
+      const image: PassageCaptureImage = {
+        kind: 'composite',
+        at: capture.at,
+        width: composite.width,
+        height: composite.height,
+        dataUrl: composite.dataUrl,
+      };
+      for (const seal of capture.seals) {
+        const list = images.get(seal.id) ?? [];
+        list.push(image);
+        images.set(seal.id, list);
+      }
+    }
+  }
+  return images;
+}
+
 /**
  * Certification-pane download.
- * Detailed: one-page certification summary, then each picture in time order.
- * Each sealed span in that window is one record — the passage, the hash, the
- * time, and the other certification details — not a line per keystroke.
+ * Detailed: one-page certification summary, then each sealed passage. Screenshots
+ * and camera photos from that passage sit with it, not in a separate gallery.
  * High-level: the pictures and a short seal summary, and not the other fields.
  * Seal summaries: the same short lines, and no pictures.
  */
@@ -296,6 +321,8 @@ export function renderSessionCaptureReport(args: {
   schema: SessionCaptureSchema;
   points: CertificationPoint[];
   summary: CertificationPageModel;
+  /** When set, the detailed report uses these pictures. Seal summaries ignore them. */
+  imagesBySeal?: ReadonlyMap<string, readonly PassageCaptureImage[]>;
 }): Uint8Array {
   const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: false });
   const captures = cellsFromSchema(args.schema);
@@ -329,6 +356,53 @@ export function renderSessionCaptureReport(args: {
     }
   };
 
+  const drawJpeg = (dataUrl: string, width: number, height: number, maxH: number) => {
+    const box = fitReportImage(width || REPORT_WIDTH, height || maxH, REPORT_WIDTH, maxH);
+    room(box.height + 8);
+    if (dataUrl) {
+      try {
+        doc.addImage(dataUrl, 'JPEG', REPORT_MARGIN, y, box.width, box.height);
+      } catch {
+        doc.setDrawColor(160);
+        doc.rect(REPORT_MARGIN, y, box.width, box.height);
+        doc.setFont('times', 'normal');
+        doc.setFontSize(9);
+        doc.text('Picture unavailable', REPORT_MARGIN + 8, y + 16);
+      }
+    } else {
+      doc.setDrawColor(160);
+      doc.rect(REPORT_MARGIN, y, box.width, Math.min(box.height, 72));
+    }
+    y += box.height + 12;
+  };
+
+  if (args.kind === 'detailed') {
+    const images = args.imagesBySeal ?? imagesBySealFromSchema(args.schema);
+    if (args.points.length === 0) {
+      writeLines(['No sealed passages were included.'], 12, 16);
+      return new Uint8Array(doc.output('arraybuffer'));
+    }
+    args.points.forEach((point, index) => {
+      if (index > 0) {
+        room(16);
+        doc.setDrawColor(180);
+        doc.setLineWidth(0.6);
+        doc.line(REPORT_MARGIN, y, REPORT_MARGIN + REPORT_WIDTH, y);
+        y += 14;
+      }
+      writeLines(detailedSealText(point), 9, 12);
+      y += 4;
+      const pictures = (images.get(point.id) ?? []).filter((image) => image.dataUrl.startsWith('data:image/'));
+      for (const picture of pictures) {
+        writeLines([`${passageImageLabel(picture.kind)} · ${formatExportDateTime(picture.at)}`], 9, 12, 'bold');
+        y += 4;
+        drawJpeg(picture.dataUrl, picture.width, picture.height, 220);
+      }
+      y += 8;
+    });
+    return new Uint8Array(doc.output('arraybuffer'));
+  }
+
   if (captures.length === 0) {
     writeLines(
       ['No session pictures are stored for this manuscript yet. Press Start on the session bar after the camera or the screen is on.'],
@@ -357,26 +431,7 @@ export function renderSessionCaptureReport(args: {
     );
     y += 4;
 
-    if (showImages) {
-      const maxH = args.kind === 'summary' ? 150 : 220;
-      const box = fitReportImage(cell.width ?? REPORT_WIDTH, cell.height ?? maxH, REPORT_WIDTH, maxH);
-      room(box.height + 8);
-      if (cell.dataUrl) {
-        try {
-          doc.addImage(cell.dataUrl, 'JPEG', REPORT_MARGIN, y, box.width, box.height);
-        } catch {
-          doc.setDrawColor(160);
-          doc.rect(REPORT_MARGIN, y, box.width, box.height);
-          doc.setFont('times', 'normal');
-          doc.setFontSize(9);
-          doc.text('Picture unavailable', REPORT_MARGIN + 8, y + 16);
-        }
-      } else {
-        doc.setDrawColor(160);
-        doc.rect(REPORT_MARGIN, y, box.width, Math.min(box.height, 72));
-      }
-      y += box.height + 12;
-    }
+    if (showImages) drawJpeg(cell.dataUrl ?? '', cell.width ?? REPORT_WIDTH, cell.height ?? 150, 150);
 
     if (cell.seals.length === 0) {
       writeLines(['No seals in this window.'], 10, 13);

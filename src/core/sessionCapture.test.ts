@@ -29,6 +29,8 @@ import {
   nextIntervalDue,
   planCapturePages,
   readSessionCaptureSettings,
+  imagesWithSeals,
+  passageImageLabel,
   sealsInWindow,
   sessionCaptureConfigured,
   sessionCaptureReportLeadsWithSummary,
@@ -274,6 +276,51 @@ test('interval captures are due every five minutes and not sooner', () => {
     nextIntervalDue(session(afterFirst), start + CAPTURE_INTERVAL_MS * 2),
     new Date(start + CAPTURE_INTERVAL_MS * 2).toISOString(),
   );
+});
+
+test('pictures stay with the seal from their window and do not change the hash', () => {
+  const inside = seal('inside', '2026-10-27T12:04:00.000Z');
+  const outside = seal('outside', '2026-10-27T12:06:00.000Z');
+  const hash = inside.contentHash;
+  const images = imagesWithSeals(
+    [
+      shot({ id: 'screen', kind: 'screenshot', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z' }),
+      shot({ id: 'cam', kind: 'camera', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z' }),
+      shot({
+        id: 'later',
+        kind: 'composite',
+        windowStart: '2026-10-27T12:05:00.000Z',
+        windowEnd: '2026-10-27T12:10:00.000Z',
+      }),
+    ],
+    [inside, outside],
+  );
+  assert.equal(inside.contentHash, hash);
+  assert.deepEqual(
+    images.get('inside')?.map((image) => image.kind),
+    ['screenshot', 'camera'],
+  );
+  assert.deepEqual(images.get('outside')?.map((image) => image.kind), ['composite']);
+  assert.equal(images.get('inside')?.some((image) => image.dataUrl.includes('later')), false);
+  assert.equal(passageImageLabel('screenshot'), 'Screenshot');
+  assert.equal(passageImageLabel('camera'), 'Camera photo');
+  assert.equal(passageImageLabel('composite'), 'Screenshot with the camera in the upper left');
+
+  const combined = imagesWithSeals(
+    [
+      shot({ id: 'screen', kind: 'screenshot', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z' }),
+      shot({ id: 'cam', kind: 'camera', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z' }),
+      shot({ id: 'both', kind: 'composite', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z' }),
+    ],
+    [inside],
+  );
+  assert.deepEqual(combined.get('inside')?.map((image) => image.kind), ['composite']);
+
+  const blank = imagesWithSeals(
+    [shot({ id: 'blank', windowStart: START, windowEnd: '2026-10-27T12:05:00.000Z', dataUrl: '' })],
+    [inside],
+  );
+  assert.equal(blank.size, 0);
 });
 
 test('seal metadata for a window omits passage text and evidence', () => {
@@ -526,6 +573,7 @@ test('the three reports share a timeline and differ by pictures and certificatio
   assert.equal(detailed.includes('UNIQUE_EVIDENCE_inside'), false);
   assert.equal(detailed.includes('1 observed input event'), true);
   assert.equal(detailed.includes('DCTDecode'), true);
+  assert.ok(detailed.indexOf('UNIQUE_PASSAGE_inside') < detailed.indexOf('Screenshot with the camera in the upper left'));
 
   assert.equal(highLevel.includes('HuManuScript certification summary'), false);
   assert.equal(highLevel.includes('High-level summary'), true);
@@ -540,6 +588,7 @@ test('the three reports share a timeline and differ by pictures and certificatio
   assert.equal(sealsOnly.includes('UNIQUE_EVIDENCE_inside'), false);
   assert.equal(sealsOnly.includes('hash-inside'), true);
   assert.equal(sealsOnly.includes('DCTDecode'), false);
+  assert.equal(sealsOnly.includes('Screenshot with the camera in the upper left'), false);
   assert.ok(sealsOnly.length < highLevel.length);
 });
 

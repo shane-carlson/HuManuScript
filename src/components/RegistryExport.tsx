@@ -73,9 +73,9 @@ export function RegistryExportCard({
         <span>Include the detailed certification report</span>
       </label>
       <p className="hint">
-        HuManuScript generates that report from the manuscript already open here. You do not attach a file. Passage
-        text and session pictures stay on this computer. The manuscript text is not uploaded. Leave this unchecked to
-        register the summary and the two checksums only.
+        HuManuScript generates that report from the manuscript already open here. You do not attach a file. Each
+        sealed passage includes the screenshots and camera photos captured with it. The manuscript text is not
+        uploaded. Leave this unchecked to register the summary and the two checksums only, with no pictures.
       </p>
       <div className="registry-status" aria-live="polite">
         {registry.busy ? <p>Contacting the {REGISTRY_NAME}…</p> : null}

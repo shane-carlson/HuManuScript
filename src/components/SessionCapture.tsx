@@ -9,6 +9,7 @@ import { createSessionMedia, type SessionMedia } from '../captureStill.ts';
 import {
   buildSessionCaptureSchema,
   captureSessionComposite,
+  imagesWithSeals,
   nextCaptureAt,
   nextIntervalDue,
   SESSION_CAPTURE_REPORTS,
@@ -428,8 +429,10 @@ export function SessionCaptureProvider({
         points,
         includeStored: true,
       });
-      const stored = schema?.sessions.reduce((count, session) => count + session.captures.length, 0) ?? 0;
-      if (!schema || stored === 0) {
+      const hasPicture = thumbnails.some(
+        (thumb) => thumb.kind === 'composite' || thumb.kind === 'camera' || thumb.kind === 'screenshot',
+      );
+      if (!schema || !hasPicture) {
         throw new Error('No session pictures are stored for this manuscript yet.');
       }
       const summary = buildCertificationPageModel(doc, new Date().toISOString(), identity, liveDevice);
@@ -440,6 +443,7 @@ export function SessionCaptureProvider({
         schema,
         points: doc.points,
         summary,
+        imagesBySeal: kind === 'detailed' ? imagesWithSeals(thumbnails, points) : undefined,
       });
       const buffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buffer).set(bytes);
