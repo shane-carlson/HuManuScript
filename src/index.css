@@ -108,6 +108,57 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   margin-left: auto;
 }
 .brand { display: flex; gap: 12px; align-items: center; min-width: 240px; }
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.sync-cluster { display: flex; align-items: center; gap: 8px; position: relative; }
+.sync-status {
+  margin: 0;
+  max-width: 16rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-align: right;
+}
+.sync-control { position: relative; }
+.sync-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.sync-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 91;
+  width: min(24rem, calc(100vw - 28px));
+  padding: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.sync-panel.is-failure { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); }
+.sync-panel.is-success { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.sync-panel h2 { font-size: 1.2rem; margin: 0 0 8px; }
+.sync-panel h3 { font-size: 1rem; margin: 0 0 6px; }
+.sync-panel p { margin: 0 0 10px; color: var(--text-dim); font-size: 0.88rem; }
+.sync-panel__ok { color: var(--good); }
+.sync-panel__error { color: var(--warn); }
+.sync-panel__notice { color: var(--text); }
+.sync-panel__hint { color: var(--text-dim); font-size: 0.8rem; }
+.sync-panel a { color: var(--accent); }
+.sync-panel__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync-panel .field { color: var(--text); }
 .mark {
   width: 40px;
   height: 40px;
@@ -3339,6 +3390,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   .stats--bar.stats--bar-one-row dd { font-size: 1.1rem; }
   .top { padding: 14px 14px 0; }
   .update-available { padding: 6px 14px; }
+  .sync-status { max-width: 11rem; }
+  .sync-panel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+  }
   .empty, .status { margin-left: 14px; margin-right: 14px; }
   .editor-grid { padding: 12px 14px 24px; }
   .ms-block { padding-left: 74px; }

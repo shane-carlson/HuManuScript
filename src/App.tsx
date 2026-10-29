@@ -26,6 +26,29 @@ import {
 import { formatAppVersion } from './core/appVersion.ts';
 import { LAYOUT_PANE_LIMITS } from './core/layoutSession.ts';
 import { displayTitle, reconcileLoadedDocument } from './core/document.ts';
+import { SyncControl } from './components/SyncControl.tsx';
+import {
+  createReadywriterAccount,
+  signInReadywriterAccount,
+  signOutReadywriterAccount,
+  syncWithAccount,
+} from './core/syncClient.ts';
+import {
+  clearSyncSession,
+  loadSyncClock,
+  loadSyncSession,
+  readStoredBookTimes,
+  saveSyncClock,
+  saveSyncSession,
+  type SyncSession,
+} from './core/syncSession.ts';
+import {
+  fingerprintLibrary,
+  fingerprintVersions,
+  observeLocalSnapshot,
+  type SyncClock,
+} from './core/syncSnapshot.ts';
+import type { SyncPhase } from './core/syncStatus.ts';
 import {
   listBookVersions,
   loadVersionLedger,
@@ -93,6 +116,9 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(() => loadSidebarWidth());
   const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
   const [versions, setVersions] = useState<VersionLedger>(() => loadVersionLedger());
+  const [session, setSession] = useState<SyncSession | null>(() => loadSyncSession());
+  const [syncPhase, setSyncPhase] = useState<SyncPhase>(() => (loadSyncSession() ? 'signed-in' : 'signed-out'));
+  const [syncDetail, setSyncDetail] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const stored = localStorage.getItem(THEME_KEY);
     return stored === 'dark' ? 'dark' : 'light';
@@ -100,8 +126,112 @@ export default function App() {
   const ids = useRef(createIdFactory('hm'));
   const libraryRef = useRef(library);
   const versionsRef = useRef(versions);
+  const sessionRef = useRef(session);
+  const clockRef = useRef<SyncClock | null>(loadSyncClock());
+  const syncingRef = useRef(false);
   libraryRef.current = library;
   versionsRef.current = versions;
+  sessionRef.current = session;
+
+  const rememberSession = useCallback((next: SyncSession | null) => {
+    sessionRef.current = next;
+    setSession(next);
+    if (next) saveSyncSession(next);
+    else clearSyncSession();
+  }, []);
+
+  const runSync = useCallback(async () => {
+    const current = sessionRef.current;
+    const lib = libraryRef.current;
+    if (!current || !lib || syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncPhase('syncing');
+    setSyncDetail('');
+    const now = () => new Date().toISOString();
+    try {
+      let clock = clockRef.current;
+      if (!clock || clock.accountId !== current.accountId) {
+        clock = observeLocalSnapshot(null, lib, versionsRef.current, now(), readStoredBookTimes());
+        clock = { ...clock, accountId: current.accountId };
+      } else {
+        clock = observeLocalSnapshot(clock, lib, versionsRef.current, now());
+      }
+      clockRef.current = clock;
+      const startedVersions = versionsRef.current;
+      let result = await syncWithAccount({
+        token: current.token,
+        library: lib,
+        versions: startedVersions,
+        clock,
+        now: now(),
+      });
+      if (!result.ok) {
+        if (sessionRef.current?.token === current.token) {
+          if (result.message.startsWith('Sign in again')) {
+            rememberSession(null);
+            setSyncPhase('signed-out');
+          } else {
+            setSyncPhase('failure');
+          }
+          setSyncDetail(result.message);
+        }
+        return;
+      }
+      const latestLib = libraryRef.current;
+      const latestVersions = versionsRef.current;
+      const editedDuringSync = Boolean(
+        latestLib &&
+          (fingerprintLibrary(latestLib) !== fingerprintLibrary(lib) ||
+            fingerprintVersions(latestVersions) !== fingerprintVersions(startedVersions)),
+      );
+      if (latestLib && editedDuringSync && sessionRef.current?.token === current.token) {
+        const followClock = observeLocalSnapshot(
+          { ...result.clock, accountId: current.accountId },
+          latestLib,
+          latestVersions,
+          now(),
+        );
+        result = await syncWithAccount({
+          token: current.token,
+          library: latestLib,
+          versions: latestVersions,
+          clock: followClock,
+          now: now(),
+        });
+        if (!result.ok) {
+          clockRef.current = { ...followClock, accountId: current.accountId };
+          saveSyncClock(clockRef.current);
+          if (result.message.startsWith('Sign in again')) {
+            rememberSession(null);
+            setSyncPhase('signed-out');
+          } else {
+            setSyncPhase('failure');
+          }
+          setSyncDetail(result.message);
+          return;
+        }
+      }
+      if (sessionRef.current?.token !== current.token) return;
+      const nextClock = { ...result.clock, accountId: current.accountId };
+      clockRef.current = nextClock;
+      saveSyncClock(nextClock);
+      const currentLib = libraryRef.current;
+      const contentChanged =
+        !currentLib ||
+        fingerprintLibrary(currentLib) !== fingerprintLibrary(result.library) ||
+        fingerprintVersions(versionsRef.current) !== fingerprintVersions(result.versions);
+      if (contentChanged) {
+        setLibrary(result.library);
+        setVersions(result.versions);
+      }
+      const nextSession = { ...current, lastSyncAt: result.syncedAt };
+      rememberSession(nextSession);
+      setSyncPhase('success');
+      setSyncDetail('');
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [rememberSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +239,10 @@ export default function App() {
       try {
         const lib = await initialLibrary(ids.current);
         if (cancelled) return;
+        const ledger = loadVersionLedger();
+        const seeded = observeLocalSnapshot(loadSyncClock(), lib, ledger, new Date().toISOString(), readStoredBookTimes());
+        clockRef.current = seeded;
+        saveSyncClock(seeded);
         setLibrary(lib);
         setPhase('ready');
       } catch (err) {
@@ -121,6 +255,25 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (phase !== 'ready' || !library) return;
+    const timer = window.setTimeout(() => {
+      const current = libraryRef.current;
+      if (!current) return;
+      const observed = observeLocalSnapshot(clockRef.current, current, versionsRef.current, new Date().toISOString());
+      clockRef.current = observed;
+      saveSyncClock(observed);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [library, versions, phase]);
+
+  const autoSyncStarted = useRef(false);
+  useEffect(() => {
+    if (phase !== 'ready' || autoSyncStarted.current) return;
+    autoSyncStarted.current = true;
+    if (sessionRef.current) void runSync();
+  }, [phase, runSync]);
 
   useEffect(() => {
     document.documentElement.dataset.mode = theme;
@@ -261,6 +414,35 @@ export default function App() {
     setLibrary(next);
   }, []);
 
+  const signInAndSync = useCallback(
+    async (kind: 'create' | 'sign-in', email: string, password: string, displayName = '') => {
+      const result =
+        kind === 'create'
+          ? await createReadywriterAccount(email, password, displayName)
+          : await signInReadywriterAccount(email, password);
+      if (!result.ok) return { message: result.message, pending: result.pending === true };
+      rememberSession({
+        token: result.account.token,
+        email: result.account.email,
+        accountId: result.account.accountId,
+        ...(result.account.displayName ? { displayName: result.account.displayName } : {}),
+        lastSyncAt: null,
+      });
+      setSyncPhase('signed-in');
+      await runSync();
+      return null;
+    },
+    [rememberSession, runSync],
+  );
+
+  const signOut = useCallback(() => {
+    const token = sessionRef.current?.token;
+    rememberSession(null);
+    setSyncPhase('signed-out');
+    setSyncDetail('');
+    if (token) void signOutReadywriterAccount(token);
+  }, [rememberSession]);
+
   const focusActive = manuscriptFocus && tab === 'manuscript';
 
   return (
@@ -327,6 +509,16 @@ export default function App() {
           </div>
         )}
         <div className="chrome-actions">
+          <SyncControl
+            phase={syncPhase}
+            email={session?.email ?? null}
+            lastSyncAt={session?.lastSyncAt ?? null}
+            detail={syncDetail}
+            onCreateAccount={(email, password, displayName) => signInAndSync('create', email, password, displayName)}
+            onSignIn={(email, password) => signInAndSync('sign-in', email, password)}
+            onSyncNow={() => void runSync()}
+            onSignOut={signOut}
+          />
           <button type="button" className="ghost" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
             {theme === 'light' ? 'Dark paper' : 'Light paper'}
           </button>
