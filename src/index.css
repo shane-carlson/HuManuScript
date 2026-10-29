@@ -911,11 +911,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 8px;
 }
 .notes-rail__toggle {
-  margin-left: auto;
+  align-self: flex-start;
   width: 32px;
   height: 32px;
+  /* Notes keeps 12px padding. Pull the chevron left so it sits in the same
+     corner inset as the certification pane (8px padding). */
+  margin: 0 0 4px -4px;
   padding: 0;
   border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -926,11 +931,12 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   padding: 8px 4px;
   align-items: center;
 }
+.notes-rail.is-collapsed .notes-rail__head,
 .notes-rail.is-collapsed .notes-rail__title,
 .notes-rail.is-collapsed .notes-rail__tabs,
 .notes-rail.is-collapsed [hidden] { display: none; }
-.notes-rail.is-collapsed .notes-rail__head { justify-content: center; }
 .notes-rail.is-collapsed .notes-rail__toggle {
+  align-self: center;
   width: 44px;
   height: 44px;
   min-height: 0;

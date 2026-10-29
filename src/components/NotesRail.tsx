@@ -93,12 +93,7 @@ export function NotesRail({
 
   return (
     <aside className={`notes-rail${collapsed ? ' is-collapsed' : ''}`} aria-label="Character and scene notes" data-notes-phase={phase}>
-      <div className="notes-rail__head">
-        <div className="notes-rail__title">
-          <p className="eyebrow">Beside the page</p>
-          <h2>Notes</h2>
-        </div>
-        {onToggleCollapsed && (
+      {onToggleCollapsed && (
         <button
           type="button"
           className="notes-rail__toggle"
@@ -110,7 +105,12 @@ export function NotesRail({
         >
           {collapsed ? <StickyNoteIcon /> : <span className="notes-rail__chevron" aria-hidden="true">›</span>}
         </button>
-        )}
+      )}
+      <div className="notes-rail__head">
+        <div className="notes-rail__title">
+          <p className="eyebrow">Beside the page</p>
+          <h2>Notes</h2>
+        </div>
         <div className="notes-rail__tabs" role="tablist" aria-label="Notes">
           <button type="button" role="tab" aria-selected={tab === 'characters'} onClick={() => setTab('characters')}>
             Characters
