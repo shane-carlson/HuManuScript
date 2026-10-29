@@ -8,16 +8,14 @@
 
 import { jsPDF } from 'jspdf';
 import type { CertificationPoint } from './certification.ts';
-import { certificationFactLines, formatExportDateTime, type CertificationPageModel } from './certificationPage.ts';
-import { inputSourceLine, typingRateLine } from './inputSource.ts';
+import { renderPaneDetailedCertificationReport } from './certificationReportPdf.ts';
+import { formatExportDateTime, type CertificationPageModel } from './certificationPage.ts';
 import {
   CAPTURE_PAGE,
   captureCellSize,
   captureDocumentHeader,
   cellsFromSchema,
   planCapturePages,
-  passageImageLabel,
-  sessionCaptureReportLeadsWithSummary,
   sessionCaptureReportShowsImages,
   type PassageCaptureImage,
   type PlannedCaptureCell,
@@ -187,49 +185,7 @@ export function sealSummaryText(seal: SealWindowMeta): string[] {
   ];
 }
 
-/**
- * One sealed span for the detailed report, grouped the way the certification
- * pane shows it: the passage that was entered, the hash, the time, and the
- * other certification details. Input events stay inside the seal. They are
- * not printed one keystroke per line.
- */
-export function detailedSealText(point: CertificationPoint): string[] {
-  const origin = point.origin === 'dictation' ? 'Dictation, sealed' : 'Keyboard, sealed';
-  const lines = [
-    origin,
-    point.text,
-    `Updated ${formatExportDateTime(point.updatedAt)}`,
-    `Sealed ${formatExportDateTime(point.sealedAt)}`,
-    `SHA-256 ${point.contentHash}`,
-    `Seal ${point.id}`,
-    `Block ${point.blockId}`,
-    `Span ${point.spanId}`,
-  ];
-  if (point.typingDevice?.trim()) lines.push(`Device: ${point.typingDevice.trim()}`);
-  lines.push(inputSourceLine(point));
-  lines.push(typingRateLine(point));
-  const types = point.evidence.inputTypes.join(', ') || 'keyboard';
-  const count = point.evidence.eventCount;
-  lines.push(`${count} observed input event${count === 1 ? '' : 's'} · ${types}`);
-  if (point.priorHashes.length > 0) {
-    lines.push('Prior hashes');
-    for (const hash of point.priorHashes) lines.push(hash);
-  }
-  if (point.lineage) lines.push(point.lineage);
-  if (point.spellcheck?.used) {
-    lines.push(point.spellcheck.comment);
-    for (const check of point.spellcheck.checks) {
-      lines.push(`Spelling ${formatExportDateTime(check.at)}: ${check.before} to ${check.after}`);
-    }
-  }
-  if (point.grammar?.used) {
-    lines.push(point.grammar.comment);
-    for (const check of point.grammar.checks) {
-      lines.push(`Grammar ${formatExportDateTime(check.at)}: ${check.before} to ${check.after}`);
-    }
-  }
-  return lines;
-}
+export { detailedSealText } from './certificationReportPdf.ts';
 
 const REPORT_MARGIN = 40;
 const REPORT_BOTTOM = 752;
@@ -250,33 +206,6 @@ function paintReportHeader(doc: jsPDF, kind: SessionCaptureReportKind, title: st
   doc.setFontSize(8);
   doc.text(`Manuscript ${manuscriptId}`, REPORT_MARGIN, y);
   return y + 16;
-}
-
-function drawCertificationSummaryPage(doc: jsPDF, model: CertificationPageModel): void {
-  const width = 612 - REPORT_MARGIN * 2;
-  let y = 48;
-  doc.setTextColor(0);
-  doc.setFont('times', 'bold');
-  doc.setFontSize(16);
-  doc.text('HuManuScript certification summary', REPORT_MARGIN, y);
-  y += 20;
-  doc.setFont('times', 'normal');
-  doc.setFontSize(10);
-  for (const line of certificationFactLines(model).slice(1)) {
-    if (!line) {
-      y += 7;
-      continue;
-    }
-    const heading = line === 'Certified versus pasted' || line === 'Statistics';
-    if (heading) {
-      y += 3;
-      doc.setFont('times', 'bold');
-    }
-    const wrapped = doc.splitTextToSize(line, width) as string[];
-    doc.text(wrapped, REPORT_MARGIN, y);
-    y += wrapped.length * 12;
-    if (heading) doc.setFont('times', 'normal');
-  }
 }
 
 function fitReportImage(srcW: number, srcH: number, maxW: number, maxH: number): { width: number; height: number } {
@@ -324,15 +253,19 @@ export function renderSessionCaptureReport(args: {
   /** When set, the detailed report uses these pictures. Seal summaries ignore them. */
   imagesBySeal?: ReadonlyMap<string, readonly PassageCaptureImage[]>;
 }): Uint8Array {
+  if (args.kind === 'detailed') {
+    return renderPaneDetailedCertificationReport({
+      title: args.title,
+      manuscriptId: args.manuscriptId,
+      points: args.points,
+      summary: args.summary,
+      imagesBySeal: args.imagesBySeal ?? imagesBySealFromSchema(args.schema),
+    });
+  }
+
   const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: false });
   const captures = cellsFromSchema(args.schema);
   const showImages = sessionCaptureReportShowsImages(args.kind);
-  const byId = new Map(args.points.map((point) => [point.id, point]));
-
-  if (sessionCaptureReportLeadsWithSummary(args.kind)) {
-    drawCertificationSummaryPage(doc, args.summary);
-    doc.addPage();
-  }
 
   let y = paintReportHeader(doc, args.kind, args.title, args.manuscriptId);
 
@@ -376,33 +309,6 @@ export function renderSessionCaptureReport(args: {
     y += box.height + 12;
   };
 
-  if (args.kind === 'detailed') {
-    const images = args.imagesBySeal ?? imagesBySealFromSchema(args.schema);
-    if (args.points.length === 0) {
-      writeLines(['No sealed passages were included.'], 12, 16);
-      return new Uint8Array(doc.output('arraybuffer'));
-    }
-    args.points.forEach((point, index) => {
-      if (index > 0) {
-        room(16);
-        doc.setDrawColor(180);
-        doc.setLineWidth(0.6);
-        doc.line(REPORT_MARGIN, y, REPORT_MARGIN + REPORT_WIDTH, y);
-        y += 14;
-      }
-      writeLines(detailedSealText(point), 9, 12);
-      y += 4;
-      const pictures = (images.get(point.id) ?? []).filter((image) => image.dataUrl.startsWith('data:image/'));
-      for (const picture of pictures) {
-        writeLines([`${passageImageLabel(picture.kind)} · ${formatExportDateTime(picture.at)}`], 9, 12, 'bold');
-        y += 4;
-        drawJpeg(picture.dataUrl, picture.width, picture.height, 220);
-      }
-      y += 8;
-    });
-    return new Uint8Array(doc.output('arraybuffer'));
-  }
-
   if (captures.length === 0) {
     writeLines(
       ['No session pictures are stored for this manuscript yet. Press Start on the session bar after the camera or the screen is on.'],
@@ -439,11 +345,10 @@ export function renderSessionCaptureReport(args: {
       return;
     }
 
-    writeLines([args.kind === 'detailed' ? 'Certification details' : 'Seal summary'], 9, 12, 'bold');
+    writeLines(['Seal summary'], 9, 12, 'bold');
     y += 2;
     for (const seal of cell.seals) {
-      const point = byId.get(seal.id);
-      const lines = args.kind === 'detailed' && point ? detailedSealText(point) : sealSummaryText(seal);
+      const lines = sealSummaryText(seal);
       writeLines(lines, 9, 12);
       y += 8;
     }

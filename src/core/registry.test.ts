@@ -151,6 +151,20 @@ function json(body: unknown): string {
   return JSON.stringify(body);
 }
 
+function pdfText(report: NonNullable<RegistrationBody['report']>): string {
+  const binary = atob(report.base64);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  assert.equal(report.filename, 'certification-report.pdf');
+  assert.equal(report.mediaType, 'application/pdf');
+  assert.equal(report.byteLength, bytes.byteLength);
+  assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
+  return new TextDecoder('latin1').decode(bytes);
+}
+
+/** 1×1 JPEG so the report PDF can embed a real picture. */
+const TINY_JPEG =
+  'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGf/9k=';
+
 test('canonical walk is NFC prose and non-empty titles, without tables, images, or notes', () => {
   const text = canonicalManuscriptText(sample());
   assert.equal(
@@ -472,8 +486,8 @@ test('the detailed report is generated from the manuscript and still omits the p
     includeDeviceNames: true,
     includeDetailedReport: true,
   });
-  const report = body.report!;
-  assert.match(report, /^Detailed certification report\n/);
+  const report = pdfText(body.report!);
+  assert.match(report, /Detailed certification report/);
   assert.match(report, /Block: block-1/);
   assert.match(report, /Span: span-1/);
   assert.match(report, /Lineage: Split from certification /);
@@ -481,6 +495,7 @@ test('the detailed report is generated from the manuscript and still omits the p
   assert.match(report, /Agreement/);
   assert.match(report, /harper/);
   assert.match(report, /Computer: writers-mac\.local/);
+  assert.equal(await sha256Hex(Uint8Array.from(atob(body.report!.base64), (char) => char.charCodeAt(0))), body.report!.sha256);
   const encoded = json(body);
   for (const secret of [PASSAGE, EVENT_DATA, BEFORE, AFTER, MESSAGE, CELL, ALT]) {
     assert.equal(encoded.includes(secret), false, secret);
@@ -493,8 +508,8 @@ test('the detailed report is generated from the manuscript and still omits the p
 test('seal pictures are included with that passage only on the detailed report', async () => {
   const doc = sample();
   const hashes = doc.points.map((point) => point.contentHash);
-  const picture = 'data:image/jpeg;base64,UGljdHVyZQ==';
-  const camera = 'data:image/jpeg;base64,Q2FtZXJh';
+  const picture = TINY_JPEG;
+  const camera = TINY_JPEG;
   const passageImages = new Map([
     [
       'seal-typed',
@@ -528,16 +543,22 @@ test('seal pictures are included with that passage only on the detailed report',
   assert.equal(skippedJson.includes(camera), false);
 
   const body = await buildRegistrationBody({ ...shared, includeDetailedReport: true });
-  const report = body.report!;
+  const report = pdfText(body.report!);
   const typedAt = report.indexOf('Id: seal-typed');
   const spokenAt = report.indexOf('Id: seal-spoken');
-  const pictureAt = report.indexOf(picture);
-  const cameraAt = report.indexOf(camera);
+  const pictureAt = report.indexOf('Screenshot with the camera in the upper left');
+  const cameraAt = report.indexOf('Camera photo');
   assert.ok(typedAt >= 0 && spokenAt > typedAt);
   assert.ok(pictureAt > typedAt && pictureAt < spokenAt);
   assert.ok(cameraAt > spokenAt);
-  assert.match(report, /Screenshot with the camera in the upper left\nCaptured: 2026-10-18T16:11:40\.000Z\nSize: 640x360\n/);
-  assert.match(report, /Camera photo\nCaptured: 2026-10-18T16:20:00\.000Z\nSize: 320x240\n/);
+  assert.match(report, /Captured: 2026-10-18T16:11:40\.000Z/);
+  assert.match(report, /Size: 640x360/);
+  assert.match(report, /Captured: 2026-10-18T16:20:00\.000Z/);
+  assert.match(report, /Size: 320x240/);
+  assert.ok(report.includes('DCTDecode'));
+  assert.equal(report.includes('data:image'), false);
+  assert.equal(report.includes(picture), false);
+  assert.equal(report.includes(camera), false);
   assert.equal(json(body.seals).includes(picture), false);
   assert.equal(json(body.seals).includes(camera), false);
   assert.equal(findForbiddenKey(body), null);
@@ -641,7 +662,7 @@ test('POST sends the summary and keeps the code, and a dead registry does not th
   assert.equal(seen[1]!.url, 'https://www.readywriter.one/api/registrations');
   assert.equal(live.pageUrl, `https://www.readywriter.one/sidequests/certified-manuscript-registry/c/${CODE}`);
   assert.equal(seen[0]!.credentials, 'omit');
-  assert.match(seen[0]!.body.report ?? '', /Detailed certification report/);
+  assert.match(pdfText(seen[0]!.body.report!), /Detailed certification report/);
   assert.equal(json(seen[0]!.body).includes(PASSAGE), false);
   assert.equal(result.receipt.code, CODE);
   assert.equal(result.receipt.deleteToken, 'token-token-token-token');

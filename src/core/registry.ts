@@ -16,7 +16,14 @@
  */
 
 import { contentHash, GRAMMAR_CHECK_COMMENT, SPELL_CHECK_COMMENT, type CertificationPoint } from './certification.ts';
-import { passageImageLabel, type PassageCaptureImage } from './sessionCapture.ts';
+import {
+  bytesToBase64,
+  renderRegistryCertificationReportPdf,
+  CERTIFICATION_REPORT_PDF_FILENAME,
+  CERTIFICATION_REPORT_PDF_MEDIA_TYPE,
+  type CertificationReportPdfDocument,
+} from './certificationReportPdf.ts';
+import { type PassageCaptureImage } from './sessionCapture.ts';
 import { certificationBannerText, buildCertificationPageModel } from './certificationPage.ts';
 import { formatTypingDeviceLabel } from './deviceName.ts';
 import type { ManuscriptDocument } from './document.ts';
@@ -240,11 +247,11 @@ export interface RegistrationBody {
   includeDeviceNames: boolean;
   seals: RegistrationSeal[];
   /**
-   * Plain text of the detailed certification report. The live registry stores
-   * this string as the downloadable report. Pictures sit with the seal they
-   * belong to. A JSON object under any other name is refused.
+   * PDF of the detailed certification report. The live registry stores these
+   * bytes as the downloadable report. Pictures are drawn with the seal they
+   * belong to. The manuscript wording is not in the file.
    */
-  report?: string;
+  report?: CertificationReportPdfDocument;
 }
 
 export function registeredMessage(includedDetailedReport: boolean, wroteInstructions: boolean): string {
@@ -431,49 +438,18 @@ function passageImagesFor(
   return images.filter((image) => image.dataUrl.startsWith('data:image/'));
 }
 
-/** Plain text the holder can read. The manuscript wording stays out of it. */
-export function formatDetailedCertificationReport(report: DetailedCertificationReport): string {
-  const lines = [report.name, `Manuscript id: ${report.manuscriptId}`, `Exported: ${report.exportedAt}`, ''];
-  if (report.seals.length === 0) lines.push('No sealed passages were included.');
-  report.seals.forEach((seal, index) => {
-    lines.push(`Seal ${index + 1}`, `Id: ${seal.id}`, `Origin: ${seal.origin}`, `Input: ${seal.inputSource.kind}`);
-    if (seal.inputSource.name) lines.push(`Input source: ${seal.inputSource.name}`);
-    if (seal.typingDevice) lines.push(`Computer: ${seal.typingDevice}`);
-    lines.push(
-      `Sealed: ${seal.sealedAt}`,
-      `Updated: ${seal.updatedAt}`,
-      `Characters: ${seal.charLength}`,
-      `Earlier hashes: ${seal.priorHashCount}`,
-      `Input events: ${seal.eventCount}`,
-    );
-    if (seal.inputTypes.length > 0) lines.push(`Input types: ${seal.inputTypes.join(', ')}`);
-    if (seal.keyboardPace) {
-      lines.push(
-        `Typing: ${seal.keyboardPace.keystrokes} keystrokes from ${seal.keyboardPace.firstAt} to ${seal.keyboardPace.lastAt}`,
-      );
-    }
-    if (seal.lineage) lines.push(`Lineage: ${seal.lineage}`);
-    lines.push(`Block: ${seal.blockId}`, `Span: ${seal.spanId}`);
-    if (seal.spellcheck) {
-      lines.push(`Spell check: ${seal.spellcheck.comment}`);
-      for (const check of seal.spellcheck.checks) lines.push(`Spell check at ${check.at}`);
-    }
-    if (seal.grammar) {
-      lines.push(`Grammar check: ${seal.grammar.comment}`);
-      for (const check of seal.grammar.checks) {
-        lines.push(
-          `Grammar check at ${check.at} with ${check.engine} ${check.engineVersion}, ${check.dialect}, ${check.lintKind}, suggestion ${check.suggestion}`,
-        );
-      }
-    }
-    for (const image of seal.images ?? []) {
-      lines.push(passageImageLabel(image.kind), `Captured: ${image.at}`);
-      if (image.width > 0 && image.height > 0) lines.push(`Size: ${image.width}x${image.height}`);
-      lines.push(image.dataUrl);
-    }
-    lines.push('');
-  });
-  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
+/** PDF the holder downloads. The manuscript wording stays out of it. */
+export async function certificationReportDocument(
+  report: DetailedCertificationReport,
+): Promise<CertificationReportPdfDocument> {
+  const bytes = renderRegistryCertificationReportPdf(report);
+  return {
+    filename: CERTIFICATION_REPORT_PDF_FILENAME,
+    mediaType: CERTIFICATION_REPORT_PDF_MEDIA_TYPE,
+    byteLength: bytes.byteLength,
+    sha256: await sha256Hex(bytes),
+    base64: bytesToBase64(bytes),
+  };
 }
 
 const MAX_REGISTRATION_AUTHOR = 200;
@@ -579,7 +555,7 @@ export async function buildRegistrationBody(args: {
     seals: args.doc.points.map((point) => publicSeal(point, args.includeDeviceNames, args.liveDevice)),
     ...(args.includeDetailedReport
       ? {
-          report: formatDetailedCertificationReport(
+          report: await certificationReportDocument(
             buildDetailedCertificationReport(
               args.doc,
               args.exportedAt,
