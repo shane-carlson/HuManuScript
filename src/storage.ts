@@ -213,25 +213,36 @@ function hydrateBook(raw: Book): Book {
   return { ...raw, document: doc };
 }
 
+/** Read a library object already taken out of storage or a sync snapshot. */
+export function parseLibraryRecord(value: unknown): { ok: true; library: Library } | { ok: false; error: string } {
+  if (!value || typeof value !== 'object') {
+    return { ok: false, error: 'The saved library is not a HuManuScript library.' };
+  }
+  const parsed = value as Library;
+  if (parsed.version !== 2 || !Array.isArray(parsed.books) || !Array.isArray(parsed.series)) {
+    return { ok: false, error: 'The saved library is not a HuManuScript library.' };
+  }
+  if (!parsed.books.length) {
+    return { ok: false, error: 'The saved library has no books.' };
+  }
+  if (!parsed.books.every(isBook)) {
+    return { ok: false, error: 'A book in the saved library is unreadable.' };
+  }
+  if (!parsed.series.every(isSeries)) {
+    return { ok: false, error: 'A series in the saved library is unreadable.' };
+  }
+  const books = parsed.books.map(hydrateBook);
+  const activeBookId = books.some((b) => b.id === parsed.activeBookId) ? parsed.activeBookId : books[0]!.id;
+  return { ok: true, library: { version: 2, activeBookId, series: parsed.series, books } };
+}
+
 export function loadLibrary(): LoadResult {
   try {
     const rawV2 = localStorage.getItem(LIBRARY_KEY);
     if (rawV2) {
-      const parsed = JSON.parse(rawV2) as Library;
-      if (parsed.version !== 2 || !Array.isArray(parsed.books) || !Array.isArray(parsed.series)) {
-        return { ok: false, error: 'The saved library is not a HuManuScript library.', raw: rawV2 };
-      }
-      if (!parsed.books.every(isBook)) {
-        return { ok: false, error: 'A book in the saved library is unreadable.', raw: rawV2 };
-      }
-      if (!parsed.series.every(isSeries)) {
-        return { ok: false, error: 'A series in the saved library is unreadable.', raw: rawV2 };
-      }
-      const books = parsed.books.map(hydrateBook);
-      const activeBookId = books.some((b) => b.id === parsed.activeBookId)
-        ? parsed.activeBookId
-        : books[0]!.id;
-      return { ok: true, library: { version: 2, activeBookId, series: parsed.series, books } };
+      const parsed = parseLibraryRecord(JSON.parse(rawV2) as unknown);
+      if (!parsed.ok) return { ok: false, error: parsed.error, raw: rawV2 };
+      return { ok: true, library: parsed.library };
     }
 
     const rawV1 = localStorage.getItem(STORAGE_KEY);
