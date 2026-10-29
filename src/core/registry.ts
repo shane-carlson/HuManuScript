@@ -447,7 +447,7 @@ export async function certificationReportDocument(
     filename: CERTIFICATION_REPORT_PDF_FILENAME,
     mediaType: CERTIFICATION_REPORT_PDF_MEDIA_TYPE,
     byteLength: bytes.byteLength,
-    sha256: await sha256Hex(bytes),
+    sha256: await sha256Hex(new Uint8Array(bytes)),
     base64: bytesToBase64(bytes),
   };
 }
