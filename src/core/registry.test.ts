@@ -232,6 +232,64 @@ test('registration body is the summary and checksums, and the manuscript stays o
   assert.equal(encoded.includes('contentHash'), false);
 });
 
+test('a recorded keyboard pace is sent, and a seal without one does not invent a rate', async () => {
+  const doc = emptyDocument('ms_pace');
+  doc.blocks = [block({ id: 'p', type: 'paragraph', text: 'ab' })];
+  const paced = seal({
+    id: 'paced',
+    text: 'ab',
+    origin: 'keyboard',
+    contentHash: 'hash-paced',
+    keyboardPace: {
+      keystrokes: 8,
+      firstAt: '2026-10-18T16:01:02.000Z',
+      lastAt: '2026-10-18T16:01:10.000Z',
+    },
+  });
+  const unpaced = seal({
+    id: 'unpaced',
+    text: 'cd',
+    origin: 'keyboard',
+    contentHash: 'hash-unpaced',
+    keyboardPace: undefined,
+  });
+  const spoken = seal({
+    id: 'spoken',
+    text: 'ef',
+    origin: 'dictation',
+    contentHash: 'hash-spoken',
+  });
+  doc.points = [paced, unpaced, spoken];
+  const canonical = await canonicalTextDigest(doc);
+  const body = await buildRegistrationBody({
+    doc,
+    appVersion: '0.1.45',
+    exportedAt: '2026-10-28T15:04:00.000Z',
+    title: '',
+    seriesLabel: null,
+    filename: 'pace.txt',
+    byteLength: 2,
+    fileSha256: 'b'.repeat(64),
+    canonicalSha256: canonical.sha256,
+    canonicalUtf8Bytes: canonical.utf8Bytes,
+    includeDeviceNames: false,
+    includeDetailedReport: false,
+  });
+  assert.equal(paced.contentHash, 'hash-paced');
+  assert.equal(unpaced.contentHash, 'hash-unpaced');
+  assert.deepEqual(body.seals[0]!.keyboardPace, {
+    keystrokes: 8,
+    firstAt: '2026-10-18T16:01:02.000Z',
+    lastAt: '2026-10-18T16:01:10.000Z',
+  });
+  assert.equal('keyboardPace' in body.seals[1]!, false);
+  assert.equal('keyboardPace' in body.seals[2]!, false);
+  const encoded = json(body.seals);
+  assert.equal(encoded.includes('"keyboardPace":null'), false);
+  assert.equal(encoded.includes('hash-paced'), false);
+  assert.equal(encoded.includes('ab'), false);
+});
+
 test('a cleared title is sent empty and a series label is sent only for a series book', async () => {
   const doc = sample();
   const canonical = await canonicalTextDigest(doc);
