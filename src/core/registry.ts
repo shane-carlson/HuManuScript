@@ -312,6 +312,21 @@ function publicInputSource(
   return source;
 }
 
+/**
+ * Keyboard pace the registry will store. The holder page turns `keystrokes`
+ * and the two instants into keys per minute. Dictation has no rate.
+ * A keyboard seal with no observed pace omits the field. A count is never invented,
+ * and this does not touch the seal hash.
+ */
+function recordedKeyboardPace(point: CertificationPoint): RegistrationSeal['keyboardPace'] | undefined {
+  if (point.origin !== 'keyboard') return undefined;
+  const pace = point.keyboardPace;
+  if (!pace) return undefined;
+  if (!Number.isInteger(pace.keystrokes) || pace.keystrokes < 0) return undefined;
+  if (!Number.isFinite(Date.parse(pace.firstAt)) || !Number.isFinite(Date.parse(pace.lastAt))) return undefined;
+  return { keystrokes: pace.keystrokes, firstAt: pace.firstAt, lastAt: pace.lastAt };
+}
+
 function publicSeal(point: CertificationPoint, includeDeviceNames: boolean, liveDevice?: string | null): RegistrationSeal {
   const seal: RegistrationSeal = {
     id: point.id,
@@ -324,13 +339,8 @@ function publicSeal(point: CertificationPoint, includeDeviceNames: boolean, live
     eventCount: point.evidence?.eventCount ?? 0,
     inputTypes: [...(point.evidence?.inputTypes ?? [])],
   };
-  if (point.origin === 'keyboard' && point.keyboardPace) {
-    seal.keyboardPace = {
-      keystrokes: point.keyboardPace.keystrokes,
-      firstAt: point.keyboardPace.firstAt,
-      lastAt: point.keyboardPace.lastAt,
-    };
-  }
+  const keyboardPace = recordedKeyboardPace(point);
+  if (keyboardPace) seal.keyboardPace = keyboardPace;
   if (includeDeviceNames && point.typingDevice?.trim()) {
     const label = formatTypingDeviceLabel(point.typingDevice, liveDevice);
     if (label) seal.typingDevice = label;
