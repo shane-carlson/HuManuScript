@@ -1,13 +1,14 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
-import { HoverLabel } from './components/HoverLabel.tsx';
-import './fonts/faces.css';
-import './index.css';
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { SlashApp } from "./slash/App.tsx";
+import { SessionProvider } from "./slash/session.tsx";
+import "./fonts/faces.css";
+import "./slash/styles.css";
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
-    <HoverLabel />
+    <SessionProvider>
+      <SlashApp />
+    </SessionProvider>
   </StrictMode>,
 );

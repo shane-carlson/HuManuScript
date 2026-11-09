@@ -80,7 +80,7 @@ function createWindow(baked) {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    title: `HuManuScript ${baked.label}`,
+    title: `SlashConnect ${baked.label}`,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -206,7 +206,7 @@ function askConsent(parent, message, detail) {
     defaultId: 0,
     cancelId: 0,
     noLink: true,
-    title: 'HuManuScript',
+    title: 'SlashConnect',
     message,
     detail,
   };

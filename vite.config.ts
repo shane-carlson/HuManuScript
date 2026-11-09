@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { createSlashApp } from './server/slashconnect.mjs';
 
 const require = createRequire(import.meta.url);
 const { writeAppVersion, readAppVersion } = require('./scripts/write-app-version.cjs') as {
@@ -33,9 +35,41 @@ function appVersionPlugin(): Plugin {
   };
 }
 
+function slashApiPlugin(): Plugin {
+  let slash: ReturnType<typeof createSlashApp> | null = null;
+  const app = () => {
+    if (!slash) {
+      slash = createSlashApp({
+        dataFile: path.resolve(process.cwd(), 'data', 'slashconnect.json'),
+        seedDemo: true,
+      });
+    }
+    return slash;
+  };
+  const attach = (middlewares: { use: (handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void) => void }) => {
+    middlewares.use((req, res, next) => {
+      const url = req.url || '';
+      if (!url.startsWith('/api')) {
+        next();
+        return;
+      }
+      void app().handle(req, res);
+    });
+  };
+  return {
+    name: 'slashconnect-api',
+    configureServer(server) {
+      attach(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      attach(server.middlewares);
+    },
+  };
+}
+
 export default defineConfig({
   base: electron ? './' : '/',
-  plugins: [appVersionPlugin(), react()],
+  plugins: [appVersionPlugin(), slashApiPlugin(), react()],
   server: {
     host: '127.0.0.1',
     port: 47321,

@@ -14,6 +14,7 @@ build/app-version.json
 electron/autoUpdate.bundle.cjs
 dist-ssr
 *.local
+data/
 
 # Editor directories and files
 .vscode/*

@@ -3,7 +3,7 @@
   "productName": "HuManuScript",
   "private": true,
   "version": "0.1.0",
-  "description": "Keyboard-sealed manuscript editor on the Speak Fiction block model.",
+  "description": "SlashConnect, a private two-person app for an adult long-distance dynamic. Electron, Vite, and React.",
   "author": "HuManuScript",
   "main": "electron/main.cjs",
   "type": "module",
@@ -18,7 +18,7 @@
     "pack:mac:intel": "node scripts/pack-mac.cjs --intel",
     "pack:win": "node scripts/pack-win.cjs",
     "dispatch:pack-mac": "bash scripts/dispatch-pack-mac.sh",
-    "test": "node --experimental-strip-types --test src/core/*.test.ts scripts/*.test.cjs electron/*.test.cjs",
+    "test": "node --experimental-strip-types --test src/core/*.test.ts scripts/*.test.cjs electron/*.test.cjs server/*.test.mjs",
     "lint": "oxlint",
     "preview": "vite preview --host 127.0.0.1 --port 47321 --strictPort"
   },

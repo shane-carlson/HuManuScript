@@ -1,0 +1,1122 @@
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
+import { createServer } from "node:http";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  CATEGORIES,
+  GOAL_OPTIONS,
+  GUIDES,
+  JOURNAL_PROMPTS,
+  PRONOUN_PRESETS,
+  ROLE_SUGGESTIONS,
+  TEMPLATES,
+  coachingFor,
+  guideSpeech,
+  levelFor,
+  templateById,
+} from "./catalog.mjs";
+
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const DEMO_PASSWORD = "together";
+
+function nid() {
+  return randomBytes(8).toString("hex");
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function fail(status, error) {
+  const err = new Error(error);
+  err.status = status;
+  throw err;
+}
+
+function hashPassword(password, salt = randomBytes(16).toString("hex")) {
+  const passwordHash = scryptSync(password, salt, 32).toString("hex");
+  return { passwordSalt: salt, passwordHash };
+}
+
+function passwordOk(user, password) {
+  const next = scryptSync(String(password), user.passwordSalt, 32);
+  const prev = Buffer.from(user.passwordHash, "hex");
+  if (next.length !== prev.length) return false;
+  return timingSafeEqual(next, prev);
+}
+
+function cleanText(value, max) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.slice(0, max);
+}
+
+function pronounsFrom(input) {
+  if (!input || typeof input !== "object") return null;
+  const subject = cleanText(input.subject, 24).toLowerCase();
+  const object = cleanText(input.object, 24).toLowerCase();
+  const possessive = cleanText(input.possessive, 24).toLowerCase();
+  const reflexive = cleanText(input.reflexive, 32).toLowerCase();
+  if (!subject || !object || !possessive) return null;
+  const label = cleanText(input.label, 40) || `${subject}/${object}`;
+  return {
+    label,
+    subject,
+    object,
+    possessive,
+    reflexive: reflexive || `${object}self`,
+  };
+}
+
+function emptyDb() {
+  return {
+    demo: false,
+    users: [],
+    sessions: [],
+    pair: null,
+    invites: [],
+    tasks: [],
+    goals: [],
+    rewards: [],
+    checkins: [],
+  };
+}
+
+function dayShift(days) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  const copy = { ...user };
+  delete copy.passwordHash;
+  delete copy.passwordSalt;
+  return copy;
+}
+
+function supplyNote(template, supplies) {
+  const hints = template.supplyHints || [];
+  if (!hints.length) return "";
+  const owned = (supplies || []).map((item) => item.toLowerCase());
+  const matched = [];
+  for (const hint of hints) {
+    if (owned.some((item) => item.includes(hint) || hint.includes(item))) matched.push(hint);
+  }
+  if (matched.length) return `On your supply list: ${matched.join(", ")}.`;
+  return "Nothing on your supply list matches this yet. You can still do a version with what you have, or add the things you use.";
+}
+
+export function createSlashApp(options = {}) {
+  const dataFile = options.dataFile || path.join(process.cwd(), "data", "slashconnect.json");
+  const seedDemo = options.seedDemo !== false;
+  let db = load();
+
+  function load() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+      if (!parsed || !Array.isArray(parsed.users)) return seedDemo ? seed(emptyDb()) : emptyDb();
+      return parsed;
+    } catch {
+      return seedDemo ? seed(emptyDb()) : emptyDb();
+    }
+  }
+
+  function save() {
+    fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+    const tmp = `${dataFile}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+    fs.renameSync(tmp, dataFile);
+  }
+
+  function seed(base) {
+    const rowanPass = hashPassword(DEMO_PASSWORD);
+    const averyPass = hashPassword(DEMO_PASSWORD);
+    const rowanId = "demo-rowan";
+    const averyId = "demo-avery";
+    const rowan = {
+      id: rowanId,
+      email: "rowan@demo.slashconnect",
+      ...rowanPass,
+      displayName: "Rowan Hale",
+      adultConfirmed: true,
+      demo: true,
+      pronouns: { label: "she/her", subject: "she", object: "her", possessive: "her", reflexive: "herself" },
+      gender: "woman",
+      slashSide: "leading",
+      roleTitle: "Domme",
+      goals: ["connection", "structure", "accountability"],
+      supplies: [],
+      guideId: "lumen",
+      avatar: { hue: 350, mark: "moon" },
+      experienceLevel: "",
+      onboardingComplete: true,
+      points: 0,
+      carePoints: 25,
+      streak: 0,
+      lastActiveDate: dayShift(-1),
+      createdAt: nowIso(),
+    };
+    const avery = {
+      id: averyId,
+      email: "avery@demo.slashconnect",
+      ...averyPass,
+      displayName: "Avery Quinn",
+      adultConfirmed: true,
+      demo: true,
+      pronouns: { label: "they/them", subject: "they", object: "them", possessive: "their", reflexive: "themself" },
+      gender: "nonbinary",
+      slashSide: "following",
+      roleTitle: "Little",
+      goals: ["connection", "structure", "accountability", "self-care"],
+      supplies: ["face mask", "bubble bath", "journal", "cozy playlist", "nail polish"],
+      guideId: "pip",
+      avatar: { hue: 262, mark: "star" },
+      experienceLevel: "some",
+      onboardingComplete: true,
+      points: 65,
+      carePoints: 0,
+      streak: 4,
+      lastActiveDate: dayShift(-1),
+      createdAt: nowIso(),
+    };
+    base.demo = true;
+    base.users = [rowan, avery];
+    base.pair = { id: "demo-pair", members: [rowanId, averyId], createdAt: nowIso() };
+    base.goals = [
+      { id: "goal-connection", goalKey: "connection", title: "Deeper connection", detail: GOAL_OPTIONS[0].detail, target: 8, progress: 3, createdBy: rowanId },
+      { id: "goal-structure", goalKey: "structure", title: "Structure", detail: GOAL_OPTIONS[1].detail, target: 10, progress: 4, createdBy: rowanId },
+      { id: "goal-account", goalKey: "accountability", title: "Accountability", detail: GOAL_OPTIONS[2].detail, target: 10, progress: 4, createdBy: averyId },
+      { id: "goal-care", goalKey: "self-care", title: "Self-care", detail: GOAL_OPTIONS[3].detail, target: 6, progress: 2, createdBy: averyId },
+    ];
+    const done = (id, templateId, daysAgo, extra) => {
+      const template = templateById(templateId);
+      return {
+        id,
+        templateId,
+        category: template.category,
+        title: template.title,
+        summary: template.summary,
+        note: "",
+        prompt: template.promptPool === "journal" ? JOURNAL_PROMPTS[0] : "",
+        points: template.points,
+        bonuses: template.bonuses,
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "done",
+        dueDate: "",
+        createdAt: nowIso(),
+        completedAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+        completionDate: dayShift(-daysAgo),
+        completion: extra,
+        acknowledgedAt: daysAgo > 0 ? nowIso() : null,
+      };
+    };
+    base.tasks = [
+      done("task-song", "feel-good-song", 1, { note: "Played the kitchen song and danced while the pasta boiled.", bonuses: ["move"], photos: [], checklist: [], choice: "" }),
+      done("task-walk", "walk", 2, { note: "Loop around the block after work.", bonuses: [], photos: [], checklist: [], choice: "Outside" }),
+      done("task-mirror", "mirror", 3, { note: "Liked the way the light hit my face, and felt neutral about my shoulders.", bonuses: [], photos: [], checklist: [], choice: "" }),
+      done("task-selfie", "selfie", 4, { note: "Sent the sunny windowsill ones.", bonuses: [], photos: [], checklist: [], choice: "" }),
+      {
+        id: "task-shower",
+        templateId: "shower-bath",
+        category: "self-care",
+        title: "Hot shower or bath",
+        summary: templateById("shower-bath").summary,
+        note: "Use the bubble bath if you still have it.",
+        prompt: "",
+        points: 15,
+        bonuses: templateById("shower-bath").bonuses,
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "open",
+        dueDate: dayShift(0),
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+      },
+      {
+        id: "task-journal",
+        templateId: "journal",
+        category: "self-care",
+        title: "Journal",
+        summary: templateById("journal").summary,
+        note: "Share as much as you want me to read.",
+        prompt: "What do you want your partner to notice?",
+        points: 15,
+        bonuses: [],
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "open",
+        dueDate: "",
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+      },
+      {
+        id: "task-plush",
+        templateId: "plush-adventure",
+        category: "fun",
+        title: "Comfort plush on an adventure",
+        summary: templateById("plush-adventure").summary,
+        note: "The small fox can ride along. A photo is welcome.",
+        prompt: "",
+        points: 18,
+        bonuses: [],
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "open",
+        dueDate: dayShift(2),
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+      },
+      {
+        id: "task-scene",
+        templateId: "scene-plan",
+        category: "spicy",
+        title: "Plan a scene you want",
+        summary: templateById("scene-plan").summary,
+        note: "Include aftercare. Skip this if it is not a yes today.",
+        prompt: "",
+        points: 20,
+        bonuses: [],
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "open",
+        dueDate: "",
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+      },
+    ];
+    base.rewards = [
+      {
+        id: "reward-movie",
+        title: "You pick the movie on our next call",
+        detail: "Rowan watches what Avery chooses, snacks optional.",
+        cost: 30,
+        proposedBy: rowanId,
+        status: "agreed",
+        agreedBy: [rowanId, averyId],
+        requestedBy: "",
+        grantedBy: "",
+        createdAt: nowIso(),
+        grantedAt: "",
+      },
+      {
+        id: "reward-note",
+        title: "A voice note about what Rowan noticed",
+        detail: "Specific, kind, and about this week.",
+        cost: 20,
+        proposedBy: averyId,
+        status: "agreed",
+        agreedBy: [averyId, rowanId],
+        requestedBy: "",
+        grantedBy: "",
+        createdAt: nowIso(),
+        grantedAt: "",
+      },
+      {
+        id: "reward-breakfast",
+        title: "Breakfast on Avery's terms, once you are in the same room",
+        detail: "Menu chosen by Avery. No schedule pressure while you are apart.",
+        cost: 80,
+        proposedBy: averyId,
+        status: "proposed",
+        agreedBy: [averyId],
+        requestedBy: "",
+        grantedBy: "",
+        createdAt: nowIso(),
+        grantedAt: "",
+      },
+    ];
+    base.checkins = [
+      {
+        id: "check-hello",
+        fromUserId: rowanId,
+        kind: "hello",
+        note: "I am here after dinner if you want to tell me about the day.",
+        createdAt: nowIso(),
+        seenBy: [],
+      },
+    ];
+    base.invites = [];
+    base.sessions = [];
+    return base;
+  }
+
+  function userById(id) {
+    return db.users.find((user) => user.id === id) || null;
+  }
+
+  function userByEmail(email) {
+    const key = String(email || "").trim().toLowerCase();
+    return db.users.find((user) => user.email === key) || null;
+  }
+
+  function userFromToken(token) {
+    if (!token) return null;
+    const session = db.sessions.find((item) => item.token === token);
+    if (!session) return null;
+    return userById(session.userId);
+  }
+
+  function partnerOf(user) {
+    if (!user || !db.pair) return null;
+    const otherId = db.pair.members.find((id) => id !== user.id);
+    return userById(otherId);
+  }
+
+  function followingUser() {
+    return db.users.find((user) => user.slashSide === "following") || null;
+  }
+
+  function meta() {
+    return {
+      guides: GUIDES,
+      goals: GOAL_OPTIONS,
+      pronouns: PRONOUN_PRESETS,
+      roles: ROLE_SUGGESTIONS,
+      categories: CATEGORIES,
+      templates: TEMPLATES,
+      journalPrompts: JOURNAL_PROMPTS,
+      levelLadder: ["Spark", "Glow", "Kindle", "Hearth", "Beacon", "Constellation"],
+    };
+  }
+
+  function presentTask(taskItem, viewer) {
+    const template = templateById(taskItem.templateId);
+    const assignee = userById(taskItem.assignedTo);
+    const coaching = coachingFor(taskItem.templateId, assignee?.experienceLevel || "new");
+    return {
+      ...taskItem,
+      supplyNote: supplyNote(template || { supplyHints: [] }, assignee?.supplies || []),
+      coaching,
+      checklistIdeas: template?.checklistIdeas || [],
+      checklistCount: template?.checklistCount || 0,
+      completionKind: template?.completion || "note",
+      timerSeconds: template?.timerSeconds || 0,
+      photoMin: template?.photoMin || 0,
+      photoMax: template?.photoMax || 0,
+      photoLabel: template?.photoLabel || "",
+      choices: template?.choices || [],
+      consent: Boolean(template?.consent),
+      category: taskItem.category,
+      mine: viewer ? taskItem.assignedTo === viewer.id : false,
+    };
+  }
+
+  function guideContext(user) {
+    const partner = partnerOf(user);
+    const follower = followingUser();
+    return {
+      name: user.displayName.split(" ")[0],
+      partner: partner ? partner.displayName.split(" ")[0] : "your partner",
+      role: user.roleTitle || "partner",
+      partnerRole: partner?.roleTitle || "partner",
+      streak: follower?.streak || user.streak || 0,
+      points: follower?.points || user.points || 0,
+      tick: Date.now() % 3,
+    };
+  }
+
+  function bundle(user, extra = {}) {
+    const partner = partnerOf(user);
+    const follower = followingUser();
+    const scoreUser = follower || user;
+    const level = levelFor(scoreUser.points || 0);
+    const tasks = db.tasks
+      .map((item) => presentTask(item, user))
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+        return String(b.createdAt).localeCompare(String(a.createdAt));
+      });
+    return {
+      me: publicUser(user),
+      partner: publicUser(partner),
+      pair: db.pair,
+      demo: Boolean(db.demo),
+      tasks,
+      goals: db.goals,
+      rewards: db.rewards,
+      checkins: db.checkins.slice().reverse(),
+      invites: db.invites.filter((invite) => invite.status === "open"),
+      stats: {
+        points: scoreUser.points || 0,
+        carePoints: db.users.find((item) => item.slashSide === "leading")?.carePoints || 0,
+        streak: scoreUser.streak || 0,
+        level,
+        openCount: tasks.filter((item) => item.status === "open").length,
+        doneCount: tasks.filter((item) => item.status === "done").length,
+      },
+      guide: guideSpeech(user.guideId || "lumen", "home", { ...guideContext(user), tick: 0 }),
+      meta: meta(),
+      ...extra,
+    };
+  }
+
+  function issueSession(user) {
+    const token = randomBytes(24).toString("hex");
+    db.sessions.push({ token, userId: user.id, createdAt: nowIso() });
+    save();
+    return token;
+  }
+
+  function requireUser(token) {
+    const user = userFromToken(token);
+    if (!user) fail(401, "Sign in again to continue.");
+    return user;
+  }
+
+  function ensureGoals(user) {
+    for (const key of user.goals || []) {
+      if (db.goals.some((goal) => goal.goalKey === key)) continue;
+      const spec = GOAL_OPTIONS.find((goal) => goal.key === key);
+      if (!spec) continue;
+      db.goals.push({
+        id: nid(),
+        goalKey: key,
+        title: spec.title,
+        detail: spec.detail,
+        target: spec.target,
+        progress: 0,
+        createdBy: user.id,
+      });
+    }
+  }
+
+  function bumpGoals(template) {
+    const keys = new Set(template.goalKeys || []);
+    for (const goal of db.goals) {
+      const counts =
+        goal.goalKey === "structure" ||
+        goal.goalKey === "accountability" ||
+        goal.goalKey === "custom" ||
+        keys.has(goal.goalKey) ||
+        goal.goalKey === template.category;
+      if (!counts) continue;
+      goal.progress = Math.min(goal.target, (goal.progress || 0) + 1);
+    }
+  }
+
+  function applyStreak(user, clientDate) {
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(clientDate) ? clientDate : new Date().toISOString().slice(0, 10);
+    const prev = user.lastActiveDate || "";
+    if (prev === today) return { streak: user.streak || 0, extended: false, today };
+    const prevDate = prev ? new Date(`${prev}T00:00:00Z`) : null;
+    const todayDate = new Date(`${today}T00:00:00Z`);
+    const gap = prevDate ? Math.round((todayDate - prevDate) / 86400000) : 99;
+    user.streak = gap === 1 ? (user.streak || 0) + 1 : 1;
+    user.lastActiveDate = today;
+    return { streak: user.streak, extended: true, milestone: [3, 7, 14, 30].includes(user.streak), today };
+  }
+
+  function createUser({ email, password, displayName }) {
+    const key = String(email || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) fail(400, "Enter an email address.");
+    if (String(password || "").length < 6) fail(400, "Use a password of at least 6 characters.");
+    const name = cleanText(displayName, 40);
+    if (name.length < 1) fail(400, "Enter the name you want your partner to see.");
+    if (userByEmail(key)) fail(409, "That email is already registered on this household.");
+    if (db.users.length >= 2) {
+      fail(409, db.demo
+        ? "The demo household already has two people. Start your own connection to register."
+        : "This connection already has two people.");
+    }
+    const user = {
+      id: nid(),
+      email: key,
+      ...hashPassword(password),
+      displayName: name,
+      adultConfirmed: true,
+      demo: false,
+      pronouns: null,
+      gender: "",
+      slashSide: "",
+      roleTitle: "",
+      goals: [],
+      supplies: [],
+      guideId: "",
+      avatar: { hue: 18, mark: "heart" },
+      experienceLevel: "",
+      onboardingComplete: false,
+      points: 0,
+      carePoints: 0,
+      streak: 0,
+      lastActiveDate: "",
+      createdAt: nowIso(),
+    };
+    db.users.push(user);
+    db.demo = false;
+    return user;
+  }
+
+  async function dispatch({ method, url, token, body }) {
+    const parsed = new URL(url, "http://127.0.0.1");
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const route = `${method.toUpperCase()} /${parts.join("/")}`;
+
+    if (route === "GET /api/health") {
+      return { status: 200, body: { ok: true, demo: Boolean(db.demo), people: db.users.length } };
+    }
+    if (route === "GET /api/meta") return { status: 200, body: meta() };
+
+    if (route === "POST /api/household/reset") {
+      if (body?.confirm !== "reset-demo") fail(400, "Confirm the reset to start a new connection.");
+      if (!db.demo && db.users.some((user) => !user.demo)) {
+        fail(409, "A real household already lives here. It stays put.");
+      }
+      db = emptyDb();
+      save();
+      return { status: 200, body: { ok: true, demo: false } };
+    }
+
+    if (route === "POST /api/demo/login") {
+      if (!db.demo) fail(404, "The demo household is not loaded.");
+      const side = body?.who === "leading" ? "leading" : body?.who === "following" ? "following" : "";
+      if (!side) fail(400, "Choose a side of the demo pair.");
+      const user = db.users.find((item) => item.slashSide === side && item.demo);
+      if (!user) fail(404, "That demo profile is missing.");
+      const sessionToken = issueSession(user);
+      return { status: 200, body: { token: sessionToken, ...bundle(user) } };
+    }
+
+    if (route === "POST /api/auth/register") {
+      if (body?.adultConfirmed !== true) fail(400, "Confirm that you are 18 or older.");
+      const user = createUser(body || {});
+      try {
+        if (body?.inviteCode) acceptInvite(user, body.inviteCode);
+      } catch (error) {
+        db.users = db.users.filter((item) => item.id !== user.id);
+        throw error;
+      }
+      const sessionToken = issueSession(user);
+      return { status: 201, body: { token: sessionToken, ...bundle(user) } };
+    }
+
+    if (route === "POST /api/auth/login") {
+      const user = userByEmail(body?.email);
+      if (!user || !passwordOk(user, body?.password || "")) fail(401, "That email and password did not match.");
+      const sessionToken = issueSession(user);
+      return { status: 200, body: { token: sessionToken, ...bundle(user) } };
+    }
+
+    if (route === "POST /api/auth/logout") {
+      db.sessions = db.sessions.filter((session) => session.token !== token);
+      save();
+      return { status: 200, body: { ok: true } };
+    }
+
+    if (route === "GET /api/invites/preview") {
+      const code = String(parsed.searchParams.get("code") || "").toUpperCase();
+      const invite = db.invites.find((item) => item.code === code && item.status === "open");
+      if (!invite) fail(404, "That invite is not open.");
+      const from = userById(invite.fromUserId);
+      return {
+        status: 200,
+        body: {
+          code,
+          fromName: from?.displayName || "Your partner",
+          roleTitle: from?.roleTitle || "",
+          pronouns: from?.pronouns?.label || "",
+          slashSide: from?.slashSide || "",
+          gender: from?.gender || "",
+        },
+      };
+    }
+
+    const user = requireUser(token);
+
+    if (route === "GET /api/session") return { status: 200, body: bundle(user) };
+
+    if (route === "PATCH /api/profile") {
+      applyProfile(user, body || {});
+      ensureGoals(user);
+      save();
+      return { status: 200, body: bundle(user) };
+    }
+
+    if (route === "POST /api/invites") {
+      const invite = openInvite(user, body || {});
+      save();
+      return { status: 201, body: { invite, ...bundle(user) } };
+    }
+
+    if (route === "POST /api/invites/accept") {
+      acceptInvite(user, body?.code);
+      save();
+      return { status: 200, body: bundle(user, { celebration: { kind: "pair", title: "You are connected", detail: "The household has both of you now." } }) };
+    }
+
+    if (route === "POST /api/tasks") {
+      const created = assignTask(user, body || {});
+      save();
+      return { status: 201, body: bundle(user, { task: presentTask(created, user) }) };
+    }
+
+    const taskMatch = parts[0] === "api" && parts[1] === "tasks" && parts[2];
+    if (taskMatch && method.toUpperCase() === "POST" && parts[3]) {
+      const taskItem = db.tasks.find((item) => item.id === parts[2]);
+      if (!taskItem) fail(404, "That promise is not in this household.");
+      let celebration = null;
+      if (parts[3] === "complete") celebration = completeTask(user, taskItem, body || {});
+      else if (parts[3] === "skip") skipTask(user, taskItem, body || {});
+      else if (parts[3] === "acknowledge") acknowledgeTask(user, taskItem);
+      else if (parts[3] === "remove") removeTask(user, taskItem);
+      else fail(404, "Unknown task action.");
+      save();
+      return { status: 200, body: bundle(user, celebration ? { celebration } : {}) };
+    }
+
+    if (route === "POST /api/goals") {
+      const title = cleanText(body?.title, 80);
+      if (title.length < 2) fail(400, "Name the goal.");
+      const target = Math.min(50, Math.max(1, Number(body?.target) || 5));
+      db.goals.push({
+        id: nid(),
+        goalKey: "custom",
+        title,
+        detail: cleanText(body?.detail, 180),
+        target,
+        progress: 0,
+        createdBy: user.id,
+      });
+      save();
+      return { status: 201, body: bundle(user) };
+    }
+
+    if (parts[1] === "goals" && parts[2] && parts[3] === "step" && method.toUpperCase() === "POST") {
+      const goal = db.goals.find((item) => item.id === parts[2]);
+      if (!goal) fail(404, "That goal is not here.");
+      goal.progress = Math.min(goal.target, (goal.progress || 0) + 1);
+      save();
+      return { status: 200, body: bundle(user) };
+    }
+
+    if (route === "POST /api/rewards") {
+      const title = cleanText(body?.title, 80);
+      if (title.length < 2) fail(400, "Name the reward.");
+      const cost = Math.min(500, Math.max(5, Number(body?.cost) || 20));
+      db.rewards.push({
+        id: nid(),
+        title,
+        detail: cleanText(body?.detail, 240),
+        cost,
+        proposedBy: user.id,
+        status: "proposed",
+        agreedBy: [user.id],
+        requestedBy: "",
+        grantedBy: "",
+        createdAt: nowIso(),
+        grantedAt: "",
+      });
+      save();
+      return { status: 201, body: bundle(user) };
+    }
+
+    if (parts[1] === "rewards" && parts[2] && parts[3] && method.toUpperCase() === "POST") {
+      const reward = db.rewards.find((item) => item.id === parts[2]);
+      if (!reward) fail(404, "That reward is not here.");
+      let celebration = null;
+      if (parts[3] === "agree") agreeReward(user, reward);
+      else if (parts[3] === "request") requestReward(user, reward);
+      else if (parts[3] === "grant") celebration = grantReward(user, reward);
+      else if (parts[3] === "withdraw") withdrawReward(user, reward);
+      else fail(404, "Unknown reward action.");
+      save();
+      return { status: 200, body: bundle(user, celebration ? { celebration } : {}) };
+    }
+
+    if (route === "POST /api/checkins/see") {
+      for (const note of db.checkins) {
+        if (!note.seenBy.includes(user.id)) note.seenBy.push(user.id);
+      }
+      save();
+      return { status: 200, body: bundle(user) };
+    }
+
+    if (route === "POST /api/checkins") {
+      const note = cleanText(body?.note, 400);
+      if (note.length < 1) fail(400, "Write a short note.");
+      const kind = body?.kind === "grounding" ? "grounding" : "hello";
+      db.checkins.push({
+        id: nid(),
+        fromUserId: user.id,
+        kind,
+        note,
+        createdAt: nowIso(),
+        seenBy: [user.id],
+      });
+      if (db.checkins.length > 40) db.checkins = db.checkins.slice(-40);
+      save();
+      return { status: 201, body: bundle(user) };
+    }
+
+    if (parts[1] === "checkins" && parts[2] && parts[3] === "see" && method.toUpperCase() === "POST") {
+      const note = db.checkins.find((item) => item.id === parts[2]);
+      if (!note) fail(404, "That note is gone.");
+      if (!note.seenBy.includes(user.id)) note.seenBy.push(user.id);
+      save();
+      return { status: 200, body: bundle(user) };
+    }
+
+    if (route === "POST /api/guide/nudge") {
+      const event = ["home", "done", "streak", "ground", "nudge", "assign"].includes(body?.event) ? body.event : "nudge";
+      const line = guideSpeech(user.guideId || "lumen", event, { ...guideContext(user), tick: Number(body?.tick) || Date.now() });
+      return { status: 200, body: { line } };
+    }
+
+    fail(404, "That path is not part of SlashConnect.");
+  }
+
+  function applyProfile(user, body) {
+    if (body.pronouns) {
+      const pronouns = pronounsFrom(body.pronouns);
+      if (!pronouns) fail(400, "Add a subject, object, and possessive pronoun.");
+      user.pronouns = pronouns;
+    }
+    if (typeof body.gender === "string") user.gender = cleanText(body.gender, 60);
+    if (typeof body.displayName === "string") {
+      const name = cleanText(body.displayName, 40);
+      if (name) user.displayName = name;
+    }
+    if (body.slashSide === "leading" || body.slashSide === "following") {
+      const partner = partnerOf(user);
+      if (partner && partner.slashSide === body.slashSide) {
+        const sideName = body.slashSide === "leading" ? "leading" : "following";
+        fail(409, `Your partner is already on the ${sideName} side. This connection keeps one of each.`);
+      }
+      user.slashSide = body.slashSide;
+    }
+    if (typeof body.roleTitle === "string") user.roleTitle = cleanText(body.roleTitle, 40);
+    if (Array.isArray(body.goals)) {
+      user.goals = [...new Set(body.goals.map((key) => cleanText(key, 40)).filter((key) => GOAL_OPTIONS.some((goal) => goal.key === key)))];
+    }
+    if (Array.isArray(body.supplies)) {
+      user.supplies = [...new Set(body.supplies.map((item) => cleanText(item, 40)).filter(Boolean))].slice(0, 24);
+    }
+    if (typeof body.guideId === "string" && GUIDES.some((guide) => guide.id === body.guideId)) user.guideId = body.guideId;
+    if (body.avatar && typeof body.avatar === "object") {
+      const hue = Math.max(0, Math.min(360, Number(body.avatar.hue) || 0));
+      const mark = cleanText(body.avatar.mark, 16) || "heart";
+      user.avatar = { hue, mark };
+    }
+    if (["new", "some", "experienced", ""].includes(body.experienceLevel)) user.experienceLevel = body.experienceLevel;
+    const ready = user.pronouns && user.slashSide && user.roleTitle && user.goals.length > 0 && user.guideId;
+    if (body.onboardingComplete === true) {
+      if (!ready) fail(400, "Finish pronouns, side, role, a goal, and a guide first.");
+      user.onboardingComplete = true;
+    }
+  }
+
+  function openInvite(user, body) {
+    if (!user.onboardingComplete) fail(400, "Finish your setup before sending an invite.");
+    if (db.pair && db.pair.members.length >= 2) fail(409, "Your partner is already connected.");
+    if (db.users.length >= 2) fail(409, "This household already has two accounts.");
+    const channel = body.channel === "text" || body.channel === "email" ? body.channel : "link";
+    const contact = cleanText(body.contact, 80);
+    let invite = db.invites.find((item) => item.fromUserId === user.id && item.status === "open");
+    if (!invite) {
+      invite = {
+        code: inviteCode(),
+        fromUserId: user.id,
+        channel,
+        contact,
+        status: "open",
+        createdAt: nowIso(),
+        acceptedBy: "",
+      };
+      db.invites.push(invite);
+    } else {
+      invite.channel = channel;
+      invite.contact = contact;
+    }
+    return { code: invite.code, channel: invite.channel, contact: invite.contact };
+  }
+
+  function acceptInvite(user, rawCode) {
+    const code = cleanText(rawCode, 12).toUpperCase();
+    const invite = db.invites.find((item) => item.code === code && item.status === "open");
+    if (!invite) fail(404, "That invite code is not open.");
+    if (invite.fromUserId === user.id) fail(400, "That invite is yours. Your partner uses it.");
+    if (db.pair) fail(409, "This connection already has two people.");
+    const host = userById(invite.fromUserId);
+    if (!host) fail(404, "The person who sent that invite is not here.");
+    if (user.slashSide && host.slashSide && user.slashSide === host.slashSide) {
+      fail(409, "You both chose the same side of the slash. Change yours in setup, then use the code again. A pair needs one leading and one following partner.");
+    }
+    if (!user.slashSide && host.slashSide) {
+      user.slashSide = host.slashSide === "leading" ? "following" : "leading";
+    }
+    invite.status = "accepted";
+    invite.acceptedBy = user.id;
+    db.pair = { id: nid(), members: [host.id, user.id], createdAt: nowIso() };
+    for (const taskItem of db.tasks) {
+      if (!taskItem.assignedTo) taskItem.assignedTo = user.slashSide === "following" ? user.id : host.id;
+    }
+  }
+
+  function assignTask(user, body) {
+    if (user.slashSide !== "leading") fail(403, "The leading partner assigns promises.");
+    const follower = followingUser();
+    if (!follower || follower.id === user.id) fail(400, "Connect with your partner before assigning.");
+    const template = templateById(body.templateId);
+    if (!template) fail(400, "Choose a task type.");
+    const title = cleanText(body.title, 80) || template.title;
+    const note = cleanText(body.note, 400);
+    const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate || "") ? body.dueDate : "";
+    let prompt = "";
+    if (template.promptPool === "journal") {
+      prompt = cleanText(body.prompt, 180) || JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
+    }
+    const created = {
+      id: nid(),
+      templateId: template.id,
+      category: template.category,
+      title,
+      summary: template.summary,
+      note,
+      prompt,
+      points: template.points,
+      bonuses: template.bonuses,
+      assignedBy: user.id,
+      assignedTo: follower.id,
+      status: "open",
+      dueDate,
+      createdAt: nowIso(),
+      completedAt: null,
+      completionDate: "",
+      completion: null,
+      acknowledgedAt: null,
+    };
+    db.tasks.push(created);
+    user.carePoints = (user.carePoints || 0) + 4;
+    return created;
+  }
+
+  function completeTask(user, taskItem, body) {
+    if (taskItem.assignedTo !== user.id) fail(403, "This promise belongs to your partner to complete.");
+    if (taskItem.status !== "open") fail(409, "This promise is already closed.");
+    const template = templateById(taskItem.templateId);
+    if (template?.consent && body.consent !== true) {
+      fail(400, "Confirm that you want to share this with your partner, or skip it.");
+    }
+    const note = cleanText(body.note, 4000);
+    const choice = cleanText(body.choice, 40);
+    const checklist = Array.isArray(body.checklist) ? body.checklist.map((item) => cleanText(item, 60)).filter(Boolean).slice(0, 8) : [];
+    const bonusIds = new Set(Array.isArray(body.bonuses) ? body.bonuses : []);
+    const bonuses = (taskItem.bonuses || []).filter((bonus) => bonusIds.has(bonus.id)).map((bonus) => bonus.id);
+    const photos = sanitizePhotos(body.photos);
+    if (template?.completion === "checklist" && checklist.length < (template.checklistCount || 1)) {
+      fail(400, `Pick ${template.checklistCount} things you actually did.`);
+    }
+    if (template?.completion === "choices" && !template.choices.includes(choice)) {
+      fail(400, "Choose where you did this.");
+    }
+    if ((template?.photoMin || 0) > photos.length) {
+      fail(400, `Add ${template.photoMin} photo${template.photoMin === 1 ? "" : "s"} to finish this.`);
+    }
+    if (template?.completion === "photos" && photos.length === 0 && note.length < 2) {
+      fail(400, "Add a photo or a short note.");
+    }
+    if ((template?.completion === "note" || template?.completion === "timer") && note.length < 2) {
+      fail(400, "Leave a short note about how it went.");
+    }
+    const written = note || (template?.completion === "breath" ? "Paused and grounded." : "");
+    const earned =
+      (taskItem.points || 0) +
+      (taskItem.bonuses || []).filter((bonus) => bonuses.includes(bonus.id)).reduce((sum, bonus) => sum + bonus.points, 0);
+    const before = levelFor(user.points || 0);
+    user.points = (user.points || 0) + earned;
+    const after = levelFor(user.points);
+    const streak = applyStreak(user, body.clientDate);
+    taskItem.status = "done";
+    taskItem.completedAt = nowIso();
+    taskItem.completionDate = streak.today;
+    taskItem.completion = {
+      note: written,
+      bonuses,
+      photos,
+      checklist,
+      choice,
+    };
+    if (template) bumpGoals(template);
+    const celebration = {
+      kind: after.name !== before.name ? "level" : streak.milestone ? "streak" : "task",
+      title: after.name !== before.name ? after.name : streak.milestone ? `${streak.streak} day streak` : "Promise kept",
+      detail: after.name !== before.name
+        ? `${user.displayName.split(" ")[0]} reached ${after.name}.`
+        : `+${earned} points`,
+      points: earned,
+    };
+    return celebration;
+  }
+
+  function skipTask(user, taskItem, body) {
+    if (taskItem.assignedTo !== user.id && taskItem.assignedBy !== user.id) fail(403, "Only the two of you can close this.");
+    if (taskItem.status !== "open") fail(409, "This promise is already closed.");
+    taskItem.status = "skipped";
+    taskItem.completedAt = nowIso();
+    taskItem.completion = { note: cleanText(body?.reason, 240) || "Skipped.", bonuses: [], photos: [], checklist: [], choice: "" };
+  }
+
+  function acknowledgeTask(user, taskItem) {
+    if (user.slashSide !== "leading") fail(403, "The leading partner acknowledges a finished promise.");
+    if (taskItem.status !== "done") fail(409, "It is not finished yet.");
+    if (taskItem.acknowledgedAt) return;
+    taskItem.acknowledgedAt = nowIso();
+    user.carePoints = (user.carePoints || 0) + 6;
+  }
+
+  function removeTask(user, taskItem) {
+    if (taskItem.assignedBy !== user.id || user.slashSide !== "leading") fail(403, "Only the person who assigned an open promise can take it back.");
+    if (taskItem.status !== "open") fail(409, "Finished promises stay in the record.");
+    db.tasks = db.tasks.filter((item) => item.id !== taskItem.id);
+  }
+
+  function agreeReward(user, reward) {
+    if (reward.status === "granted") fail(409, "That reward was already granted.");
+    if (!reward.agreedBy.includes(user.id)) reward.agreedBy.push(user.id);
+    const both = db.pair && db.pair.members.every((id) => reward.agreedBy.includes(id));
+    if (both && (reward.status === "proposed" || reward.status === "agreed")) reward.status = "agreed";
+  }
+
+  function requestReward(user, reward) {
+    if (user.slashSide !== "following") fail(403, "The following partner asks to spend points.");
+    if (reward.status !== "agreed" && reward.status !== "requested") fail(409, "Both of you agree on a reward before it can be requested.");
+    if ((user.points || 0) < reward.cost) fail(409, "Not enough points yet.");
+    reward.status = "requested";
+    reward.requestedBy = user.id;
+  }
+
+  function grantReward(user, reward) {
+    if (user.slashSide !== "leading") fail(403, "The leading partner grants a reward you both agreed on.");
+    if (reward.status !== "requested") {
+      fail(409, "Your partner asks for the reward after you both agree.");
+    }
+    const follower = followingUser();
+    if (!follower) fail(409, "Connect both sides before granting a reward.");
+    if ((follower.points || 0) < reward.cost) fail(409, "Not enough points yet.");
+    if (reward.agreedBy.length < 2 && db.pair) fail(409, "You both need to agree before this is granted.");
+    follower.points -= reward.cost;
+    reward.status = "granted";
+    reward.grantedBy = user.id;
+    reward.grantedAt = nowIso();
+    user.carePoints = (user.carePoints || 0) + 8;
+    return { kind: "reward", title: reward.title, detail: `${reward.cost} points spent.`, points: reward.cost };
+  }
+
+  function withdrawReward(user, reward) {
+    if (reward.proposedBy !== user.id) fail(403, "The person who suggested this can withdraw it.");
+    if (reward.status !== "proposed") fail(409, "Agreed rewards stay until they are granted.");
+    db.rewards = db.rewards.filter((item) => item.id !== reward.id);
+  }
+
+  function inviteCode() {
+    let code = "";
+    const bytes = randomBytes(8);
+    for (let i = 0; i < 8; i += 1) code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    if (db.invites.some((invite) => invite.code === code)) return inviteCode();
+    return code;
+  }
+
+  function sanitizePhotos(value) {
+    if (!Array.isArray(value) || !value.length) return [];
+    const photos = [];
+    for (const item of value.slice(0, 3)) {
+      if (typeof item !== "string") continue;
+      if (!item.startsWith("data:image/jpeg") && !item.startsWith("data:image/png")) continue;
+      if (item.length > 700_000) fail(400, "That photo is too large. Try a smaller one.");
+      photos.push(item);
+    }
+    return photos;
+  }
+
+  async function handle(req, res) {
+    try {
+      const body = await readBody(req);
+      const header = req.headers.authorization || req.headers.Authorization || "";
+      const bearer = String(header).startsWith("Bearer ") ? String(header).slice(7) : "";
+      const result = await dispatch({
+        method: req.method || "GET",
+        url: req.url || "/",
+        token: bearer,
+        body,
+      });
+      sendJson(res, result.status, result.body);
+    } catch (error) {
+      const status = error.status || 500;
+      sendJson(res, status, { error: error.status ? error.message : "Something went wrong." });
+    }
+  }
+
+  function listen(port = 47322, host = "127.0.0.1") {
+    const server = createServer((req, res) => {
+      void handle(req, res);
+    });
+    server.listen(port, host);
+    return server;
+  }
+
+  return { dispatch, handle, listen, dataFile };
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    if (req.method === "GET" || req.method === "HEAD") {
+      resolve({});
+      return;
+    }
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > 8_000_000) {
+        reject(Object.assign(new Error("That upload is too large."), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (!chunks.length) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        reject(Object.assign(new Error("The request was not valid JSON."), { status: 400 }));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res, status, body) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "content-length": Buffer.byteLength(payload),
+  });
+  res.end(payload);
+}
+
+const launchedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (launchedDirectly) {
+  const port = Number(process.env.SLASHCONNECT_PORT || 47322);
+  const app = createSlashApp({ seedDemo: true });
+  app.listen(port);
+  console.log(`SlashConnect API http://127.0.0.1:${port}`);
+}
