@@ -398,6 +398,55 @@ test("a granted reward is waiting for the partner who cashed it in", async () =>
   assert.equal(waiting.detail, "Rowan said yes. Enjoy it.");
 });
 
+test("task text names the leading partner by the role title they chose", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const taskFor = (bundle, id) => bundle.tasks.find((task) => task.id === id);
+
+  const first = (await call(app, "GET", "/api/session", { token: avery })).body;
+  assert.equal(first.partner.roleTitle, "Domme");
+  assert.equal(taskFor(first, "task-water").summary, "Drink the amount your Domme set for you. Keep the bottle where you can see it.");
+  assert.equal(JSON.stringify(first).includes("D‑type"), false);
+  assert.equal(JSON.stringify(first).includes("{lead}"), false);
+
+  const leading = (await call(app, "GET", "/api/session", { token: rowan })).body;
+  assert.equal(leading.meta.templates.find((item) => item.id === "selfie").photoLabel, "Up to three photos for your Domme");
+  assert.equal(JSON.stringify(leading).includes("D‑type"), false);
+  assert.equal(JSON.stringify(leading).includes("{lead}"), false);
+
+  const spicy = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "anal-training" } });
+  assert.equal(spicy.status, 201, spicy.body.error);
+  assert.ok(spicy.body.task.coaching.some((line) => line.includes("your Domme")));
+
+  // A new title shows up everywhere at once, on tasks given before the change too.
+  await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "Daddy" } });
+  const renamed = (await call(app, "GET", "/api/session", { token: avery })).body;
+  assert.equal(taskFor(renamed, "task-water").summary, "Drink the amount your Daddy set for you. Keep the bottle where you can see it.");
+  assert.ok(taskFor(renamed, spicy.body.task.id).coaching.some((line) => line.includes("your Daddy")));
+
+  await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "" } });
+  const untitled = (await call(app, "GET", "/api/session", { token: avery })).body;
+  assert.equal(taskFor(untitled, "task-water").summary, "Drink the amount your partner set for you. Keep the bottle where you can see it.");
+});
+
+test("task text saved with the old wording picks up the role title", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const saved = JSON.parse(fs.readFileSync(app.dataFile, "utf8"));
+  saved.tasks.find((task) => task.id === "task-water").summary = "Drink the amount your D‑type set for you.";
+  saved.routines.find((item) => item.id === "routine-water").summary = "Drink the amount your D‑type set for you.";
+  fs.writeFileSync(app.dataFile, JSON.stringify(saved));
+
+  const reopened = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
+  const bundle = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  assert.equal(bundle.tasks.find((task) => task.id === "task-water").summary, "Drink the amount your Domme set for you.");
+  await call(reopened, "POST", "/api/tasks/task-water/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const fresh = next.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
+  assert.equal(fresh.summary, "Drink the amount your Domme set for you.");
+});
+
 test("tasks, streaks, goals, and agreed rewards persist", async () => {
   const app = tempApp(true);
   const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });

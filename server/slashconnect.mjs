@@ -12,6 +12,7 @@ import {
   PRONOUN_PRESETS,
   ROLE_SUGGESTIONS,
   TEMPLATES,
+  LEAD_TOKEN,
   coachingFor,
   drawAdventureTasks,
   guideSpeech,
@@ -128,6 +129,10 @@ export function createSlashApp(options = {}) {
       const parsed = JSON.parse(fs.readFileSync(dataFile, "utf8"));
       if (!parsed || !Array.isArray(parsed.users)) return seedDemo ? seed(emptyDb()) : emptyDb();
       if (!Array.isArray(parsed.routines)) parsed.routines = [];
+      // Task text saved before the leading partner's role title was used in it.
+      for (const item of [...(parsed.tasks || []), ...parsed.routines]) {
+        if (typeof item.summary === "string") item.summary = item.summary.replaceAll("D‑type", LEAD_TOKEN);
+      }
       return parsed;
     } catch {
       return seedDemo ? seed(emptyDb()) : emptyDb();
@@ -435,6 +440,15 @@ export function createSlashApp(options = {}) {
     return db.users.find((user) => user.slashSide === "following") || null;
   }
 
+  /** The role title the leading partner chose. Task text uses it wherever it names them. */
+  function leadRole() {
+    return cleanText(db.users.find((item) => item.slashSide === "leading")?.roleTitle, 40) || "partner";
+  }
+
+  function nameLead(text) {
+    return String(text || "").replaceAll(LEAD_TOKEN, leadRole());
+  }
+
   function meta(viewer) {
     const leading = viewer?.slashSide === "leading";
     return {
@@ -444,7 +458,7 @@ export function createSlashApp(options = {}) {
       roles: ROLE_SUGGESTIONS,
       categories: CATEGORIES,
       seals: ADVENTURE_SEALS,
-      templates: leading ? TEMPLATES : [],
+      templates: leading ? TEMPLATES.map((item) => ({ ...item, summary: nameLead(item.summary), photoLabel: nameLead(item.photoLabel) })) : [],
       journalPrompts: JOURNAL_PROMPTS,
       levelLadder: ["Spark", "Glow", "Flame", "Hearth", "Beacon", "Constellation"],
     };
@@ -537,15 +551,16 @@ export function createSlashApp(options = {}) {
     const coaching = coachingFor(taskItem.templateId, assignee?.experienceLevel || "new");
     return {
       ...taskItem,
+      summary: nameLead(taskItem.summary),
       supplyNote: supplyNote(template || { supplyHints: [] }, assignee?.supplies || [], viewer ? taskItem.assignedTo === viewer.id : true),
-      coaching,
+      coaching: coaching.map(nameLead),
       checklistIdeas: template?.checklistIdeas || [],
       checklistCount: template?.checklistCount || 0,
       completionKind: template?.completion || "note",
       timerSeconds: template?.timerSeconds || 0,
       photoMin: template?.photoMin || 0,
       photoMax: template?.photoMax || 0,
-      photoLabel: template?.photoLabel || "",
+      photoLabel: nameLead(template?.photoLabel),
       choices: template?.choices || [],
       consent: Boolean(taskItem.consent ?? template?.consent),
       repeat: taskItem.routineId ? "daily" : "once",

@@ -176,11 +176,11 @@ export function Onboarding() {
           <div className="stack">
             <button className={side === "leading" ? "choice on" : "choice"} type="button" onClick={() => setSide("leading")}>
               <strong>Leading</strong>
-              <span>The D‑type side. You hand out the tasks, give the praise, and grant the rewards.</span>
+              <span>You hand out the tasks, give the praise, and grant the rewards.</span>
             </button>
             <button className={side === "following" ? "choice on" : "choice"} type="button" onClick={() => setSide("following")}>
               <strong>Following</strong>
-              <span>The s‑type side. You do the tasks, keep the streak going, and cash in points for rewards.</span>
+              <span>You do the tasks, keep the streak going, and cash in points for rewards.</span>
             </button>
             <button className="primary" type="button" disabled={pending || !side} onClick={() => void save({ slashSide: side }, 3)}>
               Next

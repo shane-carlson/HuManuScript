@@ -83,18 +83,18 @@ const ANAL_NOTES = {
     "Start smaller and slower than you imagined.",
     "Agree on a check-in word you both already use.",
     "Stop the second you want to.",
-    "Afterwards: water, something cozy, and a few honest words to your D‑type.",
+    "Afterwards: water, something cozy, and a few honest words to your {lead}.",
   ],
   some: [
-    "Agree on the pace with your D‑type before you start.",
+    "Agree on the pace with your {lead} before you start.",
     "Warm up slowly. Only add time if it still feels good.",
     "Keep the lube within reach.",
-    "Afterwards, tell your D‑type one thing that felt right.",
+    "Afterwards, tell your {lead} one thing that felt right.",
   ],
   experienced: [
     "Pick a focus: comfort, how long, or a toy you already like.",
     "Check in with yourself halfway, even if it’s going well.",
-    "Leave your D‑type a note when you’re done.",
+    "Leave your {lead} a note when you’re done.",
   ],
 };
 
@@ -117,6 +117,12 @@ export function levelFor(points) {
     progress,
   };
 }
+
+/**
+ * Task text names the leading partner as `{lead}`. The server fills that in with
+ * the role title they chose, so it reads "your Domme" or "your Daddy".
+ */
+export const LEAD_TOKEN = "{lead}";
 
 export function coachingFor(templateId, experienceLevel) {
   if (templateId !== "anal-training") return [];
@@ -263,7 +269,7 @@ export const TEMPLATES = [
     id: "water",
     category: "self-care",
     title: "Drink your water",
-    summary: "Drink the amount your D‑type set for you. Keep the bottle where you can see it.",
+    summary: "Drink the amount your {lead} set for you. Keep the bottle where you can see it.",
     points: 5,
     goalKeys: ["self-care", "ritual"],
     completion: "check",
@@ -297,7 +303,7 @@ export const TEMPLATES = [
     id: "bedtime",
     category: "self-care",
     title: "Bed on time",
-    summary: "Be in bed by the time your D‑type set. Lights out, phone down.",
+    summary: "Be in bed by the time your {lead} set. Lights out, phone down.",
     points: 5,
     goalKeys: ["self-care", "ritual"],
     completion: "check",
@@ -351,19 +357,19 @@ export const TEMPLATES = [
     id: "selfie",
     category: "self-care",
     title: "Cute selfie shoot",
-    summary: "Take a cute selfie and send it to your D‑type. Make it a little photoshoot if you’re feeling it.",
+    summary: "Take a cute selfie and send it to your {lead}. Make it a little photoshoot if you’re feeling it.",
     points: 18,
     goalKeys: ["connection", "celebration"],
     completion: "photos",
     photoMin: 1,
     photoMax: 3,
-    photoLabel: "Up to three photos for your D‑type",
+    photoLabel: "Up to three photos for your {lead}",
   }),
   task({
     id: "journal",
     category: "self-care",
     title: "Journal",
-    summary: "Write about the prompt, then share whatever you want your D‑type to read.",
+    summary: "Write about the prompt, then share whatever you want your {lead} to read.",
     points: 15,
     goalKeys: ["connection", "communication", "ritual"],
     completion: "note",
@@ -412,7 +418,7 @@ export const TEMPLATES = [
     id: "hobby-hour",
     category: "fun",
     title: "An hour on your hobby",
-    summary: "Do your current hobby for an hour, then tell your D‑type what you worked on.",
+    summary: "Do your current hobby for an hour, then tell your {lead} what you worked on.",
     points: 20,
     goalKeys: ["play", "structure"],
     completion: "note",
@@ -488,7 +494,7 @@ export const TEMPLATES = [
     id: "grounding-pause",
     category: "grounding",
     title: "Grounding pause",
-    summary: "Box breathing or counting things. For when your D‑type is busy and you need to settle.",
+    summary: "Box breathing or counting things. For when your {lead} is busy and you need to settle.",
     points: 10,
     goalKeys: ["self-care", "ritual"],
     completion: "breath",
@@ -507,7 +513,7 @@ export const TEMPLATES = [
     id: "scene-plan",
     category: "spicy",
     title: "Plan a scene you really want",
-    summary: "Think of a scene you really want to have with your D‑type. Write out everything you’d need to make it work and what you want to happen, aftercare included. Then share it with them!",
+    summary: "Think of a scene you really want to have with your {lead}. Write out everything you’d need to make it work and what you want to happen, aftercare included. Then share it with them!",
     points: 20,
     goalKeys: ["connection", "communication"],
     completion: "note",
@@ -517,20 +523,20 @@ export const TEMPLATES = [
     id: "three-nudes",
     category: "spicy",
     title: "Three nudes without overthinking it",
-    summary: "Take 3 nudes without overthinking it and share them with your D‑type. They stay between the two of you, and you only send them if you want to.",
+    summary: "Take 3 nudes without overthinking it and share them with your {lead}. They stay between the two of you, and you only send them if you want to.",
     points: 22,
     goalKeys: ["connection"],
     completion: "photos",
     photoMin: 3,
     photoMax: 3,
-    photoLabel: "Three, for your D‑type’s eyes only",
+    photoLabel: "Three, for your {lead}’s eyes only",
     consent: true,
   }),
   task({
     id: "sexy-story",
     category: "spicy",
     title: "A story about the two of you",
-    summary: "Write a sexy story about you and your D‑type and send it to them.",
+    summary: "Write a sexy story about you and your {lead} and send it to them.",
     points: 22,
     goalKeys: ["connection", "communication"],
     completion: "note",
