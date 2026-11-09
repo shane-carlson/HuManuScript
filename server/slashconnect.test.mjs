@@ -29,7 +29,7 @@ test("levels move at the published thresholds", () => {
   assert.equal(levelFor(0).name, "Spark");
   assert.equal(levelFor(40).name, "Glow");
   assert.equal(levelFor(89).name, "Glow");
-  assert.equal(levelFor(90).name, "Kindle");
+  assert.equal(levelFor(90).name, "Flame");
   assert.equal(levelFor(400).progress, 1);
 });
 
@@ -268,7 +268,7 @@ test("tasks, streaks, goals, and agreed rewards persist", async () => {
     body: { note: "Long bath, used the bubble bath.", bonuses: ["bubbles"], clientDate: today },
   });
   assert.equal(leveled.status, 200, leveled.body.error);
-  assert.equal(leveled.body.stats.level.name, "Kindle");
+  assert.equal(leveled.body.stats.level.name, "Flame");
   assert.equal(leveled.body.celebration.kind, "level");
 
   const ack = await call(app, "POST", `/api/tasks/${shower.id}/acknowledge`, { token: lead });

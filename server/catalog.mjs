@@ -57,7 +57,7 @@ export const GUIDES = [
 export const LEVELS = [
   { id: "spark", name: "Spark", min: 0 },
   { id: "glow", name: "Glow", min: 40 },
-  { id: "kindle", name: "Kindle", min: 90 },
+  { id: "flame", name: "Flame", min: 90 },
   { id: "hearth", name: "Hearth", min: 160 },
   { id: "beacon", name: "Beacon", min: 250 },
   { id: "constellation", name: "Constellation", min: 400 },

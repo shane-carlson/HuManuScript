@@ -417,7 +417,7 @@ export function createSlashApp(options = {}) {
       seals: ADVENTURE_SEALS,
       templates: leading ? TEMPLATES : [],
       journalPrompts: JOURNAL_PROMPTS,
-      levelLadder: ["Spark", "Glow", "Kindle", "Hearth", "Beacon", "Constellation"],
+      levelLadder: ["Spark", "Glow", "Flame", "Hearth", "Beacon", "Constellation"],
     };
   }
 
