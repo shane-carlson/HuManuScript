@@ -3,7 +3,14 @@ import { clientDate, firstName, identityLine, prettyDate, sideWord } from "../fo
 import { GuideFace } from "../guides.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
+import type { Routine } from "../types.ts";
 import { Avatar, Meter, Shell } from "../ui.tsx";
+
+function dailyLine(routine: Routine, mine: boolean) {
+  if (routine.status === "open") return mine ? `${routine.points} pts · still to do today` : "Not done yet";
+  const word = routine.status === "done" ? "Done" : "Passed on";
+  return mine ? `${word} today` : `${word} ${prettyDate(routine.day)}`;
+}
 
 export function Home() {
   const { data, request } = useSession();
@@ -12,7 +19,7 @@ export function Home() {
   const [line, setLine] = useState(bundle.guide.text);
   const [tick, setTick] = useState(0);
   const adventure = bundle.tasks.find((task) => task.templateId === "daily-adventure" && task.status === "open");
-  const open = bundle.tasks.filter((task) => task.status === "open" && task.id !== adventure?.id).slice(0, 3);
+  const open = bundle.tasks.filter((task) => task.status === "open" && task.id !== adventure?.id && task.repeat !== "daily").slice(0, 3);
   const waiting = bundle.tasks.filter((task) => task.status === "done" && !task.acknowledgedAt);
   const notes = bundle.checkins.slice(0, 2);
   const unseen = bundle.checkins.some((note) => !note.seenBy.includes(me.id));
@@ -106,6 +113,27 @@ export function Home() {
           }).catch(() => undefined)}>
             Start today’s adventure
           </button>
+        ) : null}
+
+        {bundle.routines.length > 0 ? (
+          <section>
+            <h2>Every day</h2>
+            <div className="stack">
+              {bundle.routines.map((routine) => (
+                <button key={routine.id} className={`task daily ${routine.status}`} type="button" onClick={() => go(`/tasks/${routine.taskId}`)}>
+                  <i className="tick" aria-hidden="true">
+                    {routine.status === "done" ? (
+                      <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    ) : null}
+                  </i>
+                  <span>
+                    <strong>{routine.title}</strong>
+                    <em>{dailyLine(routine, me.slashSide === "following")}</em>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         <section>

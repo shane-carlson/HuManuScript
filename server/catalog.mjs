@@ -241,6 +241,10 @@ function task(partial) {
     choices: [],
     consent: false,
     promptPool: null,
+    habit: false,
+    custom: false,
+    noteLabel: "",
+    notePlaceholder: "",
     ...partial,
   };
 }
@@ -254,6 +258,62 @@ export const TEMPLATES = [
     points: 8,
     goalKeys: ["structure", "ritual"],
     completion: "adventure",
+  }),
+  task({
+    id: "water",
+    category: "self-care",
+    title: "Drink your water",
+    summary: "Drink the amount your D‑type set for you. Keep the bottle where you can see it.",
+    points: 5,
+    goalKeys: ["self-care", "ritual"],
+    completion: "check",
+    habit: true,
+    noteLabel: "How much?",
+    notePlaceholder: "8 glasses, or two full bottles",
+  }),
+  task({
+    id: "meds",
+    category: "self-care",
+    title: "Take your meds",
+    summary: "Take today’s meds, the way you’re meant to.",
+    points: 5,
+    goalKeys: ["self-care", "ritual"],
+    completion: "check",
+    habit: true,
+    noteLabel: "Anything they should know?",
+    notePlaceholder: "With breakfast, before bed",
+  }),
+  task({
+    id: "meal",
+    category: "self-care",
+    title: "Eat a real meal",
+    summary: "Sit down and eat something that counts as a meal. A handful of crackers over the sink doesn’t.",
+    points: 5,
+    goalKeys: ["self-care", "ritual"],
+    completion: "check",
+    habit: true,
+  }),
+  task({
+    id: "bedtime",
+    category: "self-care",
+    title: "Bed on time",
+    summary: "Be in bed by the time your D‑type set. Lights out, phone down.",
+    points: 5,
+    goalKeys: ["self-care", "ritual"],
+    completion: "check",
+    habit: true,
+    noteLabel: "What time?",
+    notePlaceholder: "In bed by 11",
+  }),
+  task({
+    id: "own-task",
+    category: "self-care",
+    title: "Write your own",
+    summary: "Anything you like. Give it a name and say what you want.",
+    points: 10,
+    completion: "check",
+    custom: true,
+    noteLabel: "What do you want them to do?",
   }),
   task({
     id: "shower-bath",
@@ -503,8 +563,9 @@ export function drawAdventureTasks(categories, options = {}) {
   const random = options.random || Math.random;
   const drawn = [];
   for (const category of categories) {
-    const fresh = TEMPLATES.filter((item) => item.category === category && !avoid.has(item.id) && !drawn.some((picked) => picked.id === item.id));
-    const pool = fresh.length ? fresh : TEMPLATES.filter((item) => item.category === category);
+    const drawable = TEMPLATES.filter((item) => item.category === category && !item.habit && !item.custom);
+    const fresh = drawable.filter((item) => !avoid.has(item.id) && !drawn.some((picked) => picked.id === item.id));
+    const pool = fresh.length ? fresh : drawable;
     if (!pool.length) return null;
     const index = Math.min(pool.length - 1, Math.floor(random() * pool.length));
     drawn.push(pool[index]);

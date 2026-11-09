@@ -78,10 +78,15 @@ function emptyDb() {
     pair: null,
     invites: [],
     tasks: [],
+    routines: [],
     goals: [],
     rewards: [],
     checkins: [],
   };
+}
+
+function validDay(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
 }
 
 function dayShift(days) {
@@ -121,6 +126,7 @@ export function createSlashApp(options = {}) {
     try {
       const parsed = JSON.parse(fs.readFileSync(dataFile, "utf8"));
       if (!parsed || !Array.isArray(parsed.users)) return seedDemo ? seed(emptyDb()) : emptyDb();
+      if (!Array.isArray(parsed.routines)) parsed.routines = [];
       return parsed;
     } catch {
       return seedDemo ? seed(emptyDb()) : emptyDb();
@@ -324,6 +330,28 @@ export function createSlashApp(options = {}) {
         adventure: { stage: "sealed", day: dayShift(0), categories: [], locked: [] },
       },
     ];
+    const daily = (id, templateId, note) => {
+      const template = templateById(templateId);
+      base.routines.push({
+        id: `routine-${id}`,
+        templateId,
+        category: template.category,
+        title: template.title,
+        summary: template.summary,
+        note,
+        prompt: "",
+        points: template.points,
+        bonuses: template.bonuses,
+        consent: false,
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        createdAt: nowIso(),
+        stoppedAt: null,
+      });
+      base.tasks.push(routineInstance(base.routines[base.routines.length - 1], dayShift(0), `task-${id}`));
+    };
+    daily("water", "water", "Two full bottles. The big ones.");
+    daily("meds", "meds", "With breakfast, please.");
     base.rewards = [
       {
         id: "reward-movie",
@@ -421,8 +449,89 @@ export function createSlashApp(options = {}) {
     };
   }
 
+  function routineInstance(routine, day, id = nid()) {
+    return {
+      id,
+      templateId: routine.templateId,
+      category: routine.category,
+      title: routine.title,
+      summary: routine.summary,
+      note: routine.note,
+      prompt: routine.prompt,
+      points: routine.points,
+      bonuses: routine.bonuses,
+      consent: routine.consent,
+      assignedBy: routine.assignedBy,
+      assignedTo: routine.assignedTo,
+      status: "open",
+      dueDate: "",
+      createdAt: nowIso(),
+      completedAt: null,
+      completionDate: "",
+      completion: null,
+      acknowledgedAt: null,
+      adventure: null,
+      routineId: routine.id,
+      day,
+    };
+  }
+
+  /**
+   * A daily task belongs to the following partner's day, so only their requests
+   * move it on. The two of them may be in different time zones.
+   */
+  function rollDaily(user, today) {
+    let changed = false;
+    if (user.lastSeenDay !== today) {
+      user.lastSeenDay = today;
+      changed = true;
+    }
+    for (const routine of db.routines) {
+      if (routine.stoppedAt || routine.assignedTo !== user.id) continue;
+      const instances = db.tasks.filter((item) => item.routineId === routine.id);
+      const open = instances.find((item) => item.status === "open");
+      if (open) {
+        if (open.day !== today) {
+          open.day = today;
+          changed = true;
+        }
+        continue;
+      }
+      const lastClosed = instances.reduce((latest, item) => (item.day > latest ? item.day : latest), "");
+      if (today > lastClosed) {
+        db.tasks.push(routineInstance(routine, today));
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function presentRoutines() {
+    const rows = [];
+    for (const routine of db.routines) {
+      if (routine.stoppedAt) continue;
+      const instances = db.tasks.filter((item) => item.routineId === routine.id);
+      const current =
+        instances.find((item) => item.status === "open") ||
+        instances.slice().sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))[0];
+      if (!current) continue;
+      rows.push({
+        id: routine.id,
+        taskId: current.id,
+        title: routine.title,
+        category: routine.category,
+        points: routine.points,
+        status: current.status,
+        day: current.day || "",
+        daysDone: instances.filter((item) => item.status === "done").length,
+      });
+    }
+    return rows;
+  }
+
   function presentTask(taskItem, viewer) {
     const template = templateById(taskItem.templateId);
+    const routine = taskItem.routineId ? db.routines.find((item) => item.id === taskItem.routineId) : null;
     const assignee = userById(taskItem.assignedTo);
     const coaching = coachingFor(taskItem.templateId, assignee?.experienceLevel || "new");
     return {
@@ -437,7 +546,9 @@ export function createSlashApp(options = {}) {
       photoMax: template?.photoMax || 0,
       photoLabel: template?.photoLabel || "",
       choices: template?.choices || [],
-      consent: Boolean(template?.consent),
+      consent: Boolean(taskItem.consent ?? template?.consent),
+      repeat: taskItem.routineId ? "daily" : "once",
+      routineActive: Boolean(routine && !routine.stoppedAt),
       category: taskItem.category,
       mine: viewer ? taskItem.assignedTo === viewer.id : false,
       adventure: taskItem.templateId === "daily-adventure"
@@ -483,6 +594,7 @@ export function createSlashApp(options = {}) {
       pair: db.pair,
       demo: Boolean(db.demo),
       tasks,
+      routines: presentRoutines(),
       goals: db.goals,
       rewards: db.rewards,
       checkins: db.checkins.slice().reverse(),
@@ -597,7 +709,7 @@ export function createSlashApp(options = {}) {
     return user;
   }
 
-  async function dispatch({ method, url, token, body }) {
+  async function dispatch({ method, url, token, body, clientDate }) {
     const parsed = new URL(url, "http://127.0.0.1");
     const parts = parsed.pathname.split("/").filter(Boolean);
     const route = `${method.toUpperCase()} /${parts.join("/")}`;
@@ -672,6 +784,8 @@ export function createSlashApp(options = {}) {
     }
 
     const user = requireUser(token);
+    const today = validDay(clientDate) || validDay(body?.clientDate);
+    if (today && rollDaily(user, today)) save();
 
     if (route === "GET /api/session") return { status: 200, body: bundle(user) };
 
@@ -716,6 +830,7 @@ export function createSlashApp(options = {}) {
       else if (parts[3] === "skip") skipTask(user, taskItem, body || {});
       else if (parts[3] === "acknowledge") acknowledgeTask(user, taskItem);
       else if (parts[3] === "remove") removeTask(user, taskItem);
+      else if (parts[3] === "stop") stopRoutine(user, taskItem);
       else fail(404, "Unknown task action.");
       save();
       return { status: 200, body: bundle(user, celebration ? { celebration } : {}) };
@@ -1013,26 +1128,60 @@ export function createSlashApp(options = {}) {
     if (!follower || follower.id === user.id) fail(400, "Pair up with your partner first.");
     const template = templateById(body.templateId);
     if (!template) fail(400, "Pick a task first.");
+    const daily = body.repeat === "daily";
+    if (daily && template.id === "daily-adventure") {
+      fail(400, "Today’s adventure can’t be set to repeat. Your partner can start one any day they like.");
+    }
     if (template.id === "daily-adventure" && openAdventure(follower.id)) {
       fail(409, "There’s already an adventure waiting.");
     }
-    const title = cleanText(body.title, 80) || template.title;
+    const typed = cleanText(body.title, 80);
+    if (template.custom && (typed.length < 2 || typed === template.title)) fail(400, "Give the task a name.");
+    const title = typed || template.title;
     const note = cleanText(body.note, 400);
-    const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate || "") ? body.dueDate : "";
+    const dueDate = !daily && /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate || "") ? body.dueDate : "";
+    const ownCategory = ["self-care", "fun", "spicy", "grounding"].includes(body.category) ? body.category : "self-care";
+    const category = template.custom ? ownCategory : template.category;
+    const consent = template.custom ? category === "spicy" : Boolean(template.consent);
+    const summary = template.custom ? "" : template.summary;
     let prompt = "";
     if (template.promptPool === "journal") {
       prompt = cleanText(body.prompt, 180) || JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
     }
+    if (daily) {
+      const routine = {
+        id: nid(),
+        templateId: template.id,
+        category,
+        title,
+        summary,
+        note,
+        prompt,
+        points: template.points,
+        bonuses: template.bonuses,
+        consent,
+        assignedBy: user.id,
+        assignedTo: follower.id,
+        createdAt: nowIso(),
+        stoppedAt: null,
+      };
+      db.routines.push(routine);
+      const first = routineInstance(routine, follower.lastSeenDay || clientDay(body.clientDate));
+      db.tasks.push(first);
+      user.carePoints = (user.carePoints || 0) + 4;
+      return first;
+    }
     const created = {
       id: nid(),
       templateId: template.id,
-      category: template.category,
+      category,
       title,
-      summary: template.summary,
+      summary,
       note,
       prompt,
       points: template.points,
       bonuses: template.bonuses,
+      consent,
       assignedBy: user.id,
       assignedTo: follower.id,
       status: "open",
@@ -1056,7 +1205,7 @@ export function createSlashApp(options = {}) {
     if (taskItem.status !== "open") fail(409, "That task’s already closed.");
     const template = templateById(taskItem.templateId);
     if (template?.id === "daily-adventure") fail(400, "Pick your categories first. That’s what locks in the tasks.");
-    if (template?.consent && body.consent !== true) {
+    if ((taskItem.consent ?? template?.consent) && body.consent !== true) {
       fail(400, "Tick the box to say you want to send this, or pass on it.");
     }
     const note = cleanText(body.note, 4000);
@@ -1091,6 +1240,7 @@ export function createSlashApp(options = {}) {
     taskItem.status = "done";
     taskItem.completedAt = nowIso();
     taskItem.completionDate = streak.today;
+    if (taskItem.routineId) taskItem.day = streak.today;
     taskItem.completion = {
       note: written,
       bonuses,
@@ -1098,7 +1248,7 @@ export function createSlashApp(options = {}) {
       checklist,
       choice,
     };
-    if (template) bumpGoals(template);
+    if (template) bumpGoals({ ...template, category: taskItem.category });
     const celebration = {
       kind: after.name !== before.name ? "level" : streak.milestone ? "streak" : "task",
       title: after.name !== before.name ? after.name : streak.milestone ? `${streak.streak} days in a row` : "Task done",
@@ -1127,9 +1277,23 @@ export function createSlashApp(options = {}) {
   }
 
   function removeTask(user, taskItem) {
+    if (taskItem.routineId) {
+      stopRoutine(user, taskItem);
+      return;
+    }
     if (taskItem.assignedBy !== user.id || user.slashSide !== "leading") fail(403, "Only whoever gave the task can take it back.");
     if (taskItem.status !== "open") fail(409, "Finished tasks stay on the record.");
     db.tasks = db.tasks.filter((item) => item.id !== taskItem.id);
+  }
+
+  /** Ends a daily task. Days already done or passed on stay on the record. */
+  function stopRoutine(user, taskItem) {
+    const routine = db.routines.find((item) => item.id === taskItem.routineId);
+    if (!routine) fail(404, "That isn’t a daily task.");
+    if (routine.assignedBy !== user.id || user.slashSide !== "leading") fail(403, "Only whoever gave the task can stop it.");
+    if (routine.stoppedAt) return;
+    routine.stoppedAt = nowIso();
+    db.tasks = db.tasks.filter((item) => !(item.routineId === routine.id && item.status === "open"));
   }
 
   function agreeReward(user, reward) {
@@ -1200,6 +1364,7 @@ export function createSlashApp(options = {}) {
         url: req.url || "/",
         token: bearer,
         body,
+        clientDate: String(req.headers["x-client-date"] || ""),
       });
       sendJson(res, result.status, result.body);
     } catch (error) {

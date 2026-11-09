@@ -1,3 +1,4 @@
+import { clientDate } from "./format.ts";
 import type { Bundle } from "./types.ts";
 
 export class ApiError extends Error {
@@ -20,6 +21,7 @@ export async function api(
       headers: {
         ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
         ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+        "x-client-date": clientDate(),
       },
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     });

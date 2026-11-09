@@ -62,6 +62,9 @@ export type Task = {
   photoLabel: string;
   choices: string[];
   consent: boolean;
+  repeat: "once" | "daily";
+  routineActive: boolean;
+  day?: string;
   adventure: null | {
     stage: "sealed" | "locked";
     day: string;
@@ -109,6 +112,21 @@ export type Template = {
   completion: string;
   promptPool: string | null;
   consent: boolean;
+  habit: boolean;
+  custom: boolean;
+  noteLabel: string;
+  notePlaceholder: string;
+};
+
+export type Routine = {
+  id: string;
+  taskId: string;
+  title: string;
+  category: string;
+  points: number;
+  status: "open" | "done" | "skipped";
+  day: string;
+  daysDone: number;
 };
 
 export type Bundle = {
@@ -118,6 +136,7 @@ export type Bundle = {
   pair: { id: string; members: string[] } | null;
   demo: boolean;
   tasks: Task[];
+  routines: Routine[];
   goals: Goal[];
   rewards: Reward[];
   checkins: Checkin[];

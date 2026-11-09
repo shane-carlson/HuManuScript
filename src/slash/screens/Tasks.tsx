@@ -10,7 +10,7 @@ export function Tasks() {
   const { data } = useSession();
   const bundle = data!;
   const [filter, setFilter] = useState("all");
-  const tasks = bundle.tasks.filter((task) => filter === "all" || task.category === filter);
+  const tasks = bundle.tasks.filter((task) => filter === "all" || (filter === "daily" ? task.repeat === "daily" : task.category === filter));
   return (
     <Shell nav>
       <div className="pad">
@@ -23,6 +23,7 @@ export function Tasks() {
         />
         <div className="chips">
           <Chip pressed={filter === "all"} onClick={() => setFilter("all")}>All</Chip>
+          <Chip pressed={filter === "daily"} onClick={() => setFilter("daily")}>Daily</Chip>
           {bundle.meta.categories.map((category) => (
             <Chip key={category.id} pressed={filter === category.id} onClick={() => setFilter(category.id)}>
               {category.label}
@@ -35,7 +36,7 @@ export function Tasks() {
             <button key={task.id} className="task" type="button" onClick={() => go(`/tasks/${task.id}`)}>
               <span className={`pill ${task.category}`}>{task.status === "open" ? task.category : task.status === "skipped" ? "passed" : "done"}</span>
               <strong>{task.title}</strong>
-              <em>{task.points} pts{task.dueDate ? ` · due ${prettyDate(task.dueDate)}` : ""}</em>
+              <em>{task.points} pts{task.repeat === "daily" ? ` · every day${task.status !== "open" && task.day ? ` · ${prettyDate(task.day)}` : ""}` : ""}{task.dueDate ? ` · due ${prettyDate(task.dueDate)}` : ""}</em>
             </button>
           ))}
         </div>
@@ -53,6 +54,7 @@ export function Assign() {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [due, setDue] = useState("");
+  const [repeat, setRepeat] = useState<"once" | "daily">("once");
   const [prompt, setPrompt] = useState(bundle.meta.journalPrompts[0] || "");
   const [pending, setPending] = useState(false);
 
@@ -78,7 +80,10 @@ export function Assign() {
           templateId: template.id,
           title: title || template.title,
           note,
-          dueDate: due,
+          repeat,
+          category,
+          dueDate: repeat === "daily" ? "" : due,
+          clientDate: clientDate(),
           prompt: template.promptPool ? prompt : "",
         },
       });
@@ -90,7 +95,10 @@ export function Assign() {
     }
   }
 
-  const templates = bundle.meta.templates.filter((item) => item.category === category);
+  const own = bundle.meta.templates.find((item) => item.custom);
+  const templates = bundle.meta.templates.filter((item) => item.category === category && !item.custom);
+  if (own && category !== "adventure") templates.push(own);
+  const canRepeat = template ? template.id !== "daily-adventure" : false;
   const theirs = bundle.partner ? firstName(bundle.partner.displayName) : "Your partner";
   return (
     <Shell nav>
@@ -113,7 +121,8 @@ export function Assign() {
               className={picked === item.id ? "task on" : "task"}
               onClick={() => {
                 setPicked(item.id);
-                setTitle(item.title);
+                setTitle(item.custom ? "" : item.title);
+                setRepeat(item.habit ? "daily" : "once");
               }}
             >
               <strong>{item.title}</strong>
@@ -124,15 +133,27 @@ export function Assign() {
         </div>
         {template ? (
           <form className="card stack" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-            <Field label="Title">
-              <input value={title} onChange={(event) => setTitle(event.target.value)} />
+            <Field label={template.custom ? "Name the task" : "Title"}>
+              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={template.custom ? "Text me good morning" : undefined} />
             </Field>
-            <Field label="A note from you">
-              <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
+            <Field label={template.noteLabel || "A note from you"}>
+              <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={template.notePlaceholder || undefined} />
             </Field>
-            <Field label="Due (optional)">
-              <input type="date" value={due} onChange={(event) => setDue(event.target.value)} />
-            </Field>
+            {canRepeat ? (
+              <div className="stack">
+                <p className="eyebrow">How often?</p>
+                <div className="chips">
+                  <Chip pressed={repeat === "once"} onClick={() => setRepeat("once")}>Just once</Chip>
+                  <Chip pressed={repeat === "daily"} onClick={() => setRepeat("daily")}>Every day</Chip>
+                </div>
+                {repeat === "daily" ? <p className="fine">{theirs} gets this fresh every day until you stop it.</p> : null}
+              </div>
+            ) : null}
+            {repeat === "once" || !canRepeat ? (
+              <Field label="Due (optional)">
+                <input type="date" value={due} onChange={(event) => setDue(event.target.value)} />
+              </Field>
+            ) : null}
             {template.promptPool ? (
               <Field label="What should they write about?">
                 <select value={prompt} onChange={(event) => setPrompt(event.target.value)}>
@@ -143,7 +164,7 @@ export function Assign() {
             {template.id === "anal-training" && bundle.partner ? (
               <p className="fine">The suggestions will match {theirs}’s experience level: {experienceLabel(bundle.partner.experienceLevel)}.</p>
             ) : null}
-            <button className="primary" type="submit" disabled={pending || !bundle.partner}>
+            <button className="primary" type="submit" disabled={pending || !bundle.partner || (template.custom && title.trim().length < 2)}>
               {bundle.partner ? `Send it to ${theirs}` : "Pair up first"}
             </button>
           </form>
@@ -174,9 +195,9 @@ export function TaskDetail({ id }: { id: string }) {
     <Shell nav>
       <div className="pad">
         <button className="texty" type="button" onClick={() => go("/tasks")}>All tasks</button>
-        <p className="eyebrow">{task.category} · {task.points} pts</p>
+        <p className="eyebrow">{task.category} · {task.points} pts{task.repeat === "daily" ? " · every day" : ""}</p>
         <h1>{task.title}</h1>
-        {task.adventure?.stage === "locked" ? <p>{mine ? "Here’s what you got. No take-backs." : `Here’s what ${theirs} got.`}</p> : <p>{task.summary}</p>}
+        {task.adventure?.stage === "locked" ? <p>{mine ? "Here’s what you got. No take-backs." : `Here’s what ${theirs} got.`}</p> : task.summary ? <p>{task.summary}</p> : null}
         {task.note && task.completionKind !== "adventure" ? <p className="card slim">{task.note}</p> : null}
         {task.prompt ? <p className="prompt">“{task.prompt}”</p> : null}
         {task.supplyNote ? <p className="fine">{task.supplyNote}</p> : null}
@@ -195,9 +216,16 @@ export function TaskDetail({ id }: { id: string }) {
           </button>
         ) : null}
         {task.acknowledgedAt ? <p className="fine">{leading ? "You said well done." : `${theirs} said well done.`}</p> : null}
-        {task.status === "open" && leading ? (
+        {task.status === "open" && leading && task.repeat !== "daily" ? (
           <button className="texty" type="button" onClick={() => void request(`/api/tasks/${task.id}/remove`, { method: "POST" }).then(() => go("/tasks")).catch(() => undefined)}>
             Take it back
+          </button>
+        ) : null}
+        {task.repeat === "daily" && task.status !== "open" && task.day ? <p className="fine">{task.status === "done" ? "Done" : "Passed on"} {prettyDate(task.day)}.{task.routineActive ? " It comes back tomorrow." : ""}</p> : null}
+        {task.repeat === "daily" && !task.routineActive ? <p className="fine">This daily task has been stopped.</p> : null}
+        {task.repeat === "daily" && task.routineActive && leading ? (
+          <button className="texty" type="button" onClick={() => void request(`/api/tasks/${task.id}/stop`, { method: "POST" }).then(() => go("/tasks")).catch(() => undefined)}>
+            Stop this daily task
           </button>
         ) : null}
         {task.status === "open" && mine ? <Skip taskId={task.id} /> : null}
@@ -427,9 +455,9 @@ function CompleteForm({ task }: { task: Task }) {
           <span>{bonus.label} · +{bonus.points}</span>
         </label>
       ))}
-      {task.completionKind === "note" || task.completionKind === "timer" || task.completionKind === "breath" || task.completionKind === "photos" ? (
-        <Field label={task.prompt ? "What you want them to read" : "How’d it go?"}>
-          <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} />
+      {task.completionKind === "note" || task.completionKind === "timer" || task.completionKind === "breath" || task.completionKind === "photos" || task.completionKind === "check" ? (
+        <Field label={task.completionKind === "check" ? "Anything to add? (optional)" : task.prompt ? "What you want them to read" : "How’d it go?"}>
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={task.completionKind === "check" ? 2 : 4} />
         </Field>
       ) : null}
       {task.consent ? (

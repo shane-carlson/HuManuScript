@@ -1,6 +1,6 @@
 # SlashConnect
 
-SlashConnect is a private app for two adults in a long-distance power-exchange dynamic. One household holds exactly two accounts. The leading partner hands out tasks. The following partner does them, earns points, and builds a streak. Rewards exist only after both people agree. Today's adventure lets the following partner pick one to three categories for their headspace. The tasks stay hidden until that choice is locked in, and then those tasks stay.
+SlashConnect is a private app for two adults in a long-distance power-exchange dynamic. One household holds exactly two accounts. The leading partner hands out tasks, each one either a one-time task or a daily one such as drinking a set amount of water or taking meds. A daily task comes back every day on the following partner's calendar until the leading partner stops it. The following partner does them, earns points, and builds a streak. Rewards exist only after both people agree. Today's adventure lets the following partner pick one to three categories for their headspace. The tasks stay hidden until that choice is locked in, and then those tasks stay.
 
 Roles such as Little, Middle, Babygirl, and Babyboy are adult identities. The app asks each person to confirm they are 18 or older.
 

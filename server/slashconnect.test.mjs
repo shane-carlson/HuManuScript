@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { coachingFor, guideSpeech, levelFor } from "./catalog.mjs";
+import { TEMPLATES, coachingFor, drawAdventureTasks, guideSpeech, levelFor } from "./catalog.mjs";
 import { createSlashApp } from "./slashconnect.mjs";
 
 function tempApp(seedDemo) {
@@ -11,9 +11,9 @@ function tempApp(seedDemo) {
   return createSlashApp({ dataFile: path.join(dir, "db.json"), seedDemo });
 }
 
-async function call(app, method, url, { token, body } = {}) {
+async function call(app, method, url, { token, body, clientDate } = {}) {
   try {
-    return await app.dispatch({ method, url, token, body: body || {} });
+    return await app.dispatch({ method, url, token, body: body || {}, clientDate });
   } catch (error) {
     return { status: error.status || 500, body: { error: error.message } };
   }
@@ -222,6 +222,119 @@ test("today's adventure stays sealed until the categories lock the tasks in", as
     body: { clientDate: "2026-11-09" },
   });
   assert.equal(restart.status, 409);
+});
+
+test("a daily task comes back each day of the following partner and a one-time task does not", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const asAvery = (day) => call(app, "GET", "/api/session", { token: avery, clientDate: day });
+  const vitamins = (bundle) => bundle.tasks.filter((task) => task.title === "Take your vitamins");
+
+  const refused = await call(app, "POST", "/api/tasks", { token: avery, body: { templateId: "meds", repeat: "daily" } });
+  assert.equal(refused.status, 403);
+  const adventure = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "daily-adventure", repeat: "daily" } });
+  assert.equal(adventure.status, 400);
+
+  const once = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "walk" } });
+  assert.equal(once.body.task.repeat, "once");
+  const routinesBefore = once.body.routines.length;
+
+  const given = await call(app, "POST", "/api/tasks", {
+    token: rowan,
+    body: { templateId: "meds", title: "Take your vitamins", note: "With breakfast.", repeat: "daily", dueDate: "2026-12-25" },
+  });
+  assert.equal(given.status, 201, given.body.error);
+  assert.equal(given.body.task.repeat, "daily");
+  assert.equal(given.body.task.dueDate, "");
+  assert.equal(given.body.routines.length, routinesBefore + 1);
+
+  const monday = await asAvery("2026-11-09");
+  assert.equal(vitamins(monday.body).length, 1);
+  const first = vitamins(monday.body)[0];
+  assert.equal(first.status, "open");
+  assert.equal(first.note, "With breakfast.");
+
+  const done = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  assert.equal(done.status, 200, done.body.error);
+  assert.equal(vitamins(done.body).length, 1);
+  assert.equal(vitamins((await asAvery("2026-11-09")).body).length, 1);
+
+  // Rowan is a day ahead. Her clock does not hand Avery tomorrow's task early.
+  const ahead = await call(app, "GET", "/api/session", { token: rowan, clientDate: "2026-11-10" });
+  assert.equal(vitamins(ahead.body).filter((task) => task.status === "open").length, 0);
+  assert.equal(ahead.body.routines.find((item) => item.title === "Take your vitamins").status, "done");
+
+  const tuesday = await asAvery("2026-11-10");
+  assert.equal(vitamins(tuesday.body).length, 2);
+  const second = vitamins(tuesday.body).find((task) => task.status === "open");
+  assert.equal(second.day, "2026-11-10");
+  assert.notEqual(second.id, first.id);
+
+  // Left undone, it carries over as the same task. It does not pile up.
+  const thursday = await asAvery("2026-11-12");
+  assert.equal(vitamins(thursday.body).length, 2);
+  assert.equal(vitamins(thursday.body).find((task) => task.status === "open").id, second.id);
+
+  const passed = await call(app, "POST", `/api/tasks/${second.id}/skip`, { token: avery, body: {}, clientDate: "2026-11-12" });
+  assert.equal(vitamins(passed.body).find((task) => task.id === second.id).status, "skipped");
+  assert.equal(vitamins((await asAvery("2026-11-12")).body).length, 2);
+  const friday = await asAvery("2026-11-13");
+  const third = vitamins(friday.body).find((task) => task.status === "open");
+  assert.ok(third);
+
+  const notHers = await call(app, "POST", `/api/tasks/${third.id}/stop`, { token: avery, clientDate: "2026-11-13" });
+  assert.equal(notHers.status, 403);
+  const stopped = await call(app, "POST", `/api/tasks/${third.id}/stop`, { token: rowan });
+  assert.equal(stopped.status, 200, stopped.body.error);
+  assert.equal(stopped.body.routines.some((item) => item.title === "Take your vitamins"), false);
+  const later = await asAvery("2026-11-20");
+  assert.equal(vitamins(later.body).length, 2);
+  assert.equal(vitamins(later.body).every((task) => task.status !== "open" && task.routineActive === false), true);
+
+  const reloaded = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
+  const after = await call(reloaded, "GET", "/api/session", { token: avery, clientDate: "2026-11-21" });
+  assert.equal(vitamins(after.body).length, 2);
+  assert.ok(after.body.routines.some((item) => item.title === "Drink your water"));
+});
+
+test("the leading partner can write a task of their own", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+
+  const nameless = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "own-task" } });
+  assert.equal(nameless.status, 400);
+
+  const own = await call(app, "POST", "/api/tasks", {
+    token: rowan,
+    body: { templateId: "own-task", title: "Text me good morning", category: "fun", repeat: "daily" },
+  });
+  assert.equal(own.status, 201, own.body.error);
+  assert.equal(own.body.task.category, "fun");
+  assert.equal(own.body.task.summary, "");
+  assert.equal(own.body.task.consent, false);
+  const sent = await call(app, "POST", `/api/tasks/${own.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  assert.equal(sent.status, 200, sent.body.error);
+
+  const spicy = await call(app, "POST", "/api/tasks", {
+    token: rowan,
+    body: { templateId: "own-task", title: "Wear the red set on our call", category: "spicy" },
+  });
+  assert.equal(spicy.body.task.consent, true);
+  const unsaid = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  assert.equal(unsaid.status, 400);
+  const said = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09", consent: true } });
+  assert.equal(said.status, 200, said.body.error);
+});
+
+test("today’s adventure never draws an everyday habit or a blank task", () => {
+  const hidden = TEMPLATES.filter((item) => item.habit || item.custom).map((item) => item.id);
+  assert.ok(hidden.includes("water") && hidden.includes("meds") && hidden.includes("own-task"));
+  for (let step = 0; step < 40; step += 1) {
+    const drawn = drawAdventureTasks(["self-care"], { random: () => step / 40 });
+    assert.equal(hidden.includes(drawn[0].id), false);
+  }
 });
 
 test("tasks, streaks, goals, and agreed rewards persist", async () => {
