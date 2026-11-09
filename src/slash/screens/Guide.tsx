@@ -3,13 +3,19 @@ import { GuideFace } from "../guides.tsx";
 import { useSession } from "../session.tsx";
 import { PageHead, Shell } from "../ui.tsx";
 
-const EVENTS = [
-  { id: "nudge", label: "Encourage me" },
-  { id: "done", label: "I finished something" },
-  { id: "streak", label: "Talk about the streak" },
-  { id: "ground", label: "Help me pause" },
-  { id: "assign", label: "Help me assign" },
-] as const;
+const FOLLOWING = [
+  { id: "nudge", label: "Say something nice" },
+  { id: "done", label: "I did a thing!" },
+  { id: "streak", label: "How’s my streak?" },
+  { id: "ground", label: "Help me calm down" },
+];
+
+const LEADING = [
+  { id: "nudge", label: "Give me a nudge" },
+  { id: "assign", label: "What should I assign?" },
+  { id: "streak", label: "How’s the streak?" },
+  { id: "ground", label: "Help me calm down" },
+];
 
 export function GuidePage() {
   const { data, request } = useSession();
@@ -33,7 +39,7 @@ export function GuidePage() {
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title={guide?.name || "Guide"} kicker={guide?.species} />
+        <PageHead title={guide?.name || "Your stuffie"} kicker={guide?.species} />
         <div className="center">
           <GuideFace id={guide?.id || "lumen"} className="guide-face xl float" />
         </div>
@@ -44,7 +50,7 @@ export function GuidePage() {
           ))}
         </div>
         <div className="chips">
-          {EVENTS.map((event) => (
+          {(bundle.me.slashSide === "leading" ? LEADING : FOLLOWING).map((event) => (
             <button key={event.id} className="chip" type="button" onClick={() => void speak(event.id)}>
               {event.label}
             </button>

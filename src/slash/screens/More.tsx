@@ -3,21 +3,22 @@ import { useSession } from "../session.tsx";
 import { PageHead, Shell } from "../ui.tsx";
 
 const LINKS = [
-  { href: "/guide", title: "Guide", detail: "Encouragement and a check-in with the companion you picked." },
-  { href: "/ground", title: "Grounding", detail: "Box breathing, a counting round, and a note if you want company." },
-  { href: "/pair", title: "Your pair", detail: "Invite by email or text, or enter the code you were sent." },
-  { href: "/profile", title: "Profile", detail: "Pronouns, gender, role, supplies, and your guide." },
-  { href: "/assign", title: "Assign", detail: "Leading partner picks a task type and sends it." },
+  { href: "/guide", title: "Your stuffie", detail: "A pep talk whenever you want one." },
+  { href: "/ground", title: "Grounding", detail: "Box breathing, counting things, and a note to your partner if you want company." },
+  { href: "/assign", title: "Give a task", detail: "Pick one and send it over.", leadingOnly: true },
+  { href: "/pair", title: "The two of you", detail: "Invite your partner, or enter the code they sent." },
+  { href: "/profile", title: "You", detail: "Your title, your stash, and which stuffie you keep." },
 ];
 
 export function More() {
   const { data } = useSession();
+  const links = LINKS.filter((link) => !link.leadingOnly || data?.me.slashSide === "leading");
   return (
     <Shell nav>
       <div className="pad">
         <PageHead title="More" kicker={data?.me.displayName} />
         <div className="stack">
-          {LINKS.map((link) => (
+          {links.map((link) => (
             <button key={link.href} className="task" type="button" onClick={() => go(link.href)}>
               <strong>{link.title}</strong>
               <em>{link.detail}</em>

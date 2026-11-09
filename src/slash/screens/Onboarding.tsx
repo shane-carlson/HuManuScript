@@ -85,14 +85,14 @@ export function Onboarding() {
   }
 
   const titles = [
-    "Which pronouns should we use?",
-    "How do you describe your gender?",
-    "Which side of the slash are you on?",
-    "What do you want to be called here?",
-    "What are you here for?",
-    "What self-care do you actually have?",
-    "Pick an avatar",
-    "Choose your guide",
+    "What are your pronouns?",
+    "And your gender?",
+    "Which side of the slash are you?",
+    "What do you go by?",
+    "What do you two want out of this?",
+    "What’s in your self-care stash?",
+    "Make your avatar",
+    "Pick your stuffie",
   ];
 
   return (
@@ -108,7 +108,7 @@ export function Onboarding() {
 
         {step === 0 ? (
           <div className="stack">
-            <p className="lead">These show up in titles and in the way your partner’s screen talks about you.</p>
+            <p className="lead">Your partner’s screen uses these when it talks about you.</p>
             <div className="chips">
               {meta.pronouns.map((item) => (
                 <Chip
@@ -145,14 +145,14 @@ export function Onboarding() {
               disabled={pending || !pronouns.subject || !pronouns.object || !pronouns.possessive}
               onClick={() => void save({ pronouns }, 1)}
             >
-              Continue
+              Next
             </button>
           </div>
         ) : null}
 
         {step === 1 ? (
           <div className="stack">
-            <p className="lead">Suggestions only. Type your own words if none of these fit. You can skip this.</p>
+            <p className="lead">These are only suggestions. Use your own words, or skip it.</p>
             <div className="chips">
               {GENDERS.map((item) => (
                 <Chip key={item} pressed={gender.toLowerCase() === item} onClick={() => setGender(item)}>
@@ -161,10 +161,10 @@ export function Onboarding() {
               ))}
             </div>
             <Field label="Gender, in your words">
-              <input value={gender} onChange={(event) => setGender(event.target.value)} placeholder="Type anything, or leave this blank" />
+              <input value={gender} onChange={(event) => setGender(event.target.value)} placeholder="Anything you like" />
             </Field>
             <button className="primary" type="button" disabled={pending} onClick={() => void save({ gender }, 2)}>
-              Continue
+              Next
             </button>
             <button className="texty" type="button" disabled={pending} onClick={() => void save({ gender: "" }, 2)}>
               Skip
@@ -176,21 +176,21 @@ export function Onboarding() {
           <div className="stack">
             <button className={side === "leading" ? "choice on" : "choice"} type="button" onClick={() => setSide("leading")}>
               <strong>Leading</strong>
-              <span>You assign tasks, notice follow-through, and agree rewards together.</span>
+              <span>The D‑type side. You hand out the tasks, give the praise, and grant the rewards.</span>
             </button>
             <button className={side === "following" ? "choice on" : "choice"} type="button" onClick={() => setSide("following")}>
               <strong>Following</strong>
-              <span>You receive tasks, build the streak, and ask for rewards you both agreed on.</span>
+              <span>The s‑type side. You do the tasks, keep the streak going, and cash in points for rewards.</span>
             </button>
             <button className="primary" type="button" disabled={pending || !side} onClick={() => void save({ slashSide: side }, 3)}>
-              Continue
+              Next
             </button>
           </div>
         ) : null}
 
         {step === 3 ? (
           <div className="stack">
-            <p className="lead">These are adult names for your side of the dynamic. Type your own if none fit.</p>
+            <p className="lead">What does your partner call you? These are all adult roles. Type your own if it’s not here.</p>
             <div className="chips">
               {(side === "leading" ? meta.roles.leading : meta.roles.following).map((item) => (
                 <Chip key={item} pressed={role === item} onClick={() => setRole(item)}>
@@ -198,17 +198,18 @@ export function Onboarding() {
                 </Chip>
               ))}
             </div>
-            <Field label="Role title">
-              <input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Your title" />
+            <Field label="Your title">
+              <input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Anything you like" />
             </Field>
             <button className="primary" type="button" disabled={pending || role.trim().length < 2} onClick={() => void save({ roleTitle: role.trim() }, 4)}>
-              Continue
+              Next
             </button>
           </div>
         ) : null}
 
         {step === 4 ? (
           <div className="stack">
+            <p className="lead">Pick as many as you like. Each one turns into a goal you’ll both see.</p>
             <div className="chips">
               {meta.goals.map((goal) => (
                 <Chip
@@ -221,14 +222,14 @@ export function Onboarding() {
               ))}
             </div>
             <button className="primary" type="button" disabled={pending || goals.length === 0} onClick={() => void save({ goals }, 5)}>
-              Continue
+              Next
             </button>
           </div>
         ) : null}
 
         {step === 5 ? (
           <div className="stack">
-            <p className="lead">Tasks will mention what you list, so you are not handed a ritual you cannot do.</p>
+            <p className="lead">List what you actually own. It’s annoying to be told to take a bubble bath when you’re out of bubbles.</p>
             <div className="chips">
               {supplies.map((item) => (
                 <Chip key={item} pressed onClick={() => setSupplies((current) => current.filter((supply) => supply !== item))}>
@@ -236,7 +237,7 @@ export function Onboarding() {
                 </Chip>
               ))}
             </div>
-            <Field label="Add something you own or already love">
+            <Field label="Add something you have">
               <input
                 value={supplyDraft}
                 placeholder="face mask, journal, bubble bath"
@@ -250,10 +251,10 @@ export function Onboarding() {
               />
             </Field>
             <button className="ghost" type="button" onClick={addSupply}>
-              Add to the list
+              Add it
             </button>
             <button className="primary" type="button" disabled={pending} onClick={() => void save({ supplies }, 6)}>
-              Continue
+              Next
             </button>
           </div>
         ) : null}
@@ -274,13 +275,14 @@ export function Onboarding() {
               ))}
             </div>
             <button className="primary" type="button" disabled={pending} onClick={() => void save({ avatar: { hue, mark } }, 7)}>
-              Continue
+              Next
             </button>
           </div>
         ) : null}
 
         {step === 7 ? (
           <div className="stack">
+            <p className="lead">They live on your home screen and have opinions. Tap them when you want a word.</p>
             <div className="guide-pick">
               {meta.guides.map((guide) => (
                 <button key={guide.id} type="button" className={guideId === guide.id ? "guide-card on" : "guide-card"} onClick={() => setGuideId(guide.id)}>
@@ -291,7 +293,7 @@ export function Onboarding() {
               ))}
             </div>
             <button className="primary" type="button" disabled={pending || !guideId} onClick={() => void finish()}>
-              {pending ? "Saving…" : "Enter SlashConnect"}
+              {pending ? "Saving…" : "Let’s go"}
             </button>
           </div>
         ) : null}

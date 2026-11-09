@@ -98,7 +98,7 @@ function publicUser(user) {
   return copy;
 }
 
-function supplyNote(template, supplies) {
+function supplyNote(template, supplies, mine) {
   const hints = template.supplyHints || [];
   if (!hints.length) return "";
   const owned = (supplies || []).map((item) => item.toLowerCase());
@@ -106,8 +106,10 @@ function supplyNote(template, supplies) {
   for (const hint of hints) {
     if (owned.some((item) => item.includes(hint) || hint.includes(item))) matched.push(hint);
   }
-  if (matched.length) return `On your supply list: ${matched.join(", ")}.`;
-  return "Nothing on your supply list matches this yet. You can still do a version with what you have, or add the things you use.";
+  if (matched.length) return `${mine ? "From your stash" : "In their stash"}: ${matched.join(", ")}.`;
+  return mine
+    ? "Nothing in your stash matches this one yet. Do a version with what you’ve got, or add what you use in your profile."
+    : "Nothing in their stash matches this one yet.";
 }
 
 export function createSlashApp(options = {}) {
@@ -216,17 +218,17 @@ export function createSlashApp(options = {}) {
       };
     };
     base.tasks = [
-      done("task-song", "feel-good-song", 1, { note: "Played the kitchen song and danced while the pasta boiled.", bonuses: ["move"], photos: [], checklist: [], choice: "" }),
-      done("task-walk", "walk", 2, { note: "Loop around the block after work.", bonuses: [], photos: [], checklist: [], choice: "Outside" }),
-      done("task-mirror", "mirror", 3, { note: "Liked the way the light hit my face, and felt neutral about my shoulders.", bonuses: [], photos: [], checklist: [], choice: "" }),
-      done("task-selfie", "selfie", 4, { note: "Sent the sunny windowsill ones.", bonuses: [], photos: [], checklist: [], choice: "" }),
+      done("task-song", "feel-good-song", 1, { note: "Kitchen song, obviously. Danced until the pasta boiled over a bit.", bonuses: ["move"], photos: [], checklist: [], choice: "" }),
+      done("task-walk", "walk", 2, { note: "Did the loop around the block after work. It was cold!", bonuses: [], photos: [], checklist: [], choice: "Outside" }),
+      done("task-mirror", "mirror", 3, { note: "I liked my face in that light. Shoulders were fine today.", bonuses: [], photos: [], checklist: [], choice: "" }),
+      done("task-selfie", "selfie", 4, { note: "Sent you the sunny windowsill ones.", bonuses: [], photos: [], checklist: [], choice: "" }),
       {
         id: "task-shower",
         templateId: "shower-bath",
         category: "self-care",
         title: "Hot shower or bath",
         summary: templateById("shower-bath").summary,
-        note: "Use the bubble bath if you still have it.",
+        note: "Use the bubble bath I know you’re saving. That’s what it’s for.",
         prompt: "",
         points: 15,
         bonuses: templateById("shower-bath").bonuses,
@@ -246,7 +248,7 @@ export function createSlashApp(options = {}) {
         category: "self-care",
         title: "Journal",
         summary: templateById("journal").summary,
-        note: "Share as much as you want me to read.",
+        note: "Share as much or as little as you like. I’ll read every word.",
         prompt: "What do you want your partner to notice?",
         points: 15,
         bonuses: [],
@@ -264,9 +266,9 @@ export function createSlashApp(options = {}) {
         id: "task-plush",
         templateId: "plush-adventure",
         category: "fun",
-        title: "Comfort plush on an adventure",
+        title: "Take a stuffie on an adventure",
         summary: templateById("plush-adventure").summary,
-        note: "The small fox can ride along. A photo is welcome.",
+        note: "The little fox gets to come along. I want a picture.",
         prompt: "",
         points: 18,
         bonuses: [],
@@ -284,9 +286,9 @@ export function createSlashApp(options = {}) {
         id: "task-scene",
         templateId: "scene-plan",
         category: "spicy",
-        title: "Plan a scene you want",
+        title: "Plan a scene you really want",
         summary: templateById("scene-plan").summary,
-        note: "Include aftercare. Skip this if it is not a yes today.",
+        note: "Don’t leave out aftercare. If it’s not a yes today, pass on it and tell me.",
         prompt: "",
         points: 20,
         bonuses: [],
@@ -304,9 +306,9 @@ export function createSlashApp(options = {}) {
         id: "task-adventure",
         templateId: "daily-adventure",
         category: "adventure",
-        title: "Today's adventure",
+        title: "Today’s adventure",
         summary: templateById("daily-adventure").summary,
-        note: "Pick the categories that fit today. You will not see the tasks until you lock them in.",
+        note: "Pick what fits today. No peeking.",
         prompt: "",
         points: 8,
         bonuses: [],
@@ -326,7 +328,7 @@ export function createSlashApp(options = {}) {
       {
         id: "reward-movie",
         title: "You pick the movie on our next call",
-        detail: "Rowan watches what Avery chooses, snacks optional.",
+        detail: "Avery picks, Rowan watches without complaining. Snacks optional.",
         cost: 30,
         proposedBy: rowanId,
         status: "agreed",
@@ -338,8 +340,8 @@ export function createSlashApp(options = {}) {
       },
       {
         id: "reward-note",
-        title: "A voice note about what Rowan noticed",
-        detail: "Specific, kind, and about this week.",
+        title: "A voice note from Rowan about this week",
+        detail: "The things Rowan noticed, said out loud.",
         cost: 20,
         proposedBy: averyId,
         status: "agreed",
@@ -351,8 +353,8 @@ export function createSlashApp(options = {}) {
       },
       {
         id: "reward-breakfast",
-        title: "Breakfast on Avery's terms, once you are in the same room",
-        detail: "Menu chosen by Avery. No schedule pressure while you are apart.",
+        title: "Breakfast in bed, next visit",
+        detail: "Avery picks the menu. Saved for when you’re in the same place.",
         cost: 80,
         proposedBy: averyId,
         status: "proposed",
@@ -368,7 +370,7 @@ export function createSlashApp(options = {}) {
         id: "check-hello",
         fromUserId: rowanId,
         kind: "hello",
-        note: "I am here after dinner if you want to tell me about the day.",
+        note: "I’m around after dinner. Come tell me about your day.",
         createdAt: nowIso(),
         seenBy: [],
       },
@@ -425,7 +427,7 @@ export function createSlashApp(options = {}) {
     const coaching = coachingFor(taskItem.templateId, assignee?.experienceLevel || "new");
     return {
       ...taskItem,
-      supplyNote: supplyNote(template || { supplyHints: [] }, assignee?.supplies || []),
+      supplyNote: supplyNote(template || { supplyHints: [] }, assignee?.supplies || [], viewer ? taskItem.assignedTo === viewer.id : true),
       coaching,
       checklistIdeas: template?.checklistIdeas || [],
       checklistCount: template?.checklistCount || 0,
@@ -456,6 +458,7 @@ export function createSlashApp(options = {}) {
       name: user.displayName.split(" ")[0],
       partner: partner ? partner.displayName.split(" ")[0] : "your partner",
       role: user.roleTitle || "partner",
+      side: user.slashSide,
       partnerRole: partner?.roleTitle || "partner",
       streak: follower?.streak || user.streak || 0,
       points: follower?.points || user.points || 0,
@@ -507,7 +510,7 @@ export function createSlashApp(options = {}) {
 
   function requireUser(token) {
     const user = userFromToken(token);
-    if (!user) fail(401, "Sign in again to continue.");
+    if (!user) fail(401, "You’ve been signed out. Sign back in.");
     return user;
   }
 
@@ -556,15 +559,15 @@ export function createSlashApp(options = {}) {
 
   function createUser({ email, password, displayName }) {
     const key = String(email || "").trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) fail(400, "Enter an email address.");
-    if (String(password || "").length < 6) fail(400, "Use a password of at least 6 characters.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) fail(400, "That doesn’t look like an email address.");
+    if (String(password || "").length < 6) fail(400, "Passwords need at least 6 characters.");
     const name = cleanText(displayName, 40);
-    if (name.length < 1) fail(400, "Enter the name you want your partner to see.");
-    if (userByEmail(key)) fail(409, "That email is already registered on this household.");
+    if (name.length < 1) fail(400, "Add the name you want your partner to see.");
+    if (userByEmail(key)) fail(409, "That email’s already signed up here. Try signing in.");
     if (db.users.length >= 2) {
       fail(409, db.demo
-        ? "The demo household already has two people. Start your own connection to register."
-        : "This connection already has two people.");
+        ? "The demo pair has both spots. Tap “Start your own dynamic” to sign up."
+        : "Both spots are taken. SlashConnect is for two.");
     }
     const user = {
       id: nid(),
@@ -605,9 +608,9 @@ export function createSlashApp(options = {}) {
     if (route === "GET /api/meta") return { status: 200, body: meta(null) };
 
     if (route === "POST /api/household/reset") {
-      if (body?.confirm !== "reset-demo") fail(400, "Confirm the reset to start a new connection.");
+      if (body?.confirm !== "reset-demo") fail(400, "Confirm the reset first.");
       if (!db.demo && db.users.some((user) => !user.demo)) {
-        fail(409, "A real household already lives here. It stays put.");
+        fail(409, "There’s a real pair on this computer already, so nothing was wiped.");
       }
       db = emptyDb();
       save();
@@ -615,17 +618,17 @@ export function createSlashApp(options = {}) {
     }
 
     if (route === "POST /api/demo/login") {
-      if (!db.demo) fail(404, "The demo household is not loaded.");
+      if (!db.demo) fail(404, "The demo pair isn’t here anymore.");
       const side = body?.who === "leading" ? "leading" : body?.who === "following" ? "following" : "";
-      if (!side) fail(400, "Choose a side of the demo pair.");
+      if (!side) fail(400, "Pick Rowan or Avery.");
       const user = db.users.find((item) => item.slashSide === side && item.demo);
-      if (!user) fail(404, "That demo profile is missing.");
+      if (!user) fail(404, "Can’t find that demo profile.");
       const sessionToken = issueSession(user);
       return { status: 200, body: { token: sessionToken, ...bundle(user) } };
     }
 
     if (route === "POST /api/auth/register") {
-      if (body?.adultConfirmed !== true) fail(400, "Confirm that you are 18 or older.");
+      if (body?.adultConfirmed !== true) fail(400, "SlashConnect is 18 and over. Tick the box to confirm.");
       const user = createUser(body || {});
       try {
         if (body?.inviteCode) acceptInvite(user, body.inviteCode);
@@ -639,7 +642,7 @@ export function createSlashApp(options = {}) {
 
     if (route === "POST /api/auth/login") {
       const user = userByEmail(body?.email);
-      if (!user || !passwordOk(user, body?.password || "")) fail(401, "That email and password did not match.");
+      if (!user || !passwordOk(user, body?.password || "")) fail(401, "That email and password don’t match.");
       const sessionToken = issueSession(user);
       return { status: 200, body: { token: sessionToken, ...bundle(user) } };
     }
@@ -653,7 +656,7 @@ export function createSlashApp(options = {}) {
     if (route === "GET /api/invites/preview") {
       const code = String(parsed.searchParams.get("code") || "").toUpperCase();
       const invite = db.invites.find((item) => item.code === code && item.status === "open");
-      if (!invite) fail(404, "That invite is not open.");
+      if (!invite) fail(404, "That invite isn’t open anymore.");
       const from = userById(invite.fromUserId);
       return {
         status: 200,
@@ -688,7 +691,7 @@ export function createSlashApp(options = {}) {
     if (route === "POST /api/invites/accept") {
       acceptInvite(user, body?.code);
       save();
-      return { status: 200, body: bundle(user, { celebration: { kind: "pair", title: "You are connected", detail: "The household has both of you now." } }) };
+      return { status: 200, body: bundle(user, { celebration: { kind: "pair", title: "You’re paired", detail: "It’s the two of you now." } }) };
     }
 
     if (route === "POST /api/adventure/start") {
@@ -706,7 +709,7 @@ export function createSlashApp(options = {}) {
     const taskMatch = parts[0] === "api" && parts[1] === "tasks" && parts[2];
     if (taskMatch && method.toUpperCase() === "POST" && parts[3]) {
       const taskItem = db.tasks.find((item) => item.id === parts[2]);
-      if (!taskItem) fail(404, "That promise is not in this household.");
+      if (!taskItem) fail(404, "Can’t find that task.");
       let celebration = null;
       if (parts[3] === "complete") celebration = completeTask(user, taskItem, body || {});
       else if (parts[3] === "lock") celebration = lockAdventure(user, taskItem, body || {});
@@ -720,7 +723,7 @@ export function createSlashApp(options = {}) {
 
     if (route === "POST /api/goals") {
       const title = cleanText(body?.title, 80);
-      if (title.length < 2) fail(400, "Name the goal.");
+      if (title.length < 2) fail(400, "Give the goal a name.");
       const target = Math.min(50, Math.max(1, Number(body?.target) || 5));
       db.goals.push({
         id: nid(),
@@ -737,7 +740,7 @@ export function createSlashApp(options = {}) {
 
     if (parts[1] === "goals" && parts[2] && parts[3] === "step" && method.toUpperCase() === "POST") {
       const goal = db.goals.find((item) => item.id === parts[2]);
-      if (!goal) fail(404, "That goal is not here.");
+      if (!goal) fail(404, "Can’t find that goal.");
       goal.progress = Math.min(goal.target, (goal.progress || 0) + 1);
       save();
       return { status: 200, body: bundle(user) };
@@ -745,7 +748,7 @@ export function createSlashApp(options = {}) {
 
     if (route === "POST /api/rewards") {
       const title = cleanText(body?.title, 80);
-      if (title.length < 2) fail(400, "Name the reward.");
+      if (title.length < 2) fail(400, "Give the reward a name.");
       const cost = Math.min(500, Math.max(5, Number(body?.cost) || 20));
       db.rewards.push({
         id: nid(),
@@ -766,7 +769,7 @@ export function createSlashApp(options = {}) {
 
     if (parts[1] === "rewards" && parts[2] && parts[3] && method.toUpperCase() === "POST") {
       const reward = db.rewards.find((item) => item.id === parts[2]);
-      if (!reward) fail(404, "That reward is not here.");
+      if (!reward) fail(404, "Can’t find that reward.");
       let celebration = null;
       if (parts[3] === "agree") agreeReward(user, reward);
       else if (parts[3] === "request") requestReward(user, reward);
@@ -787,7 +790,7 @@ export function createSlashApp(options = {}) {
 
     if (route === "POST /api/checkins") {
       const note = cleanText(body?.note, 400);
-      if (note.length < 1) fail(400, "Write a short note.");
+      if (note.length < 1) fail(400, "Write something first.");
       const kind = body?.kind === "grounding" ? "grounding" : "hello";
       db.checkins.push({
         id: nid(),
@@ -804,7 +807,7 @@ export function createSlashApp(options = {}) {
 
     if (parts[1] === "checkins" && parts[2] && parts[3] === "see" && method.toUpperCase() === "POST") {
       const note = db.checkins.find((item) => item.id === parts[2]);
-      if (!note) fail(404, "That note is gone.");
+      if (!note) fail(404, "That note’s gone.");
       if (!note.seenBy.includes(user.id)) note.seenBy.push(user.id);
       save();
       return { status: 200, body: bundle(user) };
@@ -822,7 +825,7 @@ export function createSlashApp(options = {}) {
   function applyProfile(user, body) {
     if (body.pronouns) {
       const pronouns = pronounsFrom(body.pronouns);
-      if (!pronouns) fail(400, "Add a subject, object, and possessive pronoun.");
+      if (!pronouns) fail(400, "Fill in all three pronouns.");
       user.pronouns = pronouns;
     }
     if (typeof body.gender === "string") user.gender = cleanText(body.gender, 60);
@@ -834,7 +837,7 @@ export function createSlashApp(options = {}) {
       const partner = partnerOf(user);
       if (partner && partner.slashSide === body.slashSide) {
         const sideName = body.slashSide === "leading" ? "leading" : "following";
-        fail(409, `Your partner is already on the ${sideName} side. This connection keeps one of each.`);
+        fail(409, `Your partner already has the ${sideName} side. You need one of each.`);
       }
       user.slashSide = body.slashSide;
     }
@@ -854,15 +857,15 @@ export function createSlashApp(options = {}) {
     if (["new", "some", "experienced", ""].includes(body.experienceLevel)) user.experienceLevel = body.experienceLevel;
     const ready = user.pronouns && user.slashSide && user.roleTitle && user.goals.length > 0 && user.guideId;
     if (body.onboardingComplete === true) {
-      if (!ready) fail(400, "Finish pronouns, side, role, a goal, and a guide first.");
+      if (!ready) fail(400, "Almost. You still need pronouns, a side, a title, a goal, and a stuffie.");
       user.onboardingComplete = true;
     }
   }
 
   function openInvite(user, body) {
-    if (!user.onboardingComplete) fail(400, "Finish your setup before sending an invite.");
-    if (db.pair && db.pair.members.length >= 2) fail(409, "Your partner is already connected.");
-    if (db.users.length >= 2) fail(409, "This household already has two accounts.");
+    if (!user.onboardingComplete) fail(400, "Finish setting up before you send an invite.");
+    if (db.pair && db.pair.members.length >= 2) fail(409, "You two are already paired.");
+    if (db.users.length >= 2) fail(409, "Both spots are taken. SlashConnect is for two.");
     const channel = body.channel === "text" || body.channel === "email" ? body.channel : "link";
     const contact = cleanText(body.contact, 80);
     let invite = db.invites.find((item) => item.fromUserId === user.id && item.status === "open");
@@ -887,13 +890,13 @@ export function createSlashApp(options = {}) {
   function acceptInvite(user, rawCode) {
     const code = cleanText(rawCode, 12).toUpperCase();
     const invite = db.invites.find((item) => item.code === code && item.status === "open");
-    if (!invite) fail(404, "That invite code is not open.");
-    if (invite.fromUserId === user.id) fail(400, "That invite is yours. Your partner uses it.");
-    if (db.pair) fail(409, "This connection already has two people.");
+    if (!invite) fail(404, "That code isn’t open. Check it with your partner.");
+    if (invite.fromUserId === user.id) fail(400, "That’s your own code. It’s for your partner.");
+    if (db.pair) fail(409, "Both spots are taken. SlashConnect is for two.");
     const host = userById(invite.fromUserId);
-    if (!host) fail(404, "The person who sent that invite is not here.");
+    if (!host) fail(404, "Whoever sent that invite isn’t here anymore.");
     if (user.slashSide && host.slashSide && user.slashSide === host.slashSide) {
-      fail(409, "You both chose the same side of the slash. Change yours in setup, then use the code again. A pair needs one leading and one following partner.");
+      fail(409, "You both picked the same side of the slash. One of you leads and one follows, so change yours in setup and try the code again.");
     }
     if (!user.slashSide && host.slashSide) {
       user.slashSide = host.slashSide === "leading" ? "following" : "leading";
@@ -915,11 +918,11 @@ export function createSlashApp(options = {}) {
   }
 
   function startAdventure(user, body) {
-    if (user.slashSide !== "following") fail(403, "The following partner opens today's adventure.");
+    if (user.slashSide !== "following") fail(403, "Today’s adventure is for the following partner to start.");
     const day = clientDay(body.clientDate);
-    if (openAdventure(user.id)) fail(409, "Today's adventure is already waiting.");
+    if (openAdventure(user.id)) fail(409, "There’s already an adventure waiting.");
     const already = db.tasks.find((item) => item.templateId === "daily-adventure" && item.assignedTo === user.id && item.status === "done" && item.adventure?.day === day);
-    if (already) fail(409, "Today's adventure is already locked in.");
+    if (already) fail(409, "You already locked in today’s adventure. Nice try.");
     const leader = db.users.find((item) => item.slashSide === "leading");
     const template = templateById("daily-adventure");
     const created = {
@@ -928,7 +931,7 @@ export function createSlashApp(options = {}) {
       category: template.category,
       title: template.title,
       summary: template.summary,
-      note: "Pick the categories that fit today. The tasks stay hidden until you lock them in.",
+      note: "Pick what fits today. No peeking.",
       prompt: "",
       points: template.points,
       bonuses: [],
@@ -948,15 +951,15 @@ export function createSlashApp(options = {}) {
   }
 
   function lockAdventure(user, taskItem, body) {
-    if (taskItem.templateId !== "daily-adventure") fail(404, "That is not today's adventure.");
-    if (taskItem.assignedTo !== user.id) fail(403, "Your partner chooses the categories.");
-    if (taskItem.status !== "open" || taskItem.adventure?.stage === "locked") fail(409, "Those tasks are already locked in.");
+    if (taskItem.templateId !== "daily-adventure") fail(404, "That’s not an adventure.");
+    if (taskItem.assignedTo !== user.id) fail(403, "Hands off. Your partner picks the categories.");
+    if (taskItem.status !== "open" || taskItem.adventure?.stage === "locked") fail(409, "Already locked in. No take-backs.");
     const allowed = new Set(ADVENTURE_SEALS.map((seal) => seal.id));
     const categories = [...new Set((Array.isArray(body.categories) ? body.categories : []).filter((id) => allowed.has(id)))];
-    if (categories.length < 1 || categories.length > 3) fail(400, "Choose one, two, or three categories.");
+    if (categories.length < 1 || categories.length > 3) fail(400, "Pick one, two, or three categories.");
     const avoid = db.tasks.filter((item) => item.assignedTo === user.id && item.status === "open").map((item) => item.templateId);
     const drawn = drawAdventureTasks(categories, { avoidIds: avoid });
-    if (!drawn || drawn.length !== categories.length) fail(409, "Those categories have nothing left to draw.");
+    if (!drawn || drawn.length !== categories.length) fail(409, "Nothing left to draw from those categories.");
     const day = clientDay(body.clientDate);
     const locked = drawn.map((template) => {
       const prompt = template.promptPool === "journal" ? JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)] : "";
@@ -966,7 +969,7 @@ export function createSlashApp(options = {}) {
         category: template.category,
         title: template.title,
         summary: template.summary,
-        note: "Locked in from today's adventure.",
+        note: "From today’s adventure. You picked the category, so it’s yours.",
         prompt,
         points: template.points,
         bonuses: template.bonuses,
@@ -984,7 +987,7 @@ export function createSlashApp(options = {}) {
       db.tasks.push(created);
       return { taskId: created.id, templateId: template.id, title: template.title, category: template.category };
     });
-    const titles = locked.map((item) => item.title).join(", ");
+    const titles = locked.map((item) => item.title).join(" + ");
     taskItem.adventure = { stage: "locked", day, categories, locked };
     taskItem.status = "done";
     taskItem.completedAt = nowIso();
@@ -999,19 +1002,19 @@ export function createSlashApp(options = {}) {
     return {
       kind: after.name !== before.name ? "level" : "task",
       title: "Locked in",
-      detail: titles,
+      detail: after.name !== before.name ? `${titles}. That also got you to ${after.name}!` : titles,
       points: taskItem.points || 0,
     };
   }
 
   function assignTask(user, body) {
-    if (user.slashSide !== "leading") fail(403, "The leading partner assigns promises.");
+    if (user.slashSide !== "leading") fail(403, "Only the leading partner hands out tasks.");
     const follower = followingUser();
-    if (!follower || follower.id === user.id) fail(400, "Connect with your partner before assigning.");
+    if (!follower || follower.id === user.id) fail(400, "Pair up with your partner first.");
     const template = templateById(body.templateId);
-    if (!template) fail(400, "Choose a task type.");
+    if (!template) fail(400, "Pick a task first.");
     if (template.id === "daily-adventure" && openAdventure(follower.id)) {
-      fail(409, "Today's adventure is already waiting.");
+      fail(409, "There’s already an adventure waiting.");
     }
     const title = cleanText(body.title, 80) || template.title;
     const note = cleanText(body.note, 400);
@@ -1049,12 +1052,12 @@ export function createSlashApp(options = {}) {
   }
 
   function completeTask(user, taskItem, body) {
-    if (taskItem.assignedTo !== user.id) fail(403, "This promise belongs to your partner to complete.");
-    if (taskItem.status !== "open") fail(409, "This promise is already closed.");
+    if (taskItem.assignedTo !== user.id) fail(403, "That one’s your partner’s to do.");
+    if (taskItem.status !== "open") fail(409, "That task’s already closed.");
     const template = templateById(taskItem.templateId);
-    if (template?.id === "daily-adventure") fail(400, "Choose your categories. The tasks lock in when you do.");
+    if (template?.id === "daily-adventure") fail(400, "Pick your categories first. That’s what locks in the tasks.");
     if (template?.consent && body.consent !== true) {
-      fail(400, "Confirm that you want to share this with your partner, or skip it.");
+      fail(400, "Tick the box to say you want to send this, or pass on it.");
     }
     const note = cleanText(body.note, 4000);
     const choice = cleanText(body.choice, 40);
@@ -1066,16 +1069,16 @@ export function createSlashApp(options = {}) {
       fail(400, `Pick ${template.checklistCount} things you actually did.`);
     }
     if (template?.completion === "choices" && !template.choices.includes(choice)) {
-      fail(400, "Choose where you did this.");
+      fail(400, "Where’d you do it? Pick one.");
     }
     if ((template?.photoMin || 0) > photos.length) {
-      fail(400, `Add ${template.photoMin} photo${template.photoMin === 1 ? "" : "s"} to finish this.`);
+      fail(400, `This one needs ${template.photoMin} photo${template.photoMin === 1 ? "" : "s"}.`);
     }
     if (template?.completion === "photos" && photos.length === 0 && note.length < 2) {
-      fail(400, "Add a photo or a short note.");
+      fail(400, "Add a photo or a quick note.");
     }
     if ((template?.completion === "note" || template?.completion === "timer") && note.length < 2) {
-      fail(400, "Leave a short note about how it went.");
+      fail(400, "Say a little about how it went.");
     }
     const written = note || (template?.completion === "breath" ? "Paused and grounded." : "");
     const earned =
@@ -1098,9 +1101,9 @@ export function createSlashApp(options = {}) {
     if (template) bumpGoals(template);
     const celebration = {
       kind: after.name !== before.name ? "level" : streak.milestone ? "streak" : "task",
-      title: after.name !== before.name ? after.name : streak.milestone ? `${streak.streak} day streak` : "Promise kept",
+      title: after.name !== before.name ? after.name : streak.milestone ? `${streak.streak} days in a row` : "Task done",
       detail: after.name !== before.name
-        ? `${user.displayName.split(" ")[0]} reached ${after.name}.`
+        ? `${user.displayName.split(" ")[0]} made it to ${after.name}.`
         : `+${earned} points`,
       points: earned,
     };
@@ -1109,61 +1112,61 @@ export function createSlashApp(options = {}) {
 
   function skipTask(user, taskItem, body) {
     if (taskItem.assignedTo !== user.id && taskItem.assignedBy !== user.id) fail(403, "Only the two of you can close this.");
-    if (taskItem.status !== "open") fail(409, "This promise is already closed.");
+    if (taskItem.status !== "open") fail(409, "That task’s already closed.");
     taskItem.status = "skipped";
     taskItem.completedAt = nowIso();
-    taskItem.completion = { note: cleanText(body?.reason, 240) || "Skipped.", bonuses: [], photos: [], checklist: [], choice: "" };
+    taskItem.completion = { note: cleanText(body?.reason, 240) || "Passed on this one.", bonuses: [], photos: [], checklist: [], choice: "" };
   }
 
   function acknowledgeTask(user, taskItem) {
-    if (user.slashSide !== "leading") fail(403, "The leading partner acknowledges a finished promise.");
-    if (taskItem.status !== "done") fail(409, "It is not finished yet.");
+    if (user.slashSide !== "leading") fail(403, "The well done comes from the leading partner.");
+    if (taskItem.status !== "done") fail(409, "It isn’t done yet.");
     if (taskItem.acknowledgedAt) return;
     taskItem.acknowledgedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 6;
   }
 
   function removeTask(user, taskItem) {
-    if (taskItem.assignedBy !== user.id || user.slashSide !== "leading") fail(403, "Only the person who assigned an open promise can take it back.");
-    if (taskItem.status !== "open") fail(409, "Finished promises stay in the record.");
+    if (taskItem.assignedBy !== user.id || user.slashSide !== "leading") fail(403, "Only whoever gave the task can take it back.");
+    if (taskItem.status !== "open") fail(409, "Finished tasks stay on the record.");
     db.tasks = db.tasks.filter((item) => item.id !== taskItem.id);
   }
 
   function agreeReward(user, reward) {
-    if (reward.status === "granted") fail(409, "That reward was already granted.");
+    if (reward.status === "granted") fail(409, "That one’s already been granted.");
     if (!reward.agreedBy.includes(user.id)) reward.agreedBy.push(user.id);
     const both = db.pair && db.pair.members.every((id) => reward.agreedBy.includes(id));
     if (both && (reward.status === "proposed" || reward.status === "agreed")) reward.status = "agreed";
   }
 
   function requestReward(user, reward) {
-    if (user.slashSide !== "following") fail(403, "The following partner asks to spend points.");
-    if (reward.status !== "agreed" && reward.status !== "requested") fail(409, "Both of you agree on a reward before it can be requested.");
+    if (user.slashSide !== "following") fail(403, "Cashing in is for the following partner.");
+    if (reward.status !== "agreed" && reward.status !== "requested") fail(409, "You both need to say yes before it can be cashed in.");
     if ((user.points || 0) < reward.cost) fail(409, "Not enough points yet.");
     reward.status = "requested";
     reward.requestedBy = user.id;
   }
 
   function grantReward(user, reward) {
-    if (user.slashSide !== "leading") fail(403, "The leading partner grants a reward you both agreed on.");
+    if (user.slashSide !== "leading") fail(403, "Granting is for the leading partner.");
     if (reward.status !== "requested") {
-      fail(409, "Your partner asks for the reward after you both agree.");
+      fail(409, "Your partner has to cash it in first.");
     }
     const follower = followingUser();
-    if (!follower) fail(409, "Connect both sides before granting a reward.");
+    if (!follower) fail(409, "Pair up before granting rewards.");
     if ((follower.points || 0) < reward.cost) fail(409, "Not enough points yet.");
-    if (reward.agreedBy.length < 2 && db.pair) fail(409, "You both need to agree before this is granted.");
+    if (reward.agreedBy.length < 2 && db.pair) fail(409, "You both need to say yes first.");
     follower.points -= reward.cost;
     reward.status = "granted";
     reward.grantedBy = user.id;
     reward.grantedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 8;
-    return { kind: "reward", title: reward.title, detail: `${reward.cost} points spent.`, points: reward.cost };
+    return { kind: "reward", title: reward.title, detail: `${reward.cost} points well spent.`, points: reward.cost };
   }
 
   function withdrawReward(user, reward) {
-    if (reward.proposedBy !== user.id) fail(403, "The person who suggested this can withdraw it.");
-    if (reward.status !== "proposed") fail(409, "Agreed rewards stay until they are granted.");
+    if (reward.proposedBy !== user.id) fail(403, "Only whoever suggested it can take it back.");
+    if (reward.status !== "proposed") fail(409, "You’ve both said yes to that one, so it stays.");
     db.rewards = db.rewards.filter((item) => item.id !== reward.id);
   }
 
@@ -1181,7 +1184,7 @@ export function createSlashApp(options = {}) {
     for (const item of value.slice(0, 3)) {
       if (typeof item !== "string") continue;
       if (!item.startsWith("data:image/jpeg") && !item.startsWith("data:image/png")) continue;
-      if (item.length > 700_000) fail(400, "That photo is too large. Try a smaller one.");
+      if (item.length > 700_000) fail(400, "That photo’s too big. Try a smaller one.");
       photos.push(item);
     }
     return photos;

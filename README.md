@@ -1,6 +1,6 @@
 # SlashConnect
 
-SlashConnect is a private app for two adults in a long-distance power-exchange dynamic. One household holds exactly two accounts. The leading partner assigns promises. The following partner keeps them, earns points, and builds a streak. Rewards exist only after both people agree. Today's adventure lets the following partner pick one to three categories for their headspace. The tasks stay hidden until that choice is locked in, and then those tasks stay.
+SlashConnect is a private app for two adults in a long-distance power-exchange dynamic. One household holds exactly two accounts. The leading partner hands out tasks. The following partner does them, earns points, and builds a streak. Rewards exist only after both people agree. Today's adventure lets the following partner pick one to three categories for their headspace. The tasks stay hidden until that choice is locked in, and then those tasks stay.
 
 Roles such as Little, Middle, Babygirl, and Babyboy are adult identities. The app asks each person to confirm they are 18 or older.
 
@@ -29,7 +29,7 @@ The first launch seeds a demo pair:
 | Rowan Hale | Leading · Domme · she/her | `rowan@demo.slashconnect` | `together` |
 | Avery Quinn | Following · Little · they/them | `avery@demo.slashconnect` | `together` |
 
-The welcome screen can enter either profile after the 18+ confirmation. Profile can switch between them. “Start your own connection” clears the demo household so two people can register.
+The welcome screen can enter either profile after the 18+ confirmation. Profile can switch between them. “Start your own dynamic” clears the demo household so two people can sign up.
 
 ## Invite
 

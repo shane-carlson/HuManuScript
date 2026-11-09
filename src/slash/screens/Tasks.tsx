@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { clientDate, experienceLabel, prettyDate, supplyHint } from "../format.ts";
+import { clientDate, experienceLabel, firstName, prettyDate, supplyHint } from "../format.ts";
 import { compressImage } from "../photos.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
@@ -15,10 +15,10 @@ export function Tasks() {
     <Shell nav>
       <div className="pad">
         <PageHead
-          kicker={bundle.me.slashSide === "leading" ? "You assign" : "Yours to keep"}
-          title="Promises"
+          kicker={bundle.me.slashSide === "leading" ? "Yours to hand out" : "Yours to do"}
+          title="Tasks"
           action={bundle.me.slashSide === "leading" ? (
-            <button className="primary tiny" type="button" onClick={() => go("/assign")}>Assign</button>
+            <button className="primary tiny" type="button" onClick={() => go("/assign")}>Give a task</button>
           ) : null}
         />
         <div className="chips">
@@ -30,10 +30,10 @@ export function Tasks() {
           ))}
         </div>
         <div className="stack">
-          {tasks.length === 0 ? <p className="muted">No promises in this list yet.</p> : null}
+          {tasks.length === 0 ? <p className="muted">Nothing here yet.</p> : null}
           {tasks.map((task) => (
             <button key={task.id} className="task" type="button" onClick={() => go(`/tasks/${task.id}`)}>
-              <span className={`pill ${task.category}`}>{task.status === "open" ? task.category : task.status}</span>
+              <span className={`pill ${task.category}`}>{task.status === "open" ? task.category : task.status === "skipped" ? "passed" : "done"}</span>
               <strong>{task.title}</strong>
               <em>{task.points} pts{task.dueDate ? ` · due ${prettyDate(task.dueDate)}` : ""}</em>
             </button>
@@ -60,8 +60,8 @@ export function Assign() {
     return (
       <Shell nav>
         <div className="pad">
-          <PageHead title="Assigning" kicker="Leading side" />
-          <p>Your partner assigns promises. You keep them, and you can still suggest rewards.</p>
+          <PageHead title="Handing out tasks" kicker="Not your side of the slash" />
+          <p>Your partner hands out the tasks around here. You do them, and you can still suggest rewards.</p>
           <button className="primary" type="button" onClick={() => go("/tasks")}>Back to tasks</button>
         </div>
       </Shell>
@@ -91,10 +91,11 @@ export function Assign() {
   }
 
   const templates = bundle.meta.templates.filter((item) => item.category === category);
+  const theirs = bundle.partner ? firstName(bundle.partner.displayName) : "Your partner";
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title="Assign a promise" kicker={bundle.partner ? `For ${bundle.partner.displayName}` : "Connect first"} />
+        <PageHead title="Give a task" kicker={bundle.partner ? `For ${theirs}` : "Pair up first"} />
         <div className="chips">
           {bundle.meta.categories.map((item) => (
             <Chip key={item.id} pressed={category === item.id} onClick={() => { setCategory(item.id); setPicked(""); }}>
@@ -102,8 +103,8 @@ export function Assign() {
             </Chip>
           ))}
         </div>
-        {category === "spicy" ? <p className="fine">Adult tasks. Either of you can skip one. Nothing here is owed.</p> : null}
-        {category === "adventure" ? <p className="fine">Your partner picks the categories. The tasks stay hidden until they lock that choice in.</p> : null}
+        {category === "spicy" ? <p className="fine">Spicy tasks are always optional. {theirs} can pass on any of them, no explanation needed.</p> : null}
+        {category === "adventure" ? <p className="fine">{theirs} picks the categories blind. Neither of you sees the tasks until they’re locked in.</p> : null}
         <div className="stack">
           {templates.map((item) => (
             <button
@@ -126,24 +127,24 @@ export function Assign() {
             <Field label="Title">
               <input value={title} onChange={(event) => setTitle(event.target.value)} />
             </Field>
-            <Field label="Note for them">
+            <Field label="A note from you">
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
             </Field>
-            <Field label="Due date, optional">
+            <Field label="Due (optional)">
               <input type="date" value={due} onChange={(event) => setDue(event.target.value)} />
             </Field>
             {template.promptPool ? (
-              <Field label="Journal prompt">
+              <Field label="What should they write about?">
                 <select value={prompt} onChange={(event) => setPrompt(event.target.value)}>
                   {bundle.meta.journalPrompts.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </Field>
             ) : null}
             {template.id === "anal-training" && bundle.partner ? (
-              <p className="fine">Notes will match {bundle.partner.displayName}’s experience: {experienceLabel(bundle.partner.experienceLevel)}.</p>
+              <p className="fine">The suggestions will match {theirs}’s experience level: {experienceLabel(bundle.partner.experienceLevel)}.</p>
             ) : null}
             <button className="primary" type="submit" disabled={pending || !bundle.partner}>
-              {bundle.partner ? "Send this promise" : "Connect before assigning"}
+              {bundle.partner ? `Send it to ${theirs}` : "Pair up first"}
             </button>
           </form>
         ) : null}
@@ -160,7 +161,7 @@ export function TaskDetail({ id }: { id: string }) {
     return (
       <Shell nav>
         <div className="pad">
-          <p>That promise is not in this household.</p>
+          <p>Can’t find that task.</p>
           <button className="primary" type="button" onClick={() => go("/tasks")}>All tasks</button>
         </div>
       </Shell>
@@ -168,13 +169,14 @@ export function TaskDetail({ id }: { id: string }) {
   }
   const mine = task.assignedTo === bundle.me.id;
   const leading = bundle.me.slashSide === "leading";
+  const theirs = bundle.partner ? firstName(bundle.partner.displayName) : "your partner";
   return (
     <Shell nav>
       <div className="pad">
         <button className="texty" type="button" onClick={() => go("/tasks")}>All tasks</button>
         <p className="eyebrow">{task.category} · {task.points} pts</p>
         <h1>{task.title}</h1>
-        {task.adventure?.stage === "locked" ? <p>These are the tasks for the categories you chose. They stay.</p> : <p>{task.summary}</p>}
+        {task.adventure?.stage === "locked" ? <p>{mine ? "Here’s what you got. No take-backs." : `Here’s what ${theirs} got.`}</p> : <p>{task.summary}</p>}
         {task.note && task.completionKind !== "adventure" ? <p className="card slim">{task.note}</p> : null}
         {task.prompt ? <p className="prompt">“{task.prompt}”</p> : null}
         {task.supplyNote ? <p className="fine">{task.supplyNote}</p> : null}
@@ -184,30 +186,30 @@ export function TaskDetail({ id }: { id: string }) {
           </ul>
         ) : null}
         {task.dueDate ? <p className={task.dueDate < clientDate() && task.status === "open" ? "overdue" : "fine"}>Due {prettyDate(task.dueDate)}</p> : null}
-        {task.completionKind === "adventure" ? <AdventureLock task={task} mine={mine} /> : null}
+        {task.completionKind === "adventure" ? <AdventureLock task={task} mine={mine} theirs={theirs} /> : null}
         {task.status === "open" && mine && task.completionKind !== "adventure" ? <CompleteForm task={task} /> : null}
         {task.status !== "open" && task.completion && task.completionKind !== "adventure" ? <Completion task={task} /> : null}
         {task.status === "done" && leading && !task.acknowledgedAt ? (
           <button className="primary" type="button" onClick={() => void request(`/api/tasks/${task.id}/acknowledge`, { method: "POST" }).catch(() => undefined)}>
-            I noticed this
+            Tell {theirs} well done
           </button>
         ) : null}
-        {task.acknowledgedAt ? <p className="fine">Noticed.</p> : null}
+        {task.acknowledgedAt ? <p className="fine">{leading ? "You said well done." : `${theirs} said well done.`}</p> : null}
         {task.status === "open" && leading ? (
           <button className="texty" type="button" onClick={() => void request(`/api/tasks/${task.id}/remove`, { method: "POST" }).then(() => go("/tasks")).catch(() => undefined)}>
-            Take this back
+            Take it back
           </button>
         ) : null}
         {task.status === "open" && mine ? <Skip taskId={task.id} /> : null}
         {task.completionKind === "breath" ? (
-          <button className="ghost" type="button" onClick={() => go("/ground")}>Open the breathing guide</button>
+          <button className="ghost" type="button" onClick={() => go("/ground")}>Go to grounding</button>
         ) : null}
       </div>
     </Shell>
   );
 }
 
-function AdventureLock({ task, mine }: { task: Task; mine: boolean }) {
+function AdventureLock({ task, mine, theirs }: { task: Task; mine: boolean; theirs: string }) {
   const { data, request } = useSession();
   const seals = data?.meta.seals || [];
   const [picked, setPicked] = useState<string[]>([]);
@@ -242,12 +244,12 @@ function AdventureLock({ task, mine }: { task: Task; mine: boolean }) {
   }
 
   if (!mine) {
-    return <p className="card slim">Still sealed. The tasks appear when the categories are locked in.</p>;
+    return <p className="card slim">Still sealed. {theirs} picks the categories, then you both find out.</p>;
   }
 
   return (
     <section className="stack">
-      <p className="lead">What do you have room for? Choose one to three categories. You will not see the tasks until you lock them in.</p>
+      <p className="lead">So, what are you in the mood for?</p>
       <div className="seal-grid">
         {seals.map((seal) => {
           const on = picked.includes(seal.id);
@@ -265,14 +267,14 @@ function AdventureLock({ task, mine }: { task: Task; mine: boolean }) {
             >
               <span className="eyebrow">{seal.headspace}</span>
               <strong>{seal.label}</strong>
-              <em>{on ? "Selected" : "Sealed"}</em>
+              <em>{on ? "Picked" : "No peeking"}</em>
               <span>{seal.tease}</span>
             </button>
           );
         })}
       </div>
       <button className="primary" type="button" disabled={pending || picked.length < 1} onClick={() => void lock()}>
-        {pending ? "Locking…" : "Lock these in"}
+        {pending ? "Locking…" : "Lock it in"}
       </button>
     </section>
   );
@@ -282,13 +284,13 @@ function Completion({ task }: { task: Task }) {
   const done = task.completion!;
   return (
     <section className="card">
-      <p className="eyebrow">{task.status === "skipped" ? "Skipped" : "Kept"}</p>
+      <p className="eyebrow">{task.status === "skipped" ? "Passed on" : "Done"}</p>
       {done.choice ? <p>{done.choice}</p> : null}
       {done.checklist.length ? <p>{done.checklist.join(" · ")}</p> : null}
       {done.note ? <p>{done.note}</p> : null}
       {done.photos.length ? (
         <div className="photos">
-          {done.photos.map((src, index) => <img key={`${task.id}-${index}`} src={src} alt="Shared in this household" />)}
+          {done.photos.map((src, index) => <img key={`${task.id}-${index}`} src={src} alt="Shared between the two of you" />)}
         </div>
       ) : null}
     </section>
@@ -336,7 +338,7 @@ function CompleteForm({ task }: { task: Task }) {
       const dataUrl = await compressImage(file);
       setPhotos((current) => [...current, dataUrl].slice(0, task.photoMax || 3));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "That photo could not be added.");
+      setError(caught instanceof Error ? caught.message : "Couldn’t add that photo.");
     }
   }
 
@@ -369,7 +371,7 @@ function CompleteForm({ task }: { task: Task }) {
         <div className="card center">
           <strong className="timer">{left}s</strong>
           <button className="ghost" type="button" onClick={startTimer} disabled={running || left === 0}>
-            {left === 0 ? "Minute done" : "Start the minute"}
+            {left === 0 ? "Time’s up" : "Start the clock"}
           </button>
         </div>
       ) : null}
@@ -382,7 +384,7 @@ function CompleteForm({ task }: { task: Task }) {
       ) : null}
       {task.completionKind === "checklist" ? (
         <div className="stack">
-          <p className="fine">Choose {task.checklistCount} you can actually do.</p>
+          <p className="fine">Pick the {task.checklistCount} you did.</p>
           <div className="chips">
             {task.checklistIdeas.map((item) => (
               <Chip
@@ -412,7 +414,7 @@ function CompleteForm({ task }: { task: Task }) {
       ) : null}
       {photos.length ? (
         <div className="photos">
-          {photos.map((src, index) => <img key={index} src={src} alt="Ready to share" />)}
+          {photos.map((src, index) => <img key={index} src={src} alt="Ready to send" />)}
         </div>
       ) : null}
       {task.bonuses.map((bonus) => (
@@ -426,18 +428,18 @@ function CompleteForm({ task }: { task: Task }) {
         </label>
       ))}
       {task.completionKind === "note" || task.completionKind === "timer" || task.completionKind === "breath" || task.completionKind === "photos" ? (
-        <Field label={task.prompt ? "What you want them to read" : "How it went"}>
+        <Field label={task.prompt ? "What you want them to read" : "How’d it go?"}>
           <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} />
         </Field>
       ) : null}
       {task.consent ? (
         <label className="adult">
           <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-          <span>I want to share this with my partner. I can skip it instead.</span>
+          <span>Yes, I want to send this. (You can always pass instead.)</span>
         </label>
       ) : null}
       <button className="primary" type="submit" disabled={pending || timerBlocked}>
-        {pending ? "Saving…" : "Mark it kept"}
+        {pending ? "Sending…" : "All done"}
       </button>
     </form>
   );
@@ -448,17 +450,17 @@ function Skip({ taskId }: { taskId: string }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   if (!open) {
-    return <button className="texty" type="button" onClick={() => setOpen(true)}>Skip this</button>;
+    return <button className="texty" type="button" onClick={() => setOpen(true)}>Not today</button>;
   }
   return (
     <form className="stack" onSubmit={(event) => {
       event.preventDefault();
       void request(`/api/tasks/${taskId}/skip`, { method: "POST", body: { reason } });
     }}>
-      <Field label="A short reason, optional">
+      <Field label="Want to say why? You don’t have to.">
         <input value={reason} onChange={(event) => setReason(event.target.value)} />
       </Field>
-      <button className="ghost" type="submit">Skip it</button>
+      <button className="ghost" type="submit">Pass on this one</button>
     </form>
   );
 }

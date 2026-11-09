@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { coachingFor, levelFor } from "./catalog.mjs";
+import { coachingFor, guideSpeech, levelFor } from "./catalog.mjs";
 import { createSlashApp } from "./slashconnect.mjs";
 
 function tempApp(seedDemo) {
@@ -39,6 +39,40 @@ test("anal coaching follows experience and stays short", () => {
   assert.ok(fresh.length >= 3);
   assert.notDeepEqual(fresh, practiced);
   assert.equal(coachingFor("journal", "new").length, 0);
+});
+
+test("a stuffie talks to each side of the slash and never counts a streak of zero", () => {
+  const ctx = { name: "Avery", partner: "Rowan", streak: 4, points: 65, tick: 0 };
+  const following = guideSpeech("lumen", "home", { ...ctx, side: "following" });
+  const leading = guideSpeech("lumen", "home", { ...ctx, name: "Rowan", partner: "Avery", side: "leading" });
+  assert.notEqual(following.text, leading.text);
+  assert.match(leading.text, /Avery/);
+  assert.match(guideSpeech("sol", "streak", { ...ctx, side: "following" }).text, /4/);
+  for (const id of ["lumen", "pip", "moss", "sol"]) {
+    const none = guideSpeech(id, "streak", { ...ctx, streak: 0, side: "following" }).text;
+    assert.match(none, /No streak yet/);
+    assert.doesNotMatch(none, /\d/);
+    for (const event of ["home", "done", "streak", "ground", "nudge", "assign"]) {
+      for (const side of ["leading", "following"]) {
+        for (const tick of [0, 1, 2]) {
+          const line = guideSpeech(id, event, { ...ctx, partner: "your partner", side, tick }).text;
+          assert.doesNotMatch(line, /[{}]/);
+          assert.match(line, /^[A-Z0-9]/);
+        }
+      }
+    }
+  }
+  assert.equal(guideSpeech("nobody", "home", ctx).guideId, "lumen");
+});
+
+test("the stash note is worded for whoever is reading it", async () => {
+  const app = tempApp(true);
+  const avery = await call(app, "POST", "/api/demo/login", { body: { who: "following" } });
+  const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });
+  const mine = avery.body.tasks.find((task) => task.id === "task-shower");
+  const theirs = rowan.body.tasks.find((task) => task.id === "task-shower");
+  assert.match(mine.supplyNote, /^From your stash/);
+  assert.match(theirs.supplyNote, /^In their stash/);
 });
 
 test("demo pair can be entered from either side and keeps pronouns", async () => {

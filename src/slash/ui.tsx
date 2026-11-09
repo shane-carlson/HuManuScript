@@ -31,11 +31,11 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
             <div className="celebrate" role="dialog" aria-label={celebration.title}>
               <Confetti />
               <GuideFace id={data.me.guideId || "lumen"} />
-              <p className="eyebrow">{celebration.kind === "level" ? "New level" : "That counts"}</p>
+              <p className="eyebrow">{cheer(celebration.kind)}</p>
               <h2>{celebration.title}</h2>
               <p>{celebration.detail}</p>
               <button className="primary" type="button" onClick={clearCelebration}>
-                Keep going
+                Carry on
               </button>
             </div>
           ) : null}
@@ -43,6 +43,14 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
       </div>
     </div>
   );
+}
+
+function cheer(kind: string) {
+  if (kind === "level") return "Level up";
+  if (kind === "streak") return "Look at that streak";
+  if (kind === "reward") return "Granted";
+  if (kind === "pair") return "Hello, you two";
+  return "Well done";
 }
 
 function TabBar() {

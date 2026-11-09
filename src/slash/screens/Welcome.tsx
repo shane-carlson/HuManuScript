@@ -35,7 +35,7 @@ export function Welcome() {
       .then((body: { fromName?: string; roleTitle?: string; pronouns?: string; error?: string }) => {
         if (cancel || body.error || !body.fromName) return;
         const bits = [body.roleTitle, body.pronouns].filter(Boolean).join(" · ");
-        setPreview(`${body.fromName}${bits ? ` · ${bits}` : ""} invited you.`);
+        setPreview(`${body.fromName}${bits ? ` · ${bits}` : ""} is waiting for you.`);
       })
       .catch(() => undefined);
     return () => {
@@ -45,7 +45,7 @@ export function Welcome() {
 
   async function enterDemo(who: "leading" | "following") {
     if (!adult) {
-      setError("Confirm that you are 18 or older.");
+      setError("Tick the 18 or older box first.");
       return;
     }
     setPending(true);
@@ -62,7 +62,7 @@ export function Welcome() {
   async function register(event: React.FormEvent) {
     event.preventDefault();
     if (!adult) {
-      setError("Confirm that you are 18 or older.");
+      setError("Tick the 18 or older box first.");
       return;
     }
     setPending(true);
@@ -89,7 +89,7 @@ export function Welcome() {
   async function login(event: React.FormEvent) {
     event.preventDefault();
     if (!adult) {
-      setError("Confirm that you are 18 or older.");
+      setError("Tick the 18 or older box first.");
       return;
     }
     setPending(true);
@@ -131,25 +131,25 @@ export function Welcome() {
     <Shell>
       <div className="welcome">
         <Mark className="mark hero-mark" />
-        <p className="eyebrow">For two adults</p>
+        <p className="eyebrow">Just the two of you</p>
         <h1>SlashConnect</h1>
-        <p className="lead">A private place to keep promises, notice each other, and let a long-distance dynamic feel tended.</p>
+        <p className="lead">A private little corner for your dynamic. Tasks, praise, rewards, and check-ins for when you’re miles apart.</p>
         {preview ? <p className="invite-banner">{preview}</p> : null}
         <label className="adult">
           <input type="checkbox" checked={adult} onChange={(event) => setAdult(event.target.checked)} />
-          <span>I confirm I am 18 or older. Role names in this app, including Little, are adult identities.</span>
+          <span>I’m 18 or older. Everyone here is an adult, and role names like Little are adult roles.</span>
         </label>
 
         {mode === "home" ? (
           <div className="stack">
             <button className="primary" type="button" onClick={() => setMode("register")}>
-              Create an account
+              Sign up
             </button>
             <button className="ghost" type="button" onClick={() => setMode("login")}>
               Sign in
             </button>
             <div className="demo-block">
-              <p className="eyebrow">Try the demo pair</p>
+              <p className="eyebrow">Or try it as the demo pair</p>
               <button className="demo-card" type="button" disabled={pending} onClick={() => void enterDemo("leading")}>
                 <Avatar person={DEMO.leading} />
                 <span>
@@ -164,13 +164,13 @@ export function Welcome() {
                   <em>{DEMO.following.line}</em>
                 </span>
               </button>
-              <p className="fine">Same computer, two sides. Demo password is <code>together</code> if you would rather sign in.</p>
+              <p className="fine">Two sides, one computer. If you’d rather sign in, the demo password is <code>together</code>.</p>
             </div>
             {resetting ? (
               <div className="card warn-card">
-                <p>This clears the demo household on this computer so two people can register and connect.</p>
+                <p>This wipes the demo pair from this computer so the two of you can sign up for real.</p>
                 <button className="primary" type="button" disabled={pending} onClick={() => void startFresh()}>
-                  Clear the demo and start
+                  Wipe the demo and start
                 </button>
                 <button className="ghost" type="button" onClick={() => setResetting(false)}>
                   Keep the demo
@@ -178,7 +178,7 @@ export function Welcome() {
               </div>
             ) : (
               <button className="texty" type="button" onClick={() => setResetting(true)}>
-                Start your own connection
+                Start your own dynamic
               </button>
             )}
           </div>
@@ -186,7 +186,7 @@ export function Welcome() {
 
         {mode === "register" ? (
           <form className="stack" onSubmit={(event) => void register(event)}>
-            <Field label="Name your partner will see">
+            <Field label="The name your partner will see">
               <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} autoComplete="nickname" required />
             </Field>
             <Field label="Email">
@@ -195,11 +195,11 @@ export function Welcome() {
             <Field label="Password">
               <input type="password" value={form.password} minLength={6} onChange={(event) => setForm({ ...form, password: event.target.value })} autoComplete="new-password" required />
             </Field>
-            <Field label="Invite code, if you have one">
+            <Field label="Got an invite code?">
               <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} autoCapitalize="characters" />
             </Field>
             <button className="primary" type="submit" disabled={pending}>
-              {pending ? "Creating…" : "Continue"}
+              {pending ? "Setting you up…" : "Next"}
             </button>
             <button className="texty" type="button" onClick={() => setMode("home")}>
               Back
@@ -215,7 +215,7 @@ export function Welcome() {
             <Field label="Password">
               <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} autoComplete="current-password" required />
             </Field>
-            <Field label="Invite code, if you are joining">
+            <Field label="Got an invite code?">
               <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} />
             </Field>
             <button className="primary" type="submit" disabled={pending}>

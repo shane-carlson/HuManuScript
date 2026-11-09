@@ -53,7 +53,7 @@ export function Pair() {
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title="Your pair" kicker="Exactly two people" />
+        <PageHead title="The two of you" kicker="Room for two, no more" />
         <div className="pair">
           <PersonCard name={bundle.me.displayName} line={`${sideWord(bundle.me.slashSide)} · ${identityLine(bundle.me)}`} hue={bundle.me.avatar.hue} mark={bundle.me.avatar.mark} />
           <span className="slash-mark" aria-hidden="true">/</span>
@@ -61,7 +61,7 @@ export function Pair() {
             <PersonCard name={bundle.partner.displayName} line={`${sideWord(bundle.partner.slashSide)} · ${identityLine(bundle.partner)}`} hue={bundle.partner.avatar.hue} mark={bundle.partner.avatar.mark} />
           ) : (
             <div className="card slim center">
-              <p>Waiting for your partner.</p>
+              <p>Saving a seat for your partner.</p>
             </div>
           )}
         </div>
@@ -69,7 +69,7 @@ export function Pair() {
         {!bundle.partner && bundle.me.onboardingComplete ? (
           <section className="card stack">
             <h2>Send an invite</h2>
-            <p>The link opens SlashConnect. On this computer it stays local. Your partner uses the code after they can reach this household.</p>
+            <p>The link opens SlashConnect with your code filled in. Heads up: this build lives on this computer, so the link only works for someone who can reach it from here.</p>
             <div className="chips">
               <button type="button" className={channel === "email" ? "chip on" : "chip"} onClick={() => setChannel("email")}>Email</button>
               <button type="button" className={channel === "text" ? "chip on" : "chip"} onClick={() => setChannel("text")}>Text</button>
@@ -81,7 +81,7 @@ export function Pair() {
               {channel === "email" ? "Draft an email" : "Draft a text"}
             </button>
             <button className="ghost" type="button" disabled={pending} onClick={() => void createInvite("link")}>
-              Create a link
+              Just give me a link
             </button>
             {link ? (
               <>
@@ -95,16 +95,16 @@ export function Pair() {
 
         {!bundle.partner ? (
           <form className="card stack" onSubmit={(event) => void accept(event)}>
-            <h2>I have a code</h2>
+            <h2>Got a code?</h2>
             <Field label="Invite code">
               <input value={join} onChange={(event) => setJoin(event.target.value.toUpperCase())} />
             </Field>
-            <button className="primary" type="submit" disabled={pending || join.length < 4}>Connect</button>
+            <button className="primary" type="submit" disabled={pending || join.length < 4}>Pair up</button>
           </form>
         ) : (
-          <p className="fine">This household already has both people. A third account cannot join it.</p>
+          <p className="fine">You two are paired. There’s no room for a third.</p>
         )}
-        {bundle.demo ? <p className="fine">This is the demo pair. Profile can switch sides, or the welcome screen can start a real connection.</p> : null}
+        {bundle.demo ? <p className="fine">This is the demo pair. Switch sides from your profile, or start your own from the welcome screen.</p> : null}
       </div>
     </Shell>
   );
@@ -122,9 +122,9 @@ function PersonCard({ name, line, hue, mark }: { name: string; line: string; hue
 
 function openDraft(channel: "email" | "text", contact: string, code: string) {
   const link = `${window.location.origin}/?invite=${code}`;
-  const text = `Join me on SlashConnect. Confirm you are 18 or older, then this code connects us: ${code}. ${link}`;
+  const text = `Come join me on SlashConnect. Sign up (18+ only), then use this code to pair with me: ${code}. ${link}`;
   const href = channel === "email"
-    ? `mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent("Join me on SlashConnect")}&body=${encodeURIComponent(text)}`
+    ? `mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent("Come join me on SlashConnect")}&body=${encodeURIComponent(text)}`
     : `sms:${contact.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(text)}`;
   const anchor = document.createElement("a");
   anchor.href = href;

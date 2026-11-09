@@ -47,7 +47,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setError("");
       return payload;
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Something went wrong.";
+      const message = caught instanceof Error ? caught.message : "That didn’t work. Try again?";
       if (caught instanceof ApiError && caught.status === 401) {
         tokenRef.current = null;
         localStorage.removeItem(TOKEN_KEY);
@@ -81,7 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setToken(null);
           setData(null);
         } else {
-          setError(caught instanceof Error ? caught.message : "Something went wrong.");
+          setError(caught instanceof Error ? caught.message : "That didn’t work. Try again?");
         }
         setLoading(false);
       });

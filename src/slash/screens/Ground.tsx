@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { firstName } from "../format.ts";
 import { useSession } from "../session.tsx";
 import { Field, PageHead, Shell } from "../ui.tsx";
 
@@ -18,7 +19,8 @@ const SENSES = [
 ];
 
 export function Ground() {
-  const { request } = useSession();
+  const { data, request } = useSession();
+  const theirs = data?.partner ? firstName(data.partner.displayName) : "your partner";
   const [phase, setPhase] = useState(0);
   const [second, setSecond] = useState(4);
   const [running, setRunning] = useState(false);
@@ -56,8 +58,8 @@ export function Ground() {
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title="Grounding" kicker="When you need to land" />
-        <p className="lead">A pause you can use if your partner is busy. It is a tool, not a test.</p>
+        <PageHead title="Grounding" kicker="For when your head is loud" />
+        <p className="lead">For when {theirs} is busy and you need to settle. Stay as long as you like. No points, nobody’s grading it.</p>
         <section className="card center">
           <h2>Box breathing</h2>
           <div className="orb" style={{ transform: `scale(${current?.scale ?? 1})` }} />
@@ -67,7 +69,7 @@ export function Ground() {
           </button>
         </section>
         <section className="card center">
-          <h2>Count what is here</h2>
+          <h2>Count what’s around you</h2>
           <p className="eyebrow">{round?.label}</p>
           <p className="timer">{tally} / {round?.count}</p>
           <button
@@ -82,16 +84,16 @@ export function Ground() {
               } else setTally(next);
             }}
           >
-            I found one
+            Got one
           </button>
         </section>
         <form className="card stack" onSubmit={(event) => void send(event)}>
-          <h2>Tell your partner</h2>
-          <Field label="A note they will see">
-            <textarea value={note} rows={3} onChange={(event) => setNote(event.target.value)} placeholder="I used a pause. I am all right, or I want company." />
+          <h2>Let {theirs} know</h2>
+          <Field label="A note for their home screen">
+            <textarea value={note} rows={3} onChange={(event) => setNote(event.target.value)} placeholder="I took a minute to breathe. I’m okay, but I’d like company when you’re free." />
           </Field>
-          <button className="primary" type="submit" disabled={!note.trim()}>Send the note</button>
-          {sent ? <p className="fine">Sent. It is on their home screen.</p> : null}
+          <button className="primary" type="submit" disabled={!note.trim()}>Send it</button>
+          {sent ? <p className="fine">Sent. It’s on their home screen.</p> : null}
         </form>
       </div>
     </Shell>

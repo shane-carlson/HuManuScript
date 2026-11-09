@@ -24,9 +24,9 @@ export async function api(
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     });
   } catch {
-    throw new ApiError(0, "SlashConnect cannot reach the household server.");
+    throw new ApiError(0, "Can’t reach SlashConnect right now. Is it still running?");
   }
   const payload = (await response.json().catch(() => ({}))) as Bundle & { error?: string };
-  if (!response.ok) throw new ApiError(response.status, payload.error || "Something went wrong.");
+  if (!response.ok) throw new ApiError(response.status, payload.error || "That didn’t work. Try again?");
   return payload;
 }

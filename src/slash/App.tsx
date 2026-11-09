@@ -25,7 +25,7 @@ export function SlashApp() {
     return (
       <Shell>
         <div className="pad">
-          <p className="lead">Opening your household…</p>
+          <p className="lead">One sec…</p>
         </div>
       </Shell>
     );

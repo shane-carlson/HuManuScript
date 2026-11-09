@@ -26,8 +26,8 @@ export function Goals() {
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title="Goals" kicker="Shared on purpose" />
-        <p className="lead">Kept promises move these. You can also mark a step by hand.</p>
+        <PageHead title="Goals" kicker="What you two are working on" />
+        <p className="lead">Finished tasks move these along. You can also bump one by hand.</p>
         <div className="stack">
           {bundle.goals.map((goal) => (
             <article key={goal.id} className="card">
@@ -38,7 +38,7 @@ export function Goals() {
               <p>{goal.detail}</p>
               <Meter value={goal.target ? goal.progress / goal.target : 0} />
               <button className="texty" type="button" onClick={() => void request(`/api/goals/${goal.id}/step`, { method: "POST" })}>
-                Mark a step
+                Bump it
               </button>
             </article>
           ))}
@@ -48,7 +48,7 @@ export function Goals() {
           <Field label="Name">
             <input value={title} onChange={(event) => setTitle(event.target.value)} required />
           </Field>
-          <Field label="What it means">
+          <Field label="What does it look like?">
             <input value={detail} onChange={(event) => setDetail(event.target.value)} />
           </Field>
           <button className="primary" type="submit" disabled={pending}>Add it</button>

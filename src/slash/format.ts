@@ -11,7 +11,7 @@ export function identityLine(person: Pick<Person, "gender" | "pronouns" | "roleT
 export function sideWord(side: Person["slashSide"]) {
   if (side === "leading") return "Leading";
   if (side === "following") return "Following";
-  return "Choosing a side";
+  return "Still picking a side";
 }
 
 export function clientDate() {
@@ -32,14 +32,14 @@ export function supplyHint(hints: string[], supplies: string[]) {
   if (!hints.length) return "";
   const owned = supplies.map((item) => item.toLowerCase());
   const matched = hints.filter((hint) => owned.some((item) => item.includes(hint) || hint.includes(item)));
-  if (matched.length) return `On their list: ${matched.join(", ")}.`;
-  return "Nothing on their supply list matches this yet.";
+  if (matched.length) return `In their stash: ${matched.join(", ")}.`;
+  return "Nothing in their stash matches this one yet.";
 }
 
 export const EXPERIENCE = [
   { id: "new", label: "New to this" },
-  { id: "some", label: "Some practice" },
-  { id: "experienced", label: "Experienced" },
+  { id: "some", label: "A little practice" },
+  { id: "experienced", label: "Lots of practice" },
 ] as const;
 
 export const MARKS = ["heart", "star", "moon", "spark", "leaf", "sun", "fox", "flower"] as const;

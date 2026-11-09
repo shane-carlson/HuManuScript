@@ -36,6 +36,11 @@ export function Home() {
 
   const level = stats.level;
   const follower = me.slashSide === "following" ? me : partner;
+  const theirs = partner ? firstName(partner.displayName) : "";
+  const listTitle = me.slashSide === "leading" ? theirs ? `${theirs}’s tasks` : "Tasks" : "Your tasks";
+  const emptyLine = me.slashSide === "leading"
+    ? theirs ? `Nothing on ${theirs}’s list. Want to fix that?` : "No tasks yet. Pair up first."
+    : "Nothing on your list. Enjoy it while it lasts.";
 
   return (
     <Shell nav>
@@ -53,7 +58,7 @@ export function Home() {
         <button className="guide-bubble" type="button" onClick={() => void nudge()}>
           <GuideFace id={me.guideId || "lumen"} className="guide-face float" />
           <span>
-            <strong>{bundle.meta.guides.find((guide) => guide.id === me.guideId)?.name || "Guide"}</strong>
+            <strong>{bundle.meta.guides.find((guide) => guide.id === me.guideId)?.name || "Your stuffie"}</strong>
             <em>{line}</em>
           </span>
         </button>
@@ -61,7 +66,7 @@ export function Home() {
         <section className="level-card">
           <div className="row spread">
             <div>
-              <p className="eyebrow">{follower ? `${firstName(follower.displayName)}'s level` : "Level"}</p>
+              <p className="eyebrow">{follower ? `${firstName(follower.displayName)}’s level` : "Level"}</p>
               <h2>{level.name}</h2>
             </div>
             <div className="streak">
@@ -72,7 +77,7 @@ export function Home() {
           <Meter value={level.progress} />
           <p className="muted">
             {stats.points} points
-            {level.next ? ` · ${level.next} at ${level.nextMin}` : " · top of the ladder"}
+            {level.next ? ` · ${level.next} at ${level.nextMin}` : " · as high as it goes"}
             {me.slashSide === "leading" ? ` · ${stats.carePoints} care points` : ""}
           </p>
         </section>
@@ -80,18 +85,18 @@ export function Home() {
         {!partner ? (
           <section className="card">
             <h2>Invite your partner</h2>
-            <p>Send a link by email or text. They register, confirm they are 18 or older, and the code connects you.</p>
+            <p>Send a link by email or text. They sign up, confirm they’re 18 or older, and the code pairs you up.</p>
             <button className="primary" type="button" onClick={() => go("/pair")}>
-              Create an invite
+              Make an invite
             </button>
           </section>
         ) : null}
 
         {adventure ? (
           <button className="task seal-card" type="button" onClick={() => go(`/tasks/${adventure.id}`)}>
-            <span className="pill gold">{adventure.adventure?.stage === "locked" ? "Locked" : "Sealed"}</span>
+            <span className="pill gold">Sealed</span>
             <strong>{adventure.title}</strong>
-            <em>{me.slashSide === "following" ? "Pick a headspace. The tasks appear only when you lock the categories." : "Waiting on their categories. The tasks are still hidden."}</em>
+            <em>{me.slashSide === "following" ? "Pick your headspace. No peeking until you lock in." : `${partner ? firstName(partner.displayName) : "Your partner"} hasn’t picked yet. Nobody knows what’s behind the doors, including you.`}</em>
           </button>
         ) : null}
         {me.slashSide === "following" && partner && !adventure ? (
@@ -99,20 +104,20 @@ export function Home() {
             const opened = payload.tasks.find((task) => task.templateId === "daily-adventure" && task.status === "open");
             if (opened) go(`/tasks/${opened.id}`);
           }).catch(() => undefined)}>
-            Open today's adventure
+            Start today’s adventure
           </button>
         ) : null}
 
         <section>
           <div className="row spread">
-            <h2>Open promises</h2>
+            <h2>{listTitle}</h2>
             {me.slashSide === "leading" ? (
               <button className="texty" type="button" onClick={() => go("/assign")}>
-                Assign
+                Give a task
               </button>
             ) : null}
           </div>
-          {open.length === 0 ? <p className="muted">Nothing open. The next promise can be a small one.</p> : null}
+          {open.length === 0 ? <p className="muted">{emptyLine}</p> : null}
           <div className="stack">
             {open.map((task) => (
               <button key={task.id} className="task" type="button" onClick={() => go(`/tasks/${task.id}`)}>
@@ -126,7 +131,7 @@ export function Home() {
 
         {me.slashSide === "leading" && waiting.length > 0 ? (
           <section className="card">
-            <h2>Ready for you to notice</h2>
+            <h2>Waiting on your well done</h2>
             {waiting.map((task) => (
               <button key={task.id} className="texty" type="button" onClick={() => go(`/tasks/${task.id}`)}>
                 {task.title}
@@ -137,7 +142,7 @@ export function Home() {
 
         {notes.length > 0 ? (
           <section>
-            <h2>Notes between you</h2>
+            <h2>Between you two</h2>
             {notes.map((note) => {
               const from = note.fromUserId === me.id ? me : partner;
               return (
@@ -151,7 +156,7 @@ export function Home() {
         ) : null}
 
         <button className="ghost wide" type="button" onClick={() => go("/ground")}>
-          Need a pause
+          I need a minute
         </button>
       </div>
     </Shell>
