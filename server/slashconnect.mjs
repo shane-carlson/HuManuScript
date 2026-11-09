@@ -100,6 +100,7 @@ function publicUser(user) {
   const copy = { ...user };
   delete copy.passwordHash;
   delete copy.passwordSalt;
+  delete copy.cheers;
   return copy;
 }
 
@@ -595,6 +596,7 @@ export function createSlashApp(options = {}) {
       demo: Boolean(db.demo),
       tasks,
       routines: presentRoutines(),
+      cheer: presentCheer(user),
       goals: db.goals,
       rewards: db.rewards,
       checkins: db.checkins.slice().reverse(),
@@ -611,6 +613,34 @@ export function createSlashApp(options = {}) {
       meta: meta(user),
       ...extra,
     };
+  }
+
+  /** Queues a celebration for the partner. It waits until their app says it was seen. */
+  function queueCheer(user, cheer) {
+    if (!user) return;
+    user.cheers = [...(user.cheers || []), { id: nid(), at: nowIso(), ...cheer }].slice(-20);
+  }
+
+  /** Folds everything of the oldest waiting kind into one celebration, so three well dones are one moment. */
+  function presentCheer(user) {
+    const waiting = user.cheers || [];
+    if (!waiting.length) return null;
+    const group = waiting.filter((item) => item.kind === waiting[0].kind);
+    const from = (userById(waiting[0].from)?.displayName || "Your partner").split(" ")[0];
+    const names = group.map((item) => `“${item.what}”`);
+    const listed = names.length > 2 ? `${names.slice(0, 2).join(", ")}, and ${names.length - 2} more` : names.join(" and ");
+    const ids = group.map((item) => item.id);
+    if (waiting[0].kind === "reward") {
+      return { ids, kind: "reward", from, title: group.length === 1 ? group[0].what : "Rewards granted", detail: group.length === 1 ? `${from} said yes. Enjoy it.` : `${from} said yes to ${listed}.` };
+    }
+    return { ids, kind: "praise", from, title: "Well done", detail: `${from} saw you finish ${listed}.` };
+  }
+
+  function clearCheers(user, ids) {
+    const seen = new Set(Array.isArray(ids) ? ids.map(String) : []);
+    const before = (user.cheers || []).length;
+    user.cheers = (user.cheers || []).filter((item) => !seen.has(item.id));
+    return user.cheers.length !== before;
   }
 
   function issueSession(user) {
@@ -793,6 +823,11 @@ export function createSlashApp(options = {}) {
       applyProfile(user, body || {});
       ensureGoals(user);
       save();
+      return { status: 200, body: bundle(user) };
+    }
+
+    if (route === "POST /api/cheers/seen") {
+      if (clearCheers(user, body?.ids)) save();
       return { status: 200, body: bundle(user) };
     }
 
@@ -1274,6 +1309,7 @@ export function createSlashApp(options = {}) {
     if (taskItem.acknowledgedAt) return;
     taskItem.acknowledgedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 6;
+    queueCheer(userById(taskItem.assignedTo), { kind: "praise", what: taskItem.title, from: user.id });
   }
 
   function removeTask(user, taskItem) {
@@ -1325,6 +1361,7 @@ export function createSlashApp(options = {}) {
     reward.grantedBy = user.id;
     reward.grantedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 8;
+    queueCheer(follower, { kind: "reward", what: reward.title, from: user.id });
     return { kind: "reward", title: reward.title, detail: `${reward.cost} points well spent.`, points: reward.cost };
   }
 

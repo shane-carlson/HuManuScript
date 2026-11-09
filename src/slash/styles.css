@@ -423,8 +423,267 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   }
 }
 
+
+/* Stuffie celebrations. The stage sets the scene for what is being celebrated;
+   each guide then moves in its own way. Lengths inside the plush are in its
+   own 120-unit drawing, so they scale with it. */
+.cheer-stage {
+  position: relative;
+  width: 240px;
+  height: 200px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+}
+.cheer-halo {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: 180px;
+  height: 180px;
+  margin: -90px 0 0 -90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 193, 77, 0.5), rgba(255, 193, 77, 0) 68%);
+  animation: cheer-halo 2.4s ease-in-out infinite;
+}
+.cheer-praise .cheer-halo, .cheer-pair .cheer-halo { background: radial-gradient(circle, rgba(255, 90, 122, 0.36), rgba(255, 90, 122, 0) 68%); }
+.cheer-streak .cheer-halo { background: radial-gradient(circle, rgba(255, 138, 76, 0.46), rgba(255, 138, 76, 0) 68%); }
+.cheer-rays {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: 280px;
+  height: 280px;
+  margin: -140px 0 0 -140px;
+  opacity: 0.34;
+  -webkit-mask-image: radial-gradient(circle, #000 34%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 34%, transparent 70%);
+  animation: cheer-rays 18s linear infinite;
+}
+.cheer-burst { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.burst-bit {
+  transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) rotate(var(--r)) scale(var(--s));
+  animation: burst 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite backwards;
+}
+.cheer-hop { position: relative; display: grid; animation: cheer-pop 0.8s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.cheer-level .cheer-hop { animation: cheer-spin 1s cubic-bezier(0.3, 1.3, 0.5, 1) both; }
+.cheer-praise .cheer-hop { animation: cheer-melt 1.1s ease-out both; }
+.cheer-stage .guide-face { overflow: visible; }
+
+.cheering .gp-look-idle { opacity: 0; animation: look-idle 2.6s steps(1) infinite; }
+.cheering .gp-look-cheer { animation: look-cheer 2.6s steps(1) infinite; }
+.cheering .gp-tail, .cheering .gp-arm, .cheering .gp-ear, .cheering .gp-wing, .cheering .gp-head {
+  animation: swish 0.7s ease-in-out infinite alternate;
+}
+.cheering .gp-head { --from: -5deg; --to: 5deg; animation-duration: 1.2s; }
+.cheering .arm-l { --from: 96deg; --to: 130deg; transform: rotate(112deg); animation-duration: 0.42s; }
+.cheering .arm-r { --from: -96deg; --to: -130deg; transform: rotate(-112deg); animation-duration: 0.42s; animation-delay: -0.2s; }
+.cheering .ear-l { --from: -9deg; --to: 5deg; animation-duration: 0.3s; }
+.cheering .ear-r { --from: 9deg; --to: -5deg; animation-duration: 0.3s; animation-delay: -0.12s; }
+.cheer-praise .gp-blush ellipse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blush 0.8s ease-in-out infinite alternate;
+}
+
+/* Lumen hops twice and fans all three tails while foxfire bobs around her. */
+.cheering[data-guide="lumen"] .gp-body { animation: lumen-hop 2.2s ease-in-out infinite; }
+.cheering[data-guide="lumen"] .gp-shadow { animation: lumen-shadow 2.2s ease-in-out infinite; }
+.cheering[data-guide="lumen"] .t1 { --from: -22deg; --to: 2deg; }
+.cheering[data-guide="lumen"] .t2 { --from: -10deg; --to: 10deg; animation-delay: -0.22s; }
+.cheering[data-guide="lumen"] .t3 { --from: -2deg; --to: 20deg; animation-delay: -0.44s; }
+.cheering .gp-wisp { animation: wisp 1.65s ease-in-out infinite; }
+
+/* Pip lifts off and hovers on fast wings. The crest flares and embers rise. */
+.cheering[data-guide="pip"] .gp-body { animation: pip-hover 1.15s ease-in-out infinite; }
+.cheering[data-guide="pip"] .gp-shadow { animation: pip-shadow 1.15s ease-in-out infinite; }
+.cheering[data-guide="pip"] .arm-l { --from: 48deg; --to: 122deg; transform: rotate(84deg) scale(1.3); animation: flap 0.17s ease-in-out infinite alternate; }
+.cheering[data-guide="pip"] .arm-r { --from: -48deg; --to: -122deg; transform: rotate(-84deg) scale(1.3); animation: flap 0.17s ease-in-out infinite alternate; }
+.cheering[data-guide="pip"] .gp-tail { animation-duration: 0.5s; }
+.cheering[data-guide="pip"] .t1 { --from: -14deg; --to: 6deg; }
+.cheering[data-guide="pip"] .t2 { --from: 14deg; --to: -6deg; }
+.cheering[data-guide="pip"] .t3 { --from: -10deg; --to: 8deg; animation-delay: -0.25s; }
+.cheering[data-guide="pip"] .t4 { --from: 10deg; --to: -8deg; animation-delay: -0.25s; }
+.cheering .gp-crest { animation: crest 0.34s ease-in-out infinite alternate; }
+.cheering .gp-ember { animation: ember 1.9s linear infinite; }
+
+/* Moss wakes up: eyes wide, a slow rocking stomp, wings out, a wagging tail, heart puffs. */
+.cheering[data-guide="moss"] .gp-body { animation: moss-rock 2.8s ease-in-out infinite; }
+.cheering[data-guide="moss"] .gp-shadow { animation: moss-shadow 2.8s ease-in-out infinite; }
+.cheering[data-guide="moss"] .gp-wing { animation-duration: 0.62s; }
+.cheering[data-guide="moss"] .wing-l { --from: -12deg; --to: 30deg; }
+.cheering[data-guide="moss"] .wing-r { --from: 12deg; --to: -30deg; }
+.cheering[data-guide="moss"] .t1 { --from: -9deg; --to: 16deg; animation-duration: 0.4s; }
+.cheering[data-guide="moss"] .gp-arm { animation-duration: 0.7s; }
+.cheering[data-guide="moss"] .ear-l { --from: -4deg; --to: 14deg; animation-duration: 0.62s; }
+.cheering[data-guide="moss"] .ear-r { --from: 4deg; --to: -14deg; animation-duration: 0.62s; animation-delay: 0s; }
+.cheering .gp-puff {
+  transform: translate(calc(var(--dx) * 0.6), calc(var(--dy) * 0.6));
+  animation: puff 2.4s ease-out infinite;
+}
+
+/* Sol rears up and prances under a rainbow, mane rippling, horn alight. */
+.cheering[data-guide="sol"] .gp-body { animation: sol-prance 2s ease-in-out infinite; }
+.cheering[data-guide="sol"] .gp-shadow { animation: sol-shadow 2s ease-in-out infinite; }
+.cheering[data-guide="sol"] .gp-tail { animation-duration: 0.5s; }
+.cheering[data-guide="sol"] .t1 { --from: -18deg; --to: 4deg; }
+.cheering[data-guide="sol"] .t2 { --from: -8deg; --to: 10deg; animation-delay: -0.17s; }
+.cheering[data-guide="sol"] .t3 { --from: -2deg; --to: 18deg; animation-delay: -0.34s; }
+.cheering .gp-mane { animation: mane 0.56s ease-in-out infinite alternate; }
+.cheering .m2 { animation-delay: -0.19s; }
+.cheering .m3 { animation-delay: -0.38s; }
+.cheering .gp-sun { animation: cheer-rays 5s linear infinite; }
+.cheering .gp-glow { opacity: 0.7; filter: blur(3.5px); animation: glow 0.9s ease-in-out infinite alternate; }
+.cheering .gp-twinkle { animation: twinkle 1.2s ease-in-out infinite; }
+.cheering .gp-bow path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  opacity: 0.92;
+  animation: bow 3.2s ease-in-out infinite backwards;
+}
+.cheering .gp-bow path:nth-child(2) { animation-delay: 0.12s; }
+.cheering .gp-bow path:nth-child(3) { animation-delay: 0.24s; }
+
 @media (prefers-reduced-motion: reduce) {
   .float, .confetti i, .meter > span, .orb, .reveal { animation: none; transition: none; }
+  /* The plush still strikes its happy pose. It just holds it. */
+  .cheer-stage, .cheer-stage * { animation: none !important; }
+  .confetti { display: none; }
+}
+
+@keyframes cheer-pop {
+  0% { transform: translateY(46px) scale(0.2); opacity: 0; }
+  55% { transform: translateY(-10px) scale(1.12); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes cheer-spin {
+  0% { transform: translateY(40px) scale(0.2) rotate(-300deg); opacity: 0; }
+  60% { transform: translateY(-16px) scale(1.18) rotate(10deg); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes cheer-melt {
+  0% { transform: scale(0.5); opacity: 0; }
+  35% { transform: scale(1.14, 0.9); opacity: 1; }
+  55% { transform: scale(0.94, 1.08) rotate(-4deg); }
+  75% { transform: scale(1.05, 0.97) rotate(4deg); }
+  100% { transform: none; }
+}
+@keyframes cheer-halo {
+  50% { transform: scale(1.16); opacity: 0.72; }
+}
+@keyframes cheer-rays {
+  to { transform: rotate(360deg); }
+}
+@keyframes burst {
+  0% { transform: translate(0, 0) rotate(0deg) scale(0.1); opacity: 0; }
+  12% { opacity: 1; }
+  55% { transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) rotate(var(--r)) scale(var(--s)); opacity: 1; }
+  80% { transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px - 6px)) rotate(var(--r)) scale(calc(var(--s) * 1.14)); opacity: 1; }
+  100% { transform: translate(calc(var(--x) * 1.08px), calc(var(--y) * 1.08px - 12px)) rotate(var(--r)) scale(calc(var(--s) * 0.35)); opacity: 0; }
+}
+@keyframes look-idle {
+  0%, 100% { opacity: 0; }
+  74% { opacity: 1; }
+  86% { opacity: 0; }
+}
+@keyframes look-cheer {
+  0%, 100% { opacity: 1; }
+  74% { opacity: 0; }
+  86% { opacity: 1; }
+}
+@keyframes swish {
+  from { transform: rotate(var(--from, -6deg)); }
+  to { transform: rotate(var(--to, 6deg)); }
+}
+@keyframes flap {
+  from { transform: rotate(var(--from)) scale(1.3); }
+  to { transform: rotate(var(--to)) scale(1.3); }
+}
+@keyframes blush {
+  to { transform: scale(1.5); }
+}
+@keyframes lumen-hop {
+  0%, 88%, 100% { transform: none; }
+  8% { transform: scale(1.09, 0.88); }
+  25% { transform: translateY(-18px) scale(0.94, 1.08); }
+  40% { transform: scale(1.08, 0.9); }
+  48% { transform: scale(1.06, 0.92); }
+  62% { transform: translateY(-11px) scale(0.96, 1.05); }
+  76% { transform: scale(1.05, 0.94); }
+}
+@keyframes lumen-shadow {
+  0%, 8%, 40%, 48%, 76%, 100% { transform: none; opacity: 1; }
+  25% { transform: scale(0.66); opacity: 0.6; }
+  62% { transform: scale(0.8); opacity: 0.75; }
+}
+@keyframes wisp {
+  0%, 100% { transform: translateY(4px) scale(0.82); opacity: 0.75; }
+  50% { transform: translateY(-7px) scale(1.14, 1.28); opacity: 1; }
+}
+@keyframes pip-hover {
+  0%, 100% { transform: translateY(-9px) rotate(-4deg); }
+  50% { transform: translateY(-19px) rotate(4deg); }
+}
+@keyframes pip-shadow {
+  0%, 100% { transform: scale(0.78); opacity: 0.75; }
+  50% { transform: scale(0.62); opacity: 0.55; }
+}
+@keyframes crest {
+  from { transform: scale(0.96, 0.94); }
+  to { transform: scale(1.1, 1.32); }
+}
+@keyframes ember {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  14% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1.1); opacity: 0; }
+}
+@keyframes moss-rock {
+  0%, 100% { transform: rotate(-8deg); }
+  12% { transform: rotate(-8deg) scale(1.04, 0.95); }
+  25% { transform: translateY(-10px) scale(0.97, 1.05); }
+  50% { transform: rotate(8deg); }
+  62% { transform: rotate(8deg) scale(1.04, 0.95); }
+  75% { transform: translateY(-10px) scale(0.97, 1.05); }
+}
+@keyframes moss-shadow {
+  0%, 50%, 100% { transform: none; opacity: 1; }
+  25%, 75% { transform: scale(0.76); opacity: 0.7; }
+}
+@keyframes puff {
+  0% { transform: translate(0, 0) scale(0.2); opacity: 0; }
+  18% { opacity: 0.95; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1.35); opacity: 0; }
+}
+@keyframes sol-prance {
+  0%, 100% { transform: none; }
+  14% { transform: rotate(-10deg) translateY(-3px); }
+  30% { transform: rotate(-10deg) translateY(-15px); }
+  46% { transform: rotate(4deg) scale(1.06, 0.93); }
+  62% { transform: rotate(6deg) translateY(-9px); }
+  80% { transform: scale(1.04, 0.95); }
+}
+@keyframes sol-shadow {
+  0%, 46%, 80%, 100% { transform: none; opacity: 1; }
+  30% { transform: scale(0.7); opacity: 0.65; }
+  62% { transform: scale(0.82); opacity: 0.8; }
+}
+@keyframes mane {
+  from { transform: scale(0.94) rotate(-4deg); }
+  to { transform: scale(1.18) rotate(7deg); }
+}
+@keyframes glow {
+  from { transform: scale(0.7); opacity: 0.25; }
+  to { transform: scale(1.25); opacity: 0.9; }
+}
+@keyframes twinkle {
+  0%, 100% { transform: scale(0) rotate(0deg); }
+  50% { transform: scale(1.15) rotate(45deg); }
+}
+@keyframes bow {
+  0% { stroke-dashoffset: 100; opacity: 0.92; }
+  30%, 84% { stroke-dashoffset: 0; opacity: 0.92; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
 }
 
 @keyframes float {
@@ -432,7 +691,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 @keyframes fall {
-  to { transform: translateY(92vh) rotate(200deg); opacity: 0.15; }
+  85% { opacity: 0.9; }
+  to { transform: translateY(92vh) rotate(200deg); opacity: 0; }
 }
 
 .slash :focus-visible {

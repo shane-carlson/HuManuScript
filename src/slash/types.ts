@@ -162,5 +162,7 @@ export type Bundle = {
     levelLadder: string[];
   };
   celebration?: { kind: string; title: string; detail: string; points?: number } | null;
+  /** A celebration the partner set off. It waits here until this person has seen it. */
+  cheer?: { ids: string[]; kind: string; from: string; title: string; detail: string } | null;
   invite?: { code: string };
 };

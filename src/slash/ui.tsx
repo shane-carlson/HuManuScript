@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { GuideFace, MarkGlyph } from "./guides.tsx";
+import { GuideCheer, MarkGlyph } from "./guides.tsx";
 import { go, useHash } from "./route.ts";
 import { useSession } from "./session.tsx";
 import type { Person } from "./types.ts";
@@ -28,10 +28,10 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
           </div>
           {nav ? <TabBar /> : null}
           {celebration && data ? (
-            <div className="celebrate" role="dialog" aria-label={celebration.title}>
-              <Confetti />
-              <GuideFace id={data.me.guideId || "lumen"} />
-              <p className="eyebrow">{cheer(celebration.kind)}</p>
+            <div className="celebrate" role="dialog" aria-label={celebration.title} key={celebration.key}>
+              <Confetti rounds={celebration.kind === "level" ? 3 : 2} />
+              <GuideCheer id={data.me.guideId || "lumen"} kind={celebration.kind} />
+              <p className="eyebrow">{cheer(celebration.kind, celebration.from)}</p>
               <h2>{celebration.title}</h2>
               <p>{celebration.detail}</p>
               <button className="primary" type="button" onClick={clearCelebration}>
@@ -45,12 +45,13 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
   );
 }
 
-function cheer(kind: string) {
+function cheer(kind: string, from?: string) {
+  if (kind === "praise") return `From ${from || "your partner"}`;
   if (kind === "level") return "Level up";
   if (kind === "streak") return "Look at that streak";
   if (kind === "reward") return "Granted";
   if (kind === "pair") return "Hello, you two";
-  return "Well done";
+  return "Nice one";
 }
 
 function TabBar() {
@@ -129,17 +130,18 @@ export function Avatar({ person, size = 52 }: { person: Pick<Person, "displayNam
   );
 }
 
-export function Confetti() {
+export function Confetti({ rounds = 1 }: { rounds?: number }) {
   const colors = ["#ff5a7a", "#ffc14d", "#12b5a8", "#c5b0ff", "#ffb085", "#fff"];
+  const pieces = Array.from({ length: colors.length * 4 * rounds }, (_, index) => colors[index % colors.length]);
   return (
     <div className="confetti" aria-hidden="true">
-      {colors.concat(colors, colors, colors).map((color, index) => (
+      {pieces.map((color, index) => (
         <i
           key={`${color}-${index}`}
           style={{
-            left: `${(index * 17) % 100}%`,
+            left: `${(index * 17 + Math.floor(index / 24) * 7) % 100}%`,
             background: color,
-            animationDelay: `${(index % 9) * 0.06}s`,
+            animationDelay: `${Math.floor(index / 24) * 0.9 + (index % 9) * 0.06}s`,
           }}
         />
       ))}

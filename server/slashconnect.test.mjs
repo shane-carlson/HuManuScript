@@ -337,6 +337,67 @@ test("today’s adventure never draws an everyday habit or a blank task", () => 
   }
 });
 
+test("a well done waits for the following partner until their app has shown it", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const session = (token) => call(app, "GET", "/api/session", { token });
+
+  assert.equal((await session(avery)).body.cheer, null);
+  const water = await call(app, "POST", "/api/tasks/task-water/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+  assert.equal(water.body.celebration.kind, "task");
+  await call(app, "POST", "/api/tasks/task-meds/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+
+  const selfPraise = await call(app, "POST", "/api/tasks/task-water/acknowledge", { token: avery });
+  assert.equal(selfPraise.status, 403);
+  assert.equal((await session(avery)).body.cheer, null);
+
+  const said = await call(app, "POST", "/api/tasks/task-water/acknowledge", { token: rowan });
+  assert.equal(said.status, 200, said.body.error);
+  assert.equal(said.body.cheer, null);
+  assert.equal(said.body.partner.cheers, undefined);
+  await call(app, "POST", "/api/tasks/task-water/acknowledge", { token: rowan });
+
+  const one = (await session(avery)).body.cheer;
+  assert.equal(one.kind, "praise");
+  assert.equal(one.from, "Rowan");
+  assert.equal(one.title, "Well done");
+  assert.equal(one.detail, "Rowan saw you finish “Drink your water”.");
+  assert.equal(one.ids.length, 1);
+
+  // A second well done joins the first, and it is still there after a restart.
+  await call(app, "POST", "/api/tasks/task-meds/acknowledge", { token: rowan });
+  const reloaded = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
+  const both = (await call(reloaded, "GET", "/api/session", { token: avery })).body.cheer;
+  assert.equal(both.ids.length, 2);
+  assert.equal(both.detail, "Rowan saw you finish “Drink your water” and “Take your meds”.");
+
+  const notMine = await call(reloaded, "POST", "/api/cheers/seen", { token: rowan, body: { ids: both.ids } });
+  assert.equal(notMine.status, 200);
+  assert.equal((await call(reloaded, "GET", "/api/session", { token: avery })).body.cheer.ids.length, 2);
+
+  const seen = await call(reloaded, "POST", "/api/cheers/seen", { token: avery, body: { ids: both.ids } });
+  assert.equal(seen.body.cheer, null);
+  assert.equal((await call(reloaded, "GET", "/api/session", { token: avery })).body.cheer, null);
+});
+
+test("a granted reward is waiting for the partner who cashed it in", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const made = await call(app, "POST", "/api/rewards", { token: avery, body: { title: "Movie night, my pick", cost: 20 } });
+  const reward = made.body.rewards.find((item) => item.title === "Movie night, my pick");
+  await call(app, "POST", `/api/rewards/${reward.id}/agree`, { token: rowan });
+  await call(app, "POST", `/api/rewards/${reward.id}/request`, { token: avery });
+  const granted = await call(app, "POST", `/api/rewards/${reward.id}/grant`, { token: rowan });
+  assert.equal(granted.status, 200, granted.body.error);
+  assert.equal(granted.body.celebration.kind, "reward");
+  const waiting = (await call(app, "GET", "/api/session", { token: avery })).body.cheer;
+  assert.equal(waiting.kind, "reward");
+  assert.equal(waiting.title, "Movie night, my pick");
+  assert.equal(waiting.detail, "Rowan said yes. Enjoy it.");
+});
+
 test("tasks, streaks, goals, and agreed rewards persist", async () => {
   const app = tempApp(true);
   const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });

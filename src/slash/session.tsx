@@ -4,7 +4,9 @@ import type { Bundle } from "./types.ts";
 
 const TOKEN_KEY = "slashconnect.token";
 
-type Celebration = NonNullable<Bundle["celebration"]>;
+type Celebration = NonNullable<Bundle["celebration"]> & { key: string; from?: string };
+
+const REFRESH_MS = 20000;
 
 type SessionValue = {
   token: string | null;
@@ -27,8 +29,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Bundle | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
   const [error, setError] = useState("");
-  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const [own, setOwn] = useState<Celebration | null>(null);
+  const [seen, setSeen] = useState<string[]>([]);
   const tokenRef = useRef(token);
+  const shown = useRef(0);
+  const writes = useRef(0);
 
   const apply = useCallback((payload: Bundle) => {
     if (payload.token) {
@@ -37,12 +42,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setToken(payload.token);
     }
     if (payload.me) setData(payload);
-    if (payload.celebration) setCelebration(payload.celebration);
+    if (payload.celebration) {
+      shown.current += 1;
+      setOwn({ ...payload.celebration, key: `own-${shown.current}` });
+    }
   }, []);
 
   const request = useCallback(async (path: string, opts?: { method?: string; body?: unknown }) => {
+    writes.current += 1;
     try {
       const payload = await api(path, { ...opts, token: tokenRef.current });
+      writes.current += 1;
       apply(payload);
       setError("");
       return payload;
@@ -90,6 +100,53 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [token]);
 
+  // The other person changes things too: a well done, a new task, a granted reward.
+  useEffect(() => {
+    if (!token) return;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      const before = writes.current;
+      api("/api/session", { token })
+        .then((payload) => {
+          if (writes.current === before && tokenRef.current === token) setData(payload);
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, REFRESH_MS);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [token]);
+
+  const celebration = useMemo<Celebration | null>(() => {
+    if (own) return own;
+    const cheer = data?.cheer;
+    if (!cheer || cheer.ids.every((id) => seen.includes(id))) return null;
+    return { ...cheer, key: `cheer-${cheer.ids.join(" ")}` };
+  }, [own, data, seen]);
+
+  const clearCelebration = useCallback(() => {
+    if (own) {
+      setOwn(null);
+      return;
+    }
+    const ids = data?.cheer?.ids;
+    if (!ids) return;
+    // Hidden at once here; the server forgets it once it hears back, so a dropped call shows it again later.
+    setSeen((list) => [...list, ...ids].slice(-60));
+    writes.current += 1;
+    api("/api/cheers/seen", { method: "POST", body: { ids }, token: tokenRef.current })
+      .then((payload) => {
+        writes.current += 1;
+        setData(payload);
+      })
+      .catch(() => undefined);
+  }, [own, data]);
+
   const loginDemo = useCallback(async (who: "leading" | "following") => {
     const payload = await request("/api/demo/login", { method: "POST", body: { who } });
     apply(payload);
@@ -105,7 +162,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setData(null);
-    setCelebration(null);
+    setOwn(null);
     window.location.hash = "/";
   }, []);
 
@@ -116,12 +173,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     error,
     celebration,
     clearError: () => setError(""),
-    clearCelebration: () => setCelebration(null),
+    clearCelebration,
     setError,
     request,
     loginDemo,
     logout,
-  }), [token, data, loading, error, celebration, request, loginDemo, logout]);
+  }), [token, data, loading, error, celebration, clearCelebration, request, loginDemo, logout]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
