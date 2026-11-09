@@ -537,6 +537,11 @@ export function createSlashApp(options = {}) {
     return taskItem.target || template.amountDefault;
   }
 
+  // A water task ticked off before drinks were logged has no count to show, so it reads as a plain finished task.
+  function countsOf(taskItem) {
+    return targetOf(taskItem) > 0 && (taskItem.status === "open" || Boolean(taskItem.progress));
+  }
+
   function unitOf(taskItem) {
     return templateById(taskItem.templateId)?.unit || "";
   }
@@ -558,8 +563,8 @@ export function createSlashApp(options = {}) {
         points: routine.points,
         status: current.status,
         day: current.day || "",
-        target: targetOf(current),
-        amount: targetOf(current) ? current.progress?.amount || 0 : 0,
+        target: countsOf(current) ? targetOf(current) : 0,
+        amount: countsOf(current) ? current.progress?.amount || 0 : 0,
         unit: unitOf(current),
         daysDone: instances.filter((item) => item.status === "done").length,
       });
@@ -587,7 +592,7 @@ export function createSlashApp(options = {}) {
       target: targetOf(taskItem),
       unit: template?.unit || "",
       amountSteps: template?.amountSteps || [],
-      progress: targetOf(taskItem) ? { amount: taskItem.progress?.amount || 0, entries: taskItem.progress?.entries || [] } : null,
+      progress: countsOf(taskItem) ? { amount: taskItem.progress?.amount || 0, entries: taskItem.progress?.entries || [] } : null,
       choices: template?.choices || [],
       consent: Boolean(taskItem.consent ?? template?.consent),
       repeat: taskItem.routineId ? "daily" : "once",

@@ -447,6 +447,33 @@ test("task text saved with the old wording picks up the role title", async () =>
   assert.equal(fresh.summary, "Drink the amount your Domme set for you.");
 });
 
+test("water ticked off before drinks were logged stays a plain finished task", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const saved = JSON.parse(fs.readFileSync(app.dataFile, "utf8"));
+  const old = saved.tasks.find((task) => task.id === "task-water");
+  delete old.progress;
+  delete old.target;
+  old.status = "done";
+  old.day = "2026-11-09";
+  old.completedAt = "2026-11-09T18:00:00.000Z";
+  old.completion = { note: "", bonuses: [], photos: [], checklist: [], choice: "" };
+  delete saved.routines.find((item) => item.id === "routine-water").target;
+  fs.writeFileSync(app.dataFile, JSON.stringify(saved));
+
+  const reopened = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
+  const today = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  assert.equal(today.tasks.find((task) => task.id === "task-water").progress, null);
+  const row = today.routines.find((item) => item.title === "Drink your water");
+  assert.equal(row.status, "done");
+  assert.equal(row.target, 0);
+
+  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const fresh = next.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
+  assert.equal(fresh.target, 64);
+  assert.deepEqual(fresh.progress, { amount: 0, entries: [] });
+});
+
 test("water is a daily amount in ounces that the following partner logs as they go", async () => {
   const app = tempApp(true);
   const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
