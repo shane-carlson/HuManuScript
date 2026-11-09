@@ -213,6 +213,15 @@ function task(partial) {
 
 export const TEMPLATES = [
   task({
+    id: "daily-adventure",
+    category: "adventure",
+    title: "Today's adventure",
+    summary: "Pick one to three categories for your headspace. The tasks stay hidden until you lock those categories in, and then they stay.",
+    points: 8,
+    goalKeys: ["structure", "ritual"],
+    completion: "adventure",
+  }),
+  task({
     id: "shower-bath",
     category: "self-care",
     title: "Hot shower or bath",
@@ -440,8 +449,31 @@ export function templateById(id) {
 }
 
 export const CATEGORIES = [
+  { id: "adventure", label: "Adventure", tint: "gold" },
   { id: "self-care", label: "Self-care", tint: "coral" },
   { id: "fun", label: "Fun", tint: "gold" },
   { id: "spicy", label: "Spicy", tint: "lilac" },
   { id: "grounding", label: "Grounding", tint: "teal" },
 ];
+
+/** Sealed doors for the daily adventure. No task titles live here. */
+export const ADVENTURE_SEALS = [
+  { id: "self-care", label: "Self-care", headspace: "Tender", tease: "Care that fits what you already have." },
+  { id: "fun", label: "Fun", headspace: "Playful", tease: "A small bit of play, still a promise." },
+  { id: "grounding", label: "Grounding", headspace: "Quiet", tease: "A pause, if the day feels loud." },
+  { id: "spicy", label: "Spicy", headspace: "Bold", tease: "Heat, only if you want it." },
+];
+
+export function drawAdventureTasks(categories, options = {}) {
+  const avoid = new Set(options.avoidIds || []);
+  const random = options.random || Math.random;
+  const drawn = [];
+  for (const category of categories) {
+    const fresh = TEMPLATES.filter((item) => item.category === category && !avoid.has(item.id) && !drawn.some((picked) => picked.id === item.id));
+    const pool = fresh.length ? fresh : TEMPLATES.filter((item) => item.category === category);
+    if (!pool.length) return null;
+    const index = Math.min(pool.length - 1, Math.floor(random() * pool.length));
+    drawn.push(pool[index]);
+  }
+  return drawn;
+}

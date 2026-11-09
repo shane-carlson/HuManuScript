@@ -136,6 +136,60 @@ test("invite connects the pair and rejects a matching slash side", async () => {
   assert.equal(clash.body.me.slashSide, "following");
 });
 
+test("today's adventure stays sealed until the categories lock the tasks in", async () => {
+  const app = tempApp(true);
+  const avery = await call(app, "POST", "/api/demo/login", { body: { who: "following" } });
+  const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });
+  assert.equal(avery.body.meta.templates.length, 0);
+  assert.ok(avery.body.meta.seals.length >= 4);
+  assert.ok(avery.body.meta.seals.every((seal) => !seal.title));
+  const sealed = avery.body.tasks.find((task) => task.id === "task-adventure");
+  assert.equal(sealed.adventure.stage, "sealed");
+  assert.deepEqual(sealed.adventure.locked, []);
+  assert.equal(sealed.summary.includes("Hot shower"), false);
+
+  const tooMany = await call(app, "POST", "/api/tasks/task-adventure/lock", {
+    token: avery.body.token,
+    body: { categories: ["self-care", "fun", "spicy", "grounding"], clientDate: "2026-11-09" },
+  });
+  assert.equal(tooMany.status, 400);
+
+  const leader = await call(app, "POST", "/api/tasks/task-adventure/lock", {
+    token: rowan.body.token,
+    body: { categories: ["fun"], clientDate: "2026-11-09" },
+  });
+  assert.equal(leader.status, 403);
+
+  const locked = await call(app, "POST", "/api/tasks/task-adventure/lock", {
+    token: avery.body.token,
+    body: { categories: ["fun", "grounding"], clientDate: "2026-11-09" },
+  });
+  assert.equal(locked.status, 200, locked.body.error);
+  assert.equal(locked.body.celebration.title, "Locked in");
+  const adventure = locked.body.tasks.find((task) => task.id === "task-adventure");
+  assert.equal(adventure.status, "done");
+  assert.equal(adventure.adventure.stage, "locked");
+  assert.deepEqual(adventure.adventure.categories, ["fun", "grounding"]);
+  assert.equal(adventure.adventure.locked.length, 2);
+  for (const item of adventure.adventure.locked) {
+    assert.ok(item.category === "fun" || item.category === "grounding");
+    const task = locked.body.tasks.find((entry) => entry.id === item.taskId);
+    assert.equal(task.status, "open");
+    assert.equal(task.category, item.category);
+    assert.equal(task.title, item.title);
+  }
+  const again = await call(app, "POST", "/api/tasks/task-adventure/lock", {
+    token: avery.body.token,
+    body: { categories: ["self-care"], clientDate: "2026-11-09" },
+  });
+  assert.equal(again.status, 409);
+  const restart = await call(app, "POST", "/api/adventure/start", {
+    token: avery.body.token,
+    body: { clientDate: "2026-11-09" },
+  });
+  assert.equal(restart.status, 409);
+});
+
 test("tasks, streaks, goals, and agreed rewards persist", async () => {
   const app = tempApp(true);
   const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });

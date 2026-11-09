@@ -103,6 +103,7 @@ export function Assign() {
           ))}
         </div>
         {category === "spicy" ? <p className="fine">Adult tasks. Either of you can skip one. Nothing here is owed.</p> : null}
+        {category === "adventure" ? <p className="fine">Your partner picks the categories. The tasks stay hidden until they lock that choice in.</p> : null}
         <div className="stack">
           {templates.map((item) => (
             <button
@@ -173,8 +174,8 @@ export function TaskDetail({ id }: { id: string }) {
         <button className="texty" type="button" onClick={() => go("/tasks")}>All tasks</button>
         <p className="eyebrow">{task.category} · {task.points} pts</p>
         <h1>{task.title}</h1>
-        <p>{task.summary}</p>
-        {task.note ? <p className="card slim">{task.note}</p> : null}
+        {task.adventure?.stage === "locked" ? <p>These are the tasks for the categories you chose. They stay.</p> : <p>{task.summary}</p>}
+        {task.note && task.completionKind !== "adventure" ? <p className="card slim">{task.note}</p> : null}
         {task.prompt ? <p className="prompt">“{task.prompt}”</p> : null}
         {task.supplyNote ? <p className="fine">{task.supplyNote}</p> : null}
         {task.coaching.length ? (
@@ -183,8 +184,9 @@ export function TaskDetail({ id }: { id: string }) {
           </ul>
         ) : null}
         {task.dueDate ? <p className={task.dueDate < clientDate() && task.status === "open" ? "overdue" : "fine"}>Due {prettyDate(task.dueDate)}</p> : null}
-        {task.status === "open" && mine ? <CompleteForm task={task} /> : null}
-        {task.status !== "open" && task.completion ? <Completion task={task} /> : null}
+        {task.completionKind === "adventure" ? <AdventureLock task={task} mine={mine} /> : null}
+        {task.status === "open" && mine && task.completionKind !== "adventure" ? <CompleteForm task={task} /> : null}
+        {task.status !== "open" && task.completion && task.completionKind !== "adventure" ? <Completion task={task} /> : null}
         {task.status === "done" && leading && !task.acknowledgedAt ? (
           <button className="primary" type="button" onClick={() => void request(`/api/tasks/${task.id}/acknowledge`, { method: "POST" }).catch(() => undefined)}>
             I noticed this
@@ -202,6 +204,77 @@ export function TaskDetail({ id }: { id: string }) {
         ) : null}
       </div>
     </Shell>
+  );
+}
+
+function AdventureLock({ task, mine }: { task: Task; mine: boolean }) {
+  const { data, request } = useSession();
+  const seals = data?.meta.seals || [];
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pending, setPending] = useState(false);
+  const locked = task.adventure?.stage === "locked";
+
+  async function lock() {
+    setPending(true);
+    try {
+      await request(`/api/tasks/${task.id}/lock`, {
+        method: "POST",
+        body: { categories: picked, clientDate: clientDate() },
+      });
+    } catch {
+      /* The toast shows the problem. */
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (locked) {
+    return (
+      <section className="stack">
+        {(task.adventure?.locked || []).map((item) => (
+          <button key={item.taskId} className="task reveal" type="button" onClick={() => go(`/tasks/${item.taskId}`)}>
+            <span className={`pill ${item.category}`}>{item.category}</span>
+            <strong>{item.title}</strong>
+          </button>
+        ))}
+      </section>
+    );
+  }
+
+  if (!mine) {
+    return <p className="card slim">Still sealed. The tasks appear when the categories are locked in.</p>;
+  }
+
+  return (
+    <section className="stack">
+      <p className="lead">What do you have room for? Choose one to three categories. You will not see the tasks until you lock them in.</p>
+      <div className="seal-grid">
+        {seals.map((seal) => {
+          const on = picked.includes(seal.id);
+          return (
+            <button
+              key={seal.id}
+              type="button"
+              className={on ? "seal on" : "seal"}
+              aria-pressed={on}
+              onClick={() => setPicked((current) => {
+                if (current.includes(seal.id)) return current.filter((id) => id !== seal.id);
+                if (current.length >= 3) return current;
+                return [...current, seal.id];
+              })}
+            >
+              <span className="eyebrow">{seal.headspace}</span>
+              <strong>{seal.label}</strong>
+              <em>{on ? "Selected" : "Sealed"}</em>
+              <span>{seal.tease}</span>
+            </button>
+          );
+        })}
+      </div>
+      <button className="primary" type="button" disabled={pending || picked.length < 1} onClick={() => void lock()}>
+        {pending ? "Locking…" : "Lock these in"}
+      </button>
+    </section>
   );
 }
 

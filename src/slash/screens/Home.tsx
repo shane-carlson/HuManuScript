@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { firstName, identityLine, prettyDate, sideWord } from "../format.ts";
+import { clientDate, firstName, identityLine, prettyDate, sideWord } from "../format.ts";
 import { GuideFace } from "../guides.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
@@ -11,7 +11,8 @@ export function Home() {
   const { me, partner, stats } = bundle;
   const [line, setLine] = useState(bundle.guide.text);
   const [tick, setTick] = useState(0);
-  const open = bundle.tasks.filter((task) => task.status === "open").slice(0, 3);
+  const adventure = bundle.tasks.find((task) => task.templateId === "daily-adventure" && task.status === "open");
+  const open = bundle.tasks.filter((task) => task.status === "open" && task.id !== adventure?.id).slice(0, 3);
   const waiting = bundle.tasks.filter((task) => task.status === "done" && !task.acknowledgedAt);
   const notes = bundle.checkins.slice(0, 2);
   const unseen = bundle.checkins.some((note) => !note.seenBy.includes(me.id));
@@ -84,6 +85,22 @@ export function Home() {
               Create an invite
             </button>
           </section>
+        ) : null}
+
+        {adventure ? (
+          <button className="task seal-card" type="button" onClick={() => go(`/tasks/${adventure.id}`)}>
+            <span className="pill gold">{adventure.adventure?.stage === "locked" ? "Locked" : "Sealed"}</span>
+            <strong>{adventure.title}</strong>
+            <em>{me.slashSide === "following" ? "Pick a headspace. The tasks appear only when you lock the categories." : "Waiting on their categories. The tasks are still hidden."}</em>
+          </button>
+        ) : null}
+        {me.slashSide === "following" && partner && !adventure ? (
+          <button className="ghost wide" type="button" onClick={() => void request("/api/adventure/start", { method: "POST", body: { clientDate: clientDate() } }).then((payload) => {
+            const opened = payload.tasks.find((task) => task.templateId === "daily-adventure" && task.status === "open");
+            if (opened) go(`/tasks/${opened.id}`);
+          }).catch(() => undefined)}>
+            Open today's adventure
+          </button>
         ) : null}
 
         <section>

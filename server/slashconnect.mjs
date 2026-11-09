@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  ADVENTURE_SEALS,
   CATEGORIES,
   GOAL_OPTIONS,
   GUIDES,
@@ -12,6 +13,7 @@ import {
   ROLE_SUGGESTIONS,
   TEMPLATES,
   coachingFor,
+  drawAdventureTasks,
   guideSpeech,
   levelFor,
   templateById,
@@ -298,6 +300,27 @@ export function createSlashApp(options = {}) {
         completion: null,
         acknowledgedAt: null,
       },
+      {
+        id: "task-adventure",
+        templateId: "daily-adventure",
+        category: "adventure",
+        title: "Today's adventure",
+        summary: templateById("daily-adventure").summary,
+        note: "Pick the categories that fit today. You will not see the tasks until you lock them in.",
+        prompt: "",
+        points: 8,
+        bonuses: [],
+        assignedBy: rowanId,
+        assignedTo: averyId,
+        status: "open",
+        dueDate: dayShift(0),
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+        adventure: { stage: "sealed", day: dayShift(0), categories: [], locked: [] },
+      },
     ];
     base.rewards = [
       {
@@ -381,14 +404,16 @@ export function createSlashApp(options = {}) {
     return db.users.find((user) => user.slashSide === "following") || null;
   }
 
-  function meta() {
+  function meta(viewer) {
+    const leading = viewer?.slashSide === "leading";
     return {
       guides: GUIDES,
       goals: GOAL_OPTIONS,
       pronouns: PRONOUN_PRESETS,
       roles: ROLE_SUGGESTIONS,
       categories: CATEGORIES,
-      templates: TEMPLATES,
+      seals: ADVENTURE_SEALS,
+      templates: leading ? TEMPLATES : [],
       journalPrompts: JOURNAL_PROMPTS,
       levelLadder: ["Spark", "Glow", "Kindle", "Hearth", "Beacon", "Constellation"],
     };
@@ -413,6 +438,14 @@ export function createSlashApp(options = {}) {
       consent: Boolean(template?.consent),
       category: taskItem.category,
       mine: viewer ? taskItem.assignedTo === viewer.id : false,
+      adventure: taskItem.templateId === "daily-adventure"
+        ? {
+            stage: taskItem.adventure?.stage === "locked" ? "locked" : "sealed",
+            day: taskItem.adventure?.day || "",
+            categories: taskItem.adventure?.categories || [],
+            locked: taskItem.adventure?.stage === "locked" ? taskItem.adventure.locked || [] : [],
+          }
+        : null,
     };
   }
 
@@ -460,7 +493,7 @@ export function createSlashApp(options = {}) {
         doneCount: tasks.filter((item) => item.status === "done").length,
       },
       guide: guideSpeech(user.guideId || "lumen", "home", { ...guideContext(user), tick: 0 }),
-      meta: meta(),
+      meta: meta(user),
       ...extra,
     };
   }
@@ -569,7 +602,7 @@ export function createSlashApp(options = {}) {
     if (route === "GET /api/health") {
       return { status: 200, body: { ok: true, demo: Boolean(db.demo), people: db.users.length } };
     }
-    if (route === "GET /api/meta") return { status: 200, body: meta() };
+    if (route === "GET /api/meta") return { status: 200, body: meta(null) };
 
     if (route === "POST /api/household/reset") {
       if (body?.confirm !== "reset-demo") fail(400, "Confirm the reset to start a new connection.");
@@ -658,6 +691,12 @@ export function createSlashApp(options = {}) {
       return { status: 200, body: bundle(user, { celebration: { kind: "pair", title: "You are connected", detail: "The household has both of you now." } }) };
     }
 
+    if (route === "POST /api/adventure/start") {
+      const created = startAdventure(user, body || {});
+      save();
+      return { status: 201, body: bundle(user, { task: presentTask(created, user) }) };
+    }
+
     if (route === "POST /api/tasks") {
       const created = assignTask(user, body || {});
       save();
@@ -670,6 +709,7 @@ export function createSlashApp(options = {}) {
       if (!taskItem) fail(404, "That promise is not in this household.");
       let celebration = null;
       if (parts[3] === "complete") celebration = completeTask(user, taskItem, body || {});
+      else if (parts[3] === "lock") celebration = lockAdventure(user, taskItem, body || {});
       else if (parts[3] === "skip") skipTask(user, taskItem, body || {});
       else if (parts[3] === "acknowledge") acknowledgeTask(user, taskItem);
       else if (parts[3] === "remove") removeTask(user, taskItem);
@@ -866,12 +906,113 @@ export function createSlashApp(options = {}) {
     }
   }
 
+  function clientDay(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : new Date().toISOString().slice(0, 10);
+  }
+
+  function openAdventure(userId) {
+    return db.tasks.find((item) => item.templateId === "daily-adventure" && item.assignedTo === userId && item.status === "open") || null;
+  }
+
+  function startAdventure(user, body) {
+    if (user.slashSide !== "following") fail(403, "The following partner opens today's adventure.");
+    const day = clientDay(body.clientDate);
+    if (openAdventure(user.id)) fail(409, "Today's adventure is already waiting.");
+    const already = db.tasks.find((item) => item.templateId === "daily-adventure" && item.assignedTo === user.id && item.status === "done" && item.adventure?.day === day);
+    if (already) fail(409, "Today's adventure is already locked in.");
+    const leader = db.users.find((item) => item.slashSide === "leading");
+    const template = templateById("daily-adventure");
+    const created = {
+      id: nid(),
+      templateId: template.id,
+      category: template.category,
+      title: template.title,
+      summary: template.summary,
+      note: "Pick the categories that fit today. The tasks stay hidden until you lock them in.",
+      prompt: "",
+      points: template.points,
+      bonuses: [],
+      assignedBy: leader?.id || user.id,
+      assignedTo: user.id,
+      status: "open",
+      dueDate: day,
+      createdAt: nowIso(),
+      completedAt: null,
+      completionDate: "",
+      completion: null,
+      acknowledgedAt: null,
+      adventure: { stage: "sealed", day, categories: [], locked: [] },
+    };
+    db.tasks.push(created);
+    return created;
+  }
+
+  function lockAdventure(user, taskItem, body) {
+    if (taskItem.templateId !== "daily-adventure") fail(404, "That is not today's adventure.");
+    if (taskItem.assignedTo !== user.id) fail(403, "Your partner chooses the categories.");
+    if (taskItem.status !== "open" || taskItem.adventure?.stage === "locked") fail(409, "Those tasks are already locked in.");
+    const allowed = new Set(ADVENTURE_SEALS.map((seal) => seal.id));
+    const categories = [...new Set((Array.isArray(body.categories) ? body.categories : []).filter((id) => allowed.has(id)))];
+    if (categories.length < 1 || categories.length > 3) fail(400, "Choose one, two, or three categories.");
+    const avoid = db.tasks.filter((item) => item.assignedTo === user.id && item.status === "open").map((item) => item.templateId);
+    const drawn = drawAdventureTasks(categories, { avoidIds: avoid });
+    if (!drawn || drawn.length !== categories.length) fail(409, "Those categories have nothing left to draw.");
+    const day = clientDay(body.clientDate);
+    const locked = drawn.map((template) => {
+      const prompt = template.promptPool === "journal" ? JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)] : "";
+      const created = {
+        id: nid(),
+        templateId: template.id,
+        category: template.category,
+        title: template.title,
+        summary: template.summary,
+        note: "Locked in from today's adventure.",
+        prompt,
+        points: template.points,
+        bonuses: template.bonuses,
+        assignedBy: taskItem.assignedBy,
+        assignedTo: user.id,
+        status: "open",
+        dueDate: day,
+        createdAt: nowIso(),
+        completedAt: null,
+        completionDate: "",
+        completion: null,
+        acknowledgedAt: null,
+        adventureId: taskItem.id,
+      };
+      db.tasks.push(created);
+      return { taskId: created.id, templateId: template.id, title: template.title, category: template.category };
+    });
+    const titles = locked.map((item) => item.title).join(", ");
+    taskItem.adventure = { stage: "locked", day, categories, locked };
+    taskItem.status = "done";
+    taskItem.completedAt = nowIso();
+    taskItem.completionDate = day;
+    taskItem.completion = { note: `Locked in: ${titles}`, bonuses: [], photos: [], checklist: [], choice: "" };
+    const before = levelFor(user.points || 0);
+    user.points = (user.points || 0) + (taskItem.points || 0);
+    const after = levelFor(user.points);
+    applyStreak(user, day);
+    const adventureTemplate = templateById("daily-adventure");
+    if (adventureTemplate) bumpGoals(adventureTemplate);
+    return {
+      kind: after.name !== before.name ? "level" : "task",
+      title: "Locked in",
+      detail: titles,
+      points: taskItem.points || 0,
+    };
+  }
+
   function assignTask(user, body) {
     if (user.slashSide !== "leading") fail(403, "The leading partner assigns promises.");
     const follower = followingUser();
     if (!follower || follower.id === user.id) fail(400, "Connect with your partner before assigning.");
     const template = templateById(body.templateId);
     if (!template) fail(400, "Choose a task type.");
+    if (template.id === "daily-adventure" && openAdventure(follower.id)) {
+      fail(409, "Today's adventure is already waiting.");
+    }
     const title = cleanText(body.title, 80) || template.title;
     const note = cleanText(body.note, 400);
     const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate || "") ? body.dueDate : "";
@@ -898,6 +1039,9 @@ export function createSlashApp(options = {}) {
       completionDate: "",
       completion: null,
       acknowledgedAt: null,
+      adventure: template.id === "daily-adventure"
+        ? { stage: "sealed", day: dueDate || clientDay(body.clientDate), categories: [], locked: [] }
+        : null,
     };
     db.tasks.push(created);
     user.carePoints = (user.carePoints || 0) + 4;
@@ -908,6 +1052,7 @@ export function createSlashApp(options = {}) {
     if (taskItem.assignedTo !== user.id) fail(403, "This promise belongs to your partner to complete.");
     if (taskItem.status !== "open") fail(409, "This promise is already closed.");
     const template = templateById(taskItem.templateId);
+    if (template?.id === "daily-adventure") fail(400, "Choose your categories. The tasks lock in when you do.");
     if (template?.consent && body.consent !== true) {
       fail(400, "Confirm that you want to share this with your partner, or skip it.");
     }

@@ -62,6 +62,12 @@ export type Task = {
   photoLabel: string;
   choices: string[];
   consent: boolean;
+  adventure: null | {
+    stage: "sealed" | "locked";
+    day: string;
+    categories: string[];
+    locked: { taskId: string; templateId: string; title: string; category: string }[];
+  };
 };
 
 export type Goal = {
@@ -131,6 +137,7 @@ export type Bundle = {
     pronouns: Pronouns[];
     roles: { leading: string[]; following: string[] };
     categories: { id: string; label: string }[];
+    seals: { id: string; label: string; headspace: string; tease: string }[];
     templates: Template[];
     journalPrompts: string[];
     levelLadder: string[];
