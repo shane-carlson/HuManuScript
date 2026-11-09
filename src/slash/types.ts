@@ -65,6 +65,11 @@ export type Task = {
   repeat: "once" | "daily";
   routineActive: boolean;
   day?: string;
+  /** For a task with a running count, like ounces of water. `target` is 0 for every other task. */
+  target: number;
+  unit: string;
+  amountSteps: number[];
+  progress: null | { amount: number; entries: { id: string; amount: number; at: string }[] };
   adventure: null | {
     stage: "sealed" | "locked";
     day: string;
@@ -116,6 +121,9 @@ export type Template = {
   custom: boolean;
   noteLabel: string;
   notePlaceholder: string;
+  unit: string;
+  amountDefault: number;
+  amountSteps: number[];
 };
 
 export type Routine = {
@@ -126,6 +134,9 @@ export type Routine = {
   points: number;
   status: "open" | "done" | "skipped";
   day: string;
+  target: number;
+  amount: number;
+  unit: string;
   daysDone: number;
 };
 

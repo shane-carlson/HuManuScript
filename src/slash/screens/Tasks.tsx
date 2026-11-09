@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { clientDate, experienceLabel, firstName, prettyDate, supplyHint } from "../format.ts";
+import { clientDate, experienceLabel, firstName, prettyDate, prettyTime, supplyHint } from "../format.ts";
 import { compressImage } from "../photos.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
+import { SipButtons } from "../Sips.tsx";
 import type { Task } from "../types.ts";
-import { Chip, Field, PageHead, Shell } from "../ui.tsx";
+import { Chip, Field, Meter, PageHead, Shell } from "../ui.tsx";
+import { useNow } from "../useNow.ts";
+import { REMINDER_CHOICES, notificationState, readReminderMinutes, waterLine, writeReminderMinutes } from "../water.ts";
 
 export function Tasks() {
   const { data } = useSession();
@@ -55,6 +58,7 @@ export function Assign() {
   const [note, setNote] = useState("");
   const [due, setDue] = useState("");
   const [repeat, setRepeat] = useState<"once" | "daily">("once");
+  const [target, setTarget] = useState("");
   const [prompt, setPrompt] = useState(bundle.meta.journalPrompts[0] || "");
   const [pending, setPending] = useState(false);
 
@@ -82,6 +86,7 @@ export function Assign() {
           note,
           repeat,
           category,
+          target: template.completion === "amount" ? Number(target) : undefined,
           dueDate: repeat === "daily" ? "" : due,
           clientDate: clientDate(),
           prompt: template.promptPool ? prompt : "",
@@ -123,6 +128,7 @@ export function Assign() {
                 setPicked(item.id);
                 setTitle(item.custom ? "" : item.title);
                 setRepeat(item.habit ? "daily" : "once");
+                setTarget(item.amountDefault ? String(item.amountDefault) : "");
               }}
             >
               <strong>{item.title}</strong>
@@ -136,6 +142,12 @@ export function Assign() {
             <Field label={template.custom ? "Name the task" : "Title"}>
               <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={template.custom ? "Text me good morning" : undefined} />
             </Field>
+            {template.completion === "amount" ? (
+              <Field label={repeat === "daily" ? "How many ounces a day?" : "How many ounces?"}>
+                <input type="number" inputMode="numeric" min={8} max={300} step={1} value={target} onChange={(event) => setTarget(event.target.value)} />
+                <em className="fine">{theirs} logs each drink through the day and it adds up to this. 64 oz is eight glasses.</em>
+              </Field>
+            ) : null}
             <Field label={template.noteLabel || "A note from you"}>
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={template.notePlaceholder || undefined} />
             </Field>
@@ -208,7 +220,8 @@ export function TaskDetail({ id }: { id: string }) {
         ) : null}
         {task.dueDate ? <p className={task.dueDate < clientDate() && task.status === "open" ? "overdue" : "fine"}>Due {prettyDate(task.dueDate)}</p> : null}
         {task.completionKind === "adventure" ? <AdventureLock task={task} mine={mine} theirs={theirs} /> : null}
-        {task.status === "open" && mine && task.completionKind !== "adventure" ? <CompleteForm task={task} /> : null}
+        {task.progress ? <AmountLog task={task} mine={mine} theirs={theirs} /> : null}
+        {task.status === "open" && mine && task.completionKind !== "adventure" && task.completionKind !== "amount" ? <CompleteForm task={task} /> : null}
         {task.status !== "open" && task.completion && task.completionKind !== "adventure" ? <Completion task={task} /> : null}
         {task.status === "done" && leading && !task.acknowledgedAt ? (
           <button className="primary" type="button" onClick={() => void request(`/api/tasks/${task.id}/acknowledge`, { method: "POST" }).catch(() => undefined)}>
@@ -234,6 +247,101 @@ export function TaskDetail({ id }: { id: string }) {
         ) : null}
       </div>
     </Shell>
+  );
+}
+
+/** A running count for the day: what has been logged, a way to add to it, and the reminders. */
+function AmountLog({ task, mine, theirs }: { task: Task; mine: boolean; theirs: string }) {
+  const { request } = useSession();
+  const [other, setOther] = useState("");
+  const [every, setEvery] = useState(readReminderMinutes);
+  const [permission, setPermission] = useState(notificationState);
+  const now = useNow();
+  const progress = task.progress!;
+  const open = task.status === "open";
+  const entries = progress.entries.slice().reverse();
+
+  async function addOther(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await request(`/api/tasks/${task.id}/log`, { method: "POST", body: { amount: Number(other), clientDate: clientDate() } });
+      setOther("");
+    } catch {
+      /* The toast shows the problem. */
+    }
+  }
+
+  return (
+    <section className="card stack water-log">
+      <p className="eyebrow">{open ? "Today so far" : "What got logged"}</p>
+      <p className="amount">
+        <strong>{progress.amount}</strong> of {task.target} {task.unit}
+      </p>
+      <Meter value={progress.amount / task.target} tone="water" />
+      {open ? <p className="fine">{mine ? waterLine(progress.amount, task.target, task.unit, now) : `${theirs} logs each drink as the day goes. The count shows up here.`}</p> : null}
+      {open && mine ? (
+        <>
+          <SipButtons task={task} />
+          <form className="row" onSubmit={(event) => void addOther(event)}>
+            <input
+              className="other-amount"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={200}
+              step={1}
+              value={other}
+              placeholder={`Other amount in ${task.unit}`}
+              aria-label={`Other amount in ${task.unit}`}
+              onChange={(event) => setOther(event.target.value)}
+            />
+            <button className="ghost tiny" type="submit" disabled={!(Number(other) >= 1)}>Add</button>
+          </form>
+        </>
+      ) : null}
+      {entries.length ? (
+        <ul className="sips">
+          {entries.map((entry) => (
+            <li key={entry.id}>
+              <span>{entry.amount} {task.unit}</span>
+              <em>{prettyTime(entry.at)}</em>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {open && mine && entries.length ? (
+        <button className="texty" type="button" onClick={() => void request(`/api/tasks/${task.id}/unlog`, { method: "POST" }).catch(() => undefined)}>
+          Undo the last one
+        </button>
+      ) : null}
+      {open && mine ? (
+        <div className="stack tight">
+          <p className="eyebrow">Remind me</p>
+          <div className="chips">
+            {REMINDER_CHOICES.map((choice) => (
+              <Chip
+                key={choice.minutes}
+                pressed={every === choice.minutes}
+                onClick={() => {
+                  writeReminderMinutes(choice.minutes);
+                  setEvery(choice.minutes);
+                }}
+              >
+                {choice.label}
+              </Chip>
+            ))}
+          </div>
+          {every ? <p className="fine">Between 8am and 9pm, while the app is open. Each reminder tells you where you’re at.</p> : null}
+          {every && permission === "default" ? (
+            <button className="ghost" type="button" onClick={() => void Notification.requestPermission().then(setPermission)}>
+              Notify me on this device too
+            </button>
+          ) : null}
+          {every && permission === "granted" ? <p className="fine">Notifications are on for this device.</p> : null}
+          {every && permission === "denied" ? <p className="fine">Notifications are blocked for this app in your browser settings.</p> : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

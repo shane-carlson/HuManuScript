@@ -155,6 +155,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .field { display: grid; gap: 6px; font-weight: 700; }
 .field span { font-size: 0.86rem; }
+.field em.fine { font-style: normal; font-weight: 400; }
 .field input, .field textarea, .field select, .scroll input[readonly] {
   width: 100%;
   border: 0;
@@ -286,6 +287,43 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   transition: width 0.4s ease;
 }
 .card .meter > span { background: linear-gradient(90deg, #ff5a7a, #ffc14d); }
+.meter.water, .card .meter.water { background: #dff3ef; }
+.meter.water > span, .card .meter.water > span { background: linear-gradient(90deg, #12b5a8, #7fd8c6); }
+.task .meter { margin: 6px 0 0; height: 8px; }
+.stack.tight { gap: 8px; }
+.water-log .amount { margin: 0; font-size: 1.05rem; color: #4d3b59; }
+.water-log .amount strong { font-family: Newsreader, Georgia, serif; font-size: 2.6rem; font-weight: 500; color: #2a1b33; margin-right: 4px; }
+.chip.sip { font-weight: 700; color: #0c7f76; box-shadow: inset 0 0 0 1.5px #a9e2d9; }
+.chip.sip:disabled { opacity: 0.55; }
+.other-amount {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fbf3f0;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.12);
+}
+.ghost.tiny { min-height: 40px; padding: 8px 14px; width: auto; }
+.sips { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sips li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3e4ea; }
+.sips li:last-child { border-bottom: 0; }
+.sips em { font-style: normal; color: #6d5a78; }
+.nudge {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 12px;
+  padding: 12px;
+  background: #ecfaf7;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1.5px #b3e6dd;
+}
+.nudge p { margin: 2px 0 8px; color: #4d3b59; }
+.nudge .texty { width: auto; min-height: 40px; padding: 8px 10px; }
+.guide-face.small { width: 54px; height: 54px; }
 
 .pill {
   display: inline-flex;

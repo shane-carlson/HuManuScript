@@ -344,7 +344,7 @@ test("a well done waits for the following partner until their app has shown it",
   const session = (token) => call(app, "GET", "/api/session", { token });
 
   assert.equal((await session(avery)).body.cheer, null);
-  const water = await call(app, "POST", "/api/tasks/task-water/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+  const water = await call(app, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 48, clientDate: "2026-11-09" } });
   assert.equal(water.body.celebration.kind, "task");
   await call(app, "POST", "/api/tasks/task-meds/complete", { token: avery, body: { clientDate: "2026-11-09" } });
 
@@ -406,7 +406,7 @@ test("task text names the leading partner by the role title they chose", async (
 
   const first = (await call(app, "GET", "/api/session", { token: avery })).body;
   assert.equal(first.partner.roleTitle, "Domme");
-  assert.equal(taskFor(first, "task-water").summary, "Drink the amount your Domme set for you. Keep the bottle where you can see it.");
+  assert.equal(taskFor(first, "task-water").summary, "Sip it through the day and log each drink as you go. Your Domme set the amount.");
   assert.equal(JSON.stringify(first).includes("D‑type"), false);
   assert.equal(JSON.stringify(first).includes("{lead}"), false);
 
@@ -422,12 +422,12 @@ test("task text names the leading partner by the role title they chose", async (
   // A new title shows up everywhere at once, on tasks given before the change too.
   await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "Daddy" } });
   const renamed = (await call(app, "GET", "/api/session", { token: avery })).body;
-  assert.equal(taskFor(renamed, "task-water").summary, "Drink the amount your Daddy set for you. Keep the bottle where you can see it.");
+  assert.equal(taskFor(renamed, "task-water").summary, "Sip it through the day and log each drink as you go. Your Daddy set the amount.");
   assert.ok(taskFor(renamed, spicy.body.task.id).coaching.some((line) => line.includes("your Daddy")));
 
   await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "" } });
   const untitled = (await call(app, "GET", "/api/session", { token: avery })).body;
-  assert.equal(taskFor(untitled, "task-water").summary, "Drink the amount your partner set for you. Keep the bottle where you can see it.");
+  assert.equal(taskFor(untitled, "task-water").summary, "Sip it through the day and log each drink as you go. Your partner set the amount.");
 });
 
 test("task text saved with the old wording picks up the role title", async () => {
@@ -441,10 +441,101 @@ test("task text saved with the old wording picks up the role title", async () =>
   const reopened = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
   const bundle = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
   assert.equal(bundle.tasks.find((task) => task.id === "task-water").summary, "Drink the amount your Domme set for you.");
-  await call(reopened, "POST", "/api/tasks/task-water/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+  await call(reopened, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 64, clientDate: "2026-11-09" } });
   const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
   const fresh = next.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
   assert.equal(fresh.summary, "Drink the amount your Domme set for you.");
+});
+
+test("water is a daily amount in ounces that the following partner logs as they go", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const water = (bundle) => bundle.tasks.filter((task) => task.title === "Drink your water");
+  const row = (bundle) => bundle.routines.find((item) => item.title === "Drink your water");
+  const log = (id, amount, day, token = avery) => call(app, "POST", `/api/tasks/${id}/log`, { token, body: { amount, clientDate: day }, clientDate: day });
+
+  const start = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const first = water(start)[0];
+  assert.equal(first.completionKind, "amount");
+  assert.equal(first.unit, "oz");
+  assert.equal(first.target, 64);
+  assert.equal(first.progress.amount, 16);
+  assert.deepEqual(first.amountSteps, [8, 12, 16]);
+  assert.deepEqual([row(start).amount, row(start).target, row(start).unit], [16, 64, "oz"]);
+
+  assert.equal((await log(first.id, 8, "2026-11-09", rowan)).status, 403);
+  assert.equal((await log(first.id, 0, "2026-11-09")).status, 400);
+  assert.equal((await log(first.id, 500, "2026-11-09")).status, 400);
+  assert.equal((await log("task-meds", 8, "2026-11-09")).status, 400);
+
+  const sip = await log(first.id, 12, "2026-11-09");
+  assert.equal(sip.status, 200, sip.body.error);
+  assert.equal(sip.body.celebration, undefined);
+  assert.equal(water(sip.body)[0].progress.amount, 28);
+  assert.equal(water(sip.body)[0].progress.entries.length, 2);
+  assert.equal(water(sip.body)[0].status, "open");
+
+  // The leading partner sees the same count.
+  const watching = (await call(app, "GET", "/api/session", { token: rowan })).body;
+  assert.equal(row(watching).amount, 28);
+
+  const early = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  assert.equal(early.status, 400);
+  assert.match(early.body.error, /28 of 64 oz/);
+
+  const oops = await log(first.id, 30, "2026-11-09");
+  assert.equal(water(oops.body)[0].progress.amount, 58);
+  const undone = await call(app, "POST", `/api/tasks/${first.id}/unlog`, { token: avery });
+  assert.equal(water(undone.body)[0].progress.amount, 28);
+  assert.equal(water(undone.body)[0].progress.entries.length, 2);
+
+  // A day that ends part way stays on the record, and the next day starts at zero.
+  const tuesday = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const kept = water(tuesday).find((task) => task.id === first.id);
+  assert.equal(kept.status, "skipped");
+  assert.equal(kept.completion.note, "Got to 28 of 64 oz.");
+  const second = water(tuesday).find((task) => task.status === "open");
+  assert.equal(second.progress.amount, 0);
+  assert.equal(second.day, "2026-11-10");
+  assert.equal(row(tuesday).amount, 0);
+
+  const before = tuesday.stats.points;
+  await log(second.id, 40, "2026-11-10");
+  const reached = await log(second.id, 24, "2026-11-10");
+  assert.equal(reached.status, 200, reached.body.error);
+  assert.ok(reached.body.celebration);
+  assert.equal(reached.body.stats.points, before + 5);
+  const done = water(reached.body).find((task) => task.id === second.id);
+  assert.equal(done.status, "done");
+  assert.equal(done.completion.note, "64 oz. The amount was 64.");
+  assert.equal((await log(second.id, 8, "2026-11-10")).status, 409);
+  assert.equal(row(reached.body).status, "done");
+});
+
+test("the leading partner sets the daily ounces", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  await call(app, "POST", "/api/tasks/task-water/stop", { token: rowan });
+
+  const tooLittle = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "water", repeat: "daily", target: 2 } });
+  assert.equal(tooLittle.status, 400);
+  const given = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "water", repeat: "daily", target: 80 } });
+  assert.equal(given.status, 201, given.body.error);
+  assert.equal(given.body.task.target, 80);
+  assert.equal(given.body.task.progress.amount, 0);
+
+  const mine = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const open = mine.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
+  assert.equal(open.target, 80);
+  await call(app, "POST", `/api/tasks/${open.id}/log`, { token: avery, body: { amount: 80, clientDate: "2026-11-09" } });
+  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  assert.equal(next.tasks.find((task) => task.title === "Drink your water" && task.status === "open").target, 80);
+
+  const plain = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "water" } });
+  assert.equal(plain.body.task.target, 64);
+  assert.equal(plain.body.task.repeat, "once");
 });
 
 test("tasks, streaks, goals, and agreed rewards persist", async () => {

@@ -251,6 +251,9 @@ function task(partial) {
     custom: false,
     noteLabel: "",
     notePlaceholder: "",
+    unit: "",
+    amountDefault: 0,
+    amountSteps: [],
     ...partial,
   };
 }
@@ -269,13 +272,14 @@ export const TEMPLATES = [
     id: "water",
     category: "self-care",
     title: "Drink your water",
-    summary: "Drink the amount your {lead} set for you. Keep the bottle where you can see it.",
+    summary: "Sip it through the day and log each drink as you go. Your {lead} set the amount.",
     points: 5,
     goalKeys: ["self-care", "ritual"],
-    completion: "check",
+    completion: "amount",
     habit: true,
-    noteLabel: "How much?",
-    notePlaceholder: "8 glasses, or two full bottles",
+    unit: "oz",
+    amountDefault: 64,
+    amountSteps: [8, 12, 16],
   }),
   task({
     id: "meds",

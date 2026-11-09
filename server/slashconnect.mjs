@@ -336,7 +336,7 @@ export function createSlashApp(options = {}) {
         adventure: { stage: "sealed", day: dayShift(0), categories: [], locked: [] },
       },
     ];
-    const daily = (id, templateId, note) => {
+    const daily = (id, templateId, note, target = 0) => {
       const template = templateById(templateId);
       base.routines.push({
         id: `routine-${id}`,
@@ -349,6 +349,7 @@ export function createSlashApp(options = {}) {
         points: template.points,
         bonuses: template.bonuses,
         consent: false,
+        target,
         assignedBy: rowanId,
         assignedTo: averyId,
         createdAt: nowIso(),
@@ -356,7 +357,8 @@ export function createSlashApp(options = {}) {
       });
       base.tasks.push(routineInstance(base.routines[base.routines.length - 1], dayShift(0), `task-${id}`));
     };
-    daily("water", "water", "Two full bottles. The big ones.");
+    daily("water", "water", "Sip all day. No chugging it at 9pm.", 64);
+    base.tasks[base.tasks.length - 1].progress = { amount: 16, entries: [{ id: "sip-1", amount: 16, at: nowIso() }] };
     daily("meds", "meds", "With breakfast, please.");
     base.rewards = [
       {
@@ -476,6 +478,7 @@ export function createSlashApp(options = {}) {
       points: routine.points,
       bonuses: routine.bonuses,
       consent: routine.consent,
+      target: routine.target || 0,
       assignedBy: routine.assignedBy,
       assignedTo: routine.assignedTo,
       status: "open",
@@ -505,7 +508,14 @@ export function createSlashApp(options = {}) {
       if (routine.stoppedAt || routine.assignedTo !== user.id) continue;
       const instances = db.tasks.filter((item) => item.routineId === routine.id);
       const open = instances.find((item) => item.status === "open");
-      if (open) {
+      const sipped = open?.progress?.amount || 0;
+      if (open && open.day !== today && sipped > 0) {
+        // A running count belongs to its day. Yesterday's partial count is kept on the record and today starts at zero.
+        open.status = "skipped";
+        open.completedAt = nowIso();
+        open.completion = { note: `Got to ${sipped} of ${targetOf(open)} ${unitOf(open)}.`, bonuses: [], photos: [], checklist: [], choice: "" };
+        changed = true;
+      } else if (open) {
         if (open.day !== today) {
           open.day = today;
           changed = true;
@@ -521,6 +531,16 @@ export function createSlashApp(options = {}) {
     return changed;
   }
 
+  function targetOf(taskItem) {
+    const template = templateById(taskItem.templateId);
+    if (template?.completion !== "amount") return 0;
+    return taskItem.target || template.amountDefault;
+  }
+
+  function unitOf(taskItem) {
+    return templateById(taskItem.templateId)?.unit || "";
+  }
+
   function presentRoutines() {
     const rows = [];
     for (const routine of db.routines) {
@@ -528,7 +548,7 @@ export function createSlashApp(options = {}) {
       const instances = db.tasks.filter((item) => item.routineId === routine.id);
       const current =
         instances.find((item) => item.status === "open") ||
-        instances.slice().sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))[0];
+        instances.slice().sort((a, b) => String(b.day).localeCompare(String(a.day)) || String(b.completedAt).localeCompare(String(a.completedAt)))[0];
       if (!current) continue;
       rows.push({
         id: routine.id,
@@ -538,6 +558,9 @@ export function createSlashApp(options = {}) {
         points: routine.points,
         status: current.status,
         day: current.day || "",
+        target: targetOf(current),
+        amount: targetOf(current) ? current.progress?.amount || 0 : 0,
+        unit: unitOf(current),
         daysDone: instances.filter((item) => item.status === "done").length,
       });
     }
@@ -561,6 +584,10 @@ export function createSlashApp(options = {}) {
       photoMin: template?.photoMin || 0,
       photoMax: template?.photoMax || 0,
       photoLabel: nameLead(template?.photoLabel),
+      target: targetOf(taskItem),
+      unit: template?.unit || "",
+      amountSteps: template?.amountSteps || [],
+      progress: targetOf(taskItem) ? { amount: taskItem.progress?.amount || 0, entries: taskItem.progress?.entries || [] } : null,
       choices: template?.choices || [],
       consent: Boolean(taskItem.consent ?? template?.consent),
       repeat: taskItem.routineId ? "daily" : "once",
@@ -877,6 +904,8 @@ export function createSlashApp(options = {}) {
       let celebration = null;
       if (parts[3] === "complete") celebration = completeTask(user, taskItem, body || {});
       else if (parts[3] === "lock") celebration = lockAdventure(user, taskItem, body || {});
+      else if (parts[3] === "log") celebration = logAmount(user, taskItem, body || {});
+      else if (parts[3] === "unlog") unlogAmount(user, taskItem);
       else if (parts[3] === "skip") skipTask(user, taskItem, body || {});
       else if (parts[3] === "acknowledge") acknowledgeTask(user, taskItem);
       else if (parts[3] === "remove") removeTask(user, taskItem);
@@ -1194,6 +1223,11 @@ export function createSlashApp(options = {}) {
     const category = template.custom ? ownCategory : template.category;
     const consent = template.custom ? category === "spicy" : Boolean(template.consent);
     const summary = template.custom ? "" : template.summary;
+    let target = 0;
+    if (template.completion === "amount") {
+      target = body.target == null || body.target === "" ? template.amountDefault : Math.round(Number(body.target));
+      if (!Number.isFinite(target) || target < 8 || target > 300) fail(400, `Pick an amount between 8 and 300 ${template.unit}.`);
+    }
     let prompt = "";
     if (template.promptPool === "journal") {
       prompt = cleanText(body.prompt, 180) || JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
@@ -1210,6 +1244,7 @@ export function createSlashApp(options = {}) {
         points: template.points,
         bonuses: template.bonuses,
         consent,
+        target,
         assignedBy: user.id,
         assignedTo: follower.id,
         createdAt: nowIso(),
@@ -1232,6 +1267,7 @@ export function createSlashApp(options = {}) {
       points: template.points,
       bonuses: template.bonuses,
       consent,
+      target,
       assignedBy: user.id,
       assignedTo: follower.id,
       status: "open",
@@ -1250,10 +1286,40 @@ export function createSlashApp(options = {}) {
     return created;
   }
 
+  /** Adds to a running count, like ounces of water. Reaching the amount finishes the task. */
+  function logAmount(user, taskItem, body) {
+    if (taskItem.assignedTo !== user.id) fail(403, "That one’s your partner’s to log.");
+    const target = targetOf(taskItem);
+    if (!target) fail(400, "That task doesn’t keep a running count.");
+    if (taskItem.status !== "open") fail(409, "That task’s already closed.");
+    const unit = unitOf(taskItem);
+    const amount = Math.round(Number(body.amount));
+    if (!Number.isFinite(amount) || amount < 1 || amount > 200) fail(400, `Log between 1 and 200 ${unit} at a time.`);
+    const progress = taskItem.progress || { amount: 0, entries: [] };
+    progress.entries = [...progress.entries, { id: nid(), amount, at: nowIso() }].slice(-60);
+    progress.amount += amount;
+    taskItem.progress = progress;
+    return progress.amount >= target ? completeTask(user, taskItem, { clientDate: body.clientDate }) : null;
+  }
+
+  function unlogAmount(user, taskItem) {
+    if (taskItem.assignedTo !== user.id) fail(403, "That one’s your partner’s to log.");
+    if (taskItem.status !== "open") fail(409, "That task’s already closed.");
+    const last = taskItem.progress?.entries?.at(-1);
+    if (!last) fail(409, "Nothing logged yet.");
+    taskItem.progress.entries = taskItem.progress.entries.slice(0, -1);
+    taskItem.progress.amount = Math.max(0, taskItem.progress.amount - last.amount);
+  }
+
   function completeTask(user, taskItem, body) {
     if (taskItem.assignedTo !== user.id) fail(403, "That one’s your partner’s to do.");
     if (taskItem.status !== "open") fail(409, "That task’s already closed.");
     const template = templateById(taskItem.templateId);
+    const target = targetOf(taskItem);
+    const counted = taskItem.progress?.amount || 0;
+    if (target && counted < target) {
+      fail(400, `You’re at ${counted} of ${target} ${template.unit}. Log the rest as you drink it, or pass on today.`);
+    }
     if (template?.id === "daily-adventure") fail(400, "Pick your categories first. That’s what locks in the tasks.");
     if ((taskItem.consent ?? template?.consent) && body.consent !== true) {
       fail(400, "Tick the box to say you want to send this, or pass on it.");
@@ -1279,7 +1345,7 @@ export function createSlashApp(options = {}) {
     if ((template?.completion === "note" || template?.completion === "timer") && note.length < 2) {
       fail(400, "Say a little about how it went.");
     }
-    const written = note || (template?.completion === "breath" ? "Paused and grounded." : "");
+    const written = note || (template?.completion === "breath" ? "Paused and grounded." : target ? `${counted} ${template.unit}. The amount was ${target}.` : "");
     const earned =
       (taskItem.points || 0) +
       (taskItem.bonuses || []).filter((bonus) => bonuses.includes(bonus.id)).reduce((sum, bonus) => sum + bonus.points, 0);

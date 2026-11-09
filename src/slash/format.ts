@@ -28,6 +28,12 @@ export function prettyDate(iso: string) {
   return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export function prettyTime(iso: string) {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function supplyHint(hints: string[], supplies: string[]) {
   if (!hints.length) return "";
   const owned = supplies.map((item) => item.toLowerCase());

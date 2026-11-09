@@ -3,10 +3,15 @@ import { clientDate, firstName, identityLine, prettyDate, sideWord } from "../fo
 import { GuideFace } from "../guides.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
+import { SipButtons } from "../Sips.tsx";
 import type { Routine } from "../types.ts";
 import { Avatar, Meter, Shell } from "../ui.tsx";
 
 function dailyLine(routine: Routine, mine: boolean) {
+  if (routine.status === "open" && routine.target > 0) {
+    const count = `${routine.amount} of ${routine.target} ${routine.unit}`;
+    return mine ? `${count} · ${Math.max(0, routine.target - routine.amount)} to go` : `${count} so far`;
+  }
   if (routine.status === "open") return mine ? `${routine.points} pts · still to do today` : "Not done yet";
   const word = routine.status === "done" ? "Done" : "Passed on";
   return mine ? `${word} today` : `${word} ${prettyDate(routine.day)}`;
@@ -119,8 +124,12 @@ export function Home() {
           <section>
             <h2>Every day</h2>
             <div className="stack">
-              {bundle.routines.map((routine) => (
-                <button key={routine.id} className={`task daily ${routine.status}`} type="button" onClick={() => go(`/tasks/${routine.taskId}`)}>
+              {bundle.routines.map((routine) => {
+                const counted = routine.target > 0 && routine.status === "open";
+                const task = counted && me.slashSide === "following" ? bundle.tasks.find((item) => item.id === routine.taskId) : undefined;
+                return (
+                <div key={routine.id} className="stack tight">
+                <button className={`task daily ${routine.status}`} type="button" onClick={() => go(`/tasks/${routine.taskId}`)}>
                   <i className="tick" aria-hidden="true">
                     {routine.status === "done" ? (
                       <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -129,9 +138,13 @@ export function Home() {
                   <span>
                     <strong>{routine.title}</strong>
                     <em>{dailyLine(routine, me.slashSide === "following")}</em>
+                    {counted ? <Meter value={routine.amount / routine.target} tone="water" /> : null}
                   </span>
                 </button>
-              ))}
+                {task ? <SipButtons task={task} /> : null}
+                </div>
+                );
+              })}
             </div>
           </section>
         ) : null}

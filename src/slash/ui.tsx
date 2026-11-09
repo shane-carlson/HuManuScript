@@ -3,6 +3,7 @@ import { GuideCheer, MarkGlyph } from "./guides.tsx";
 import { go, useHash } from "./route.ts";
 import { useSession } from "./session.tsx";
 import type { Person } from "./types.ts";
+import { WaterNudge } from "./WaterNudge.tsx";
 
 const TABS = [
   { id: "home", label: "Home", href: "/home" },
@@ -24,6 +25,7 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
                 {error}
               </button>
             ) : null}
+            <WaterNudge />
             {children}
           </div>
           {nav ? <TabBar /> : null}
@@ -166,10 +168,10 @@ export function Chip({ pressed, onClick, children }: { pressed: boolean; onClick
   );
 }
 
-export function Meter({ value }: { value: number }) {
+export function Meter({ value, tone }: { value: number; tone?: "water" }) {
   const width = `${Math.max(0, Math.min(100, Math.round(value * 100)))}%`;
   return (
-    <span className="meter" aria-hidden="true">
+    <span className={tone ? `meter ${tone}` : "meter"} aria-hidden="true">
       <span style={{ width }} />
     </span>
   );
