@@ -26,7 +26,7 @@ export async function api(
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     });
   } catch {
-    throw new ApiError(0, "Can’t reach SlashConnect right now. Is it still running?");
+    throw new ApiError(0, "Can’t reach SlashConnect right now. Check your connection and try again.");
   }
   const payload = (await response.json().catch(() => ({}))) as Bundle & { error?: string };
   if (!response.ok) throw new ApiError(response.status, payload.error || "That didn’t work. Try again?");

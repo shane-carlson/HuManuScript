@@ -69,7 +69,7 @@ export function Pair() {
         {!bundle.partner && bundle.me.onboardingComplete ? (
           <section className="card stack">
             <h2>Send an invite</h2>
-            <p>The link opens SlashConnect with your code filled in. Heads up: this build lives on this computer, so the link only works for someone who can reach it from here.</p>
+            <p>The link opens SlashConnect with your code filled in.{bundle.hosted ? "" : " Heads up: this build lives on this computer, so the link only works for someone who can reach it from here."}</p>
             <div className="chips">
               <button type="button" className={channel === "email" ? "chip on" : "chip"} onClick={() => setChannel("email")}>Email</button>
               <button type="button" className={channel === "text" ? "chip on" : "chip"} onClick={() => setChannel("text")}>Text</button>

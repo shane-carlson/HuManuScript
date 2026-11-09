@@ -25,7 +25,24 @@ export function Welcome() {
   const [resetting, setResetting] = useState(false);
   const [invite, setInvite] = useState(() => inviteFromLocation());
   const [preview, setPreview] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "", code: invite });
+  const [form, setForm] = useState({ name: "", email: "", password: "", code: invite, tester: "" });
+  // A hosted server has no demo pair, and may ask new people for a tester code.
+  const [server, setServer] = useState<{ hosted: boolean; testerCode: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/health")
+      .then((response) => response.json())
+      .then((body: { hosted?: boolean; testerCode?: boolean }) => {
+        if (!cancel) setServer({ hosted: body.hosted === true, testerCode: body.testerCode === true });
+      })
+      .catch(() => {
+        if (!cancel) setServer({ hosted: false, testerCode: false });
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!invite) return;
@@ -75,6 +92,7 @@ export function Welcome() {
           password: form.password,
           adultConfirmed: true,
           inviteCode: form.code || undefined,
+          testerCode: form.tester || undefined,
         },
       });
       sessionStorage.removeItem("slash.invite");
@@ -148,6 +166,8 @@ export function Welcome() {
             <button className="ghost" type="button" onClick={() => setMode("login")}>
               Sign in
             </button>
+            {server && !server.hosted ? (
+            <>
             <div className="demo-block">
               <p className="eyebrow">Or try it as the demo pair</p>
               <button className="demo-card" type="button" disabled={pending} onClick={() => void enterDemo("leading")}>
@@ -181,6 +201,8 @@ export function Welcome() {
                 Start your own dynamic
               </button>
             )}
+            </>
+            ) : null}
           </div>
         ) : null}
 
@@ -198,6 +220,12 @@ export function Welcome() {
             <Field label="Got an invite code?">
               <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} autoCapitalize="characters" />
             </Field>
+            {server?.testerCode && !form.code ? (
+              <Field label="Tester code">
+                <input value={form.tester} onChange={(event) => setForm({ ...form, tester: event.target.value })} autoCapitalize="none" autoCorrect="off" required />
+                <em className="fine">From whoever asked you to try this. You don’t need one if your partner sent you an invite code.</em>
+              </Field>
+            ) : null}
             <button className="primary" type="submit" disabled={pending}>
               {pending ? "Setting you up…" : "Next"}
             </button>

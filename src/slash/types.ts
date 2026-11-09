@@ -146,6 +146,7 @@ export type Bundle = {
   partner: Person | null;
   pair: { id: string; members: string[] } | null;
   demo: boolean;
+  hosted: boolean;
   tasks: Task[];
   routines: Routine[];
   goals: Goal[];

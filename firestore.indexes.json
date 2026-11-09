@@ -1,0 +1,7 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "households", "fieldPath": "json", "indexes": [] },
+    { "collectionGroup": "photos", "fieldPath": "json", "indexes": [] }
+  ]
+}

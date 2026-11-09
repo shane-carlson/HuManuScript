@@ -354,7 +354,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 1.4rem; letter-spacing: 0.18em; text-align: center; }
 
 .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.photos img { width: 100%; height: 92px; object-fit: cover; border-radius: 14px; }
+.photos img, .photo-wait { width: 100%; height: 92px; object-fit: cover; border-radius: 14px; }
+.photo-wait { display: block; background: rgba(42, 27, 51, 0.07); }
 .coaching { margin: 0 0 12px; padding-left: 18px; }
 .seal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .seal {
@@ -458,6 +459,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
     height: 100dvh;
     border-radius: 0;
     box-shadow: none;
+    padding-top: env(safe-area-inset-top);
   }
 }
 

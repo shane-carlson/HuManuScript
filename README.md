@@ -33,7 +33,52 @@ The welcome screen can enter either profile after the 18+ confirmation. Profile 
 
 ## Invite
 
-The unpaired person creates a code, copies the link, or opens a draft email or text. Delivery uses the device’s mail and messages apps. This build does not send mail or SMS itself, and the household file stays on this computer.
+The unpaired person creates a code, copies the link, or opens a draft email or text. Delivery uses the device’s mail and messages apps. The app does not send mail or SMS itself. Run locally, the household file stays on this computer.
+
+## Put it on testers’ phones with Firebase
+
+Testers get a web address. They open it in Safari or Chrome and, if they like, use “Add to Home Screen” so it opens full screen with its own icon. There is no app store step and nothing to install from a file.
+
+What runs where:
+
+| Piece | Firebase product | In this repo |
+| --- | --- | --- |
+| The app | Hosting | `dist/`, built by `npm run build` |
+| The API under `/api` | One Cloud Function, `api`, in `us-central1` | `functions/`, which bundles `server/hosted.mjs` |
+| Everyone’s data | Firestore | Read and written only by the function. `firestore.rules` refuses every request from a browser. |
+
+Hosted, every couple gets a household of their own. There is no demo pair, and no way to wipe anything from the welcome screen. Photos are kept beside the household and only its two people can open them.
+
+Deploy it:
+
+1. Create a project in the [Firebase console](https://console.firebase.google.com) and move it to the Blaze plan. Cloud Functions will not deploy without it.
+2. In the console, open Firestore Database and create the database.
+3. Copy `functions/.env.example` to `functions/.env` and set `TESTER_CODE` to a word you will give your testers. Leave it empty and anyone with the address can sign up.
+4. Sign in and deploy:
+
+```bash
+npx firebase-tools@15.35.0 login
+npm run firebase:deploy -- --project your-project-id
+```
+
+5. Send testers the Hosting address it prints (`https://your-project-id.web.app`) and the tester code. One partner signs up and sends the invite link from the app; whoever opens that link does not need the tester code.
+
+Try the whole thing on this computer first. It needs Java for the Firestore emulator and no Firebase account:
+
+```bash
+TESTER_CODE=sunflower npm run firebase:emulate
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+Know this before real people use it:
+
+- Sign-in is the app’s own email and password. There is no “forgot my password” and no email check, so a tester who forgets theirs needs a new account.
+- A household is one Firestore document, capped at about 1 MB. Photos are stored separately, and a task takes roughly 700 bytes, so a couple has room for about 1,300 tasks. At four a day that is under a year. Past that, saving stops with a message. Fine for a test, not for the long run.
+- Photos and notes live in your Firebase project. Anyone with access to that project can read them.
+- Water reminders only show while the app is open. Nothing is pushed to a locked phone.
+- A wrong password eight times locks that email for 15 minutes. There is no other rate limit.
+- Firebase App Distribution is a different thing: it hands out real Android and iOS builds, which this project does not produce yet.
 
 ## Desktop shell
 

@@ -71,7 +71,7 @@ function pronounsFrom(input) {
   };
 }
 
-function emptyDb() {
+export function emptyDb() {
   return {
     demo: false,
     users: [],
@@ -121,12 +121,25 @@ function supplyNote(template, supplies, mine) {
 
 export function createSlashApp(options = {}) {
   const dataFile = options.dataFile || path.join(process.cwd(), "data", "slashconnect.json");
-  const seedDemo = options.seedDemo !== false;
+  const hosted = options.hosted === true;
+  const seedDemo = !hosted && options.seedDemo !== false;
+  const tokenPrefix = typeof options.tokenPrefix === "string" ? options.tokenPrefix : "";
+  // Where the household is kept. The default is one file on this computer; a hosted
+  // server hands in its own, so the same rules run over a database record.
+  const store = options.store || {
+    read: () => JSON.parse(fs.readFileSync(dataFile, "utf8")),
+    write(next) {
+      fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+      const tmp = `${dataFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+      fs.renameSync(tmp, dataFile);
+    },
+  };
   let db = load();
 
   function load() {
     try {
-      const parsed = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+      const parsed = store.read();
       if (!parsed || !Array.isArray(parsed.users)) return seedDemo ? seed(emptyDb()) : emptyDb();
       if (!Array.isArray(parsed.routines)) parsed.routines = [];
       // Task text saved before the leading partner's role title was used in it.
@@ -140,10 +153,7 @@ export function createSlashApp(options = {}) {
   }
 
   function save() {
-    fs.mkdirSync(path.dirname(dataFile), { recursive: true });
-    const tmp = `${dataFile}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-    fs.renameSync(tmp, dataFile);
+    store.write(db);
   }
 
   function seed(base) {
@@ -651,6 +661,7 @@ export function createSlashApp(options = {}) {
       partner: publicUser(partner),
       pair: db.pair,
       demo: Boolean(db.demo),
+      hosted,
       tasks,
       routines: presentRoutines(),
       cheer: presentCheer(user),
@@ -701,8 +712,8 @@ export function createSlashApp(options = {}) {
   }
 
   function issueSession(user) {
-    const token = randomBytes(24).toString("hex");
-    db.sessions.push({ token, userId: user.id, createdAt: nowIso() });
+    const token = `${tokenPrefix}${randomBytes(24).toString("hex")}`;
+    db.sessions = [...db.sessions, { token, userId: user.id, createdAt: nowIso() }].slice(-40);
     save();
     return token;
   }
@@ -1524,7 +1535,7 @@ export function createSlashApp(options = {}) {
   return { dispatch, handle, listen, dataFile };
 }
 
-function readBody(req) {
+export function readBody(req) {
   return new Promise((resolve, reject) => {
     if (req.method === "GET" || req.method === "HEAD") {
       resolve({});
@@ -1556,7 +1567,7 @@ function readBody(req) {
   });
 }
 
-function sendJson(res, status, body) {
+export function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",

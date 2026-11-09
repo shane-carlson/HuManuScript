@@ -1,0 +1,16 @@
+{
+  "name": "SlashConnect",
+  "short_name": "SlashConnect",
+  "description": "A private little corner for the two of you.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff1ea",
+  "theme_color": "#fff1ea",
+  "icons": [
+    { "src": "/slashconnect-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/slashconnect-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/slashconnect-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

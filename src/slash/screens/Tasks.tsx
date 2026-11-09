@@ -3,6 +3,7 @@ import { clientDate, experienceLabel, firstName, prettyDate, prettyTime, supplyH
 import { compressImage } from "../photos.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
+import { SharedPhoto } from "../SharedPhoto.tsx";
 import { SipButtons } from "../Sips.tsx";
 import type { Task, Template } from "../types.ts";
 import { Chip, Field, Meter, PageHead, Shell } from "../ui.tsx";
@@ -463,7 +464,7 @@ function Completion({ task }: { task: Task }) {
       {done.note ? <p>{done.note}</p> : null}
       {done.photos.length ? (
         <div className="photos">
-          {done.photos.map((src, index) => <img key={`${task.id}-${index}`} src={src} alt="Shared between the two of you" />)}
+          {done.photos.map((src, index) => <SharedPhoto key={`${task.id}-${index}`} src={src} alt="Shared between the two of you" />)}
         </div>
       ) : null}
     </section>
