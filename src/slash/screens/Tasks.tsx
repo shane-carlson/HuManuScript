@@ -4,7 +4,7 @@ import { compressImage } from "../photos.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { SipButtons } from "../Sips.tsx";
-import type { Task } from "../types.ts";
+import type { Task, Template } from "../types.ts";
 import { Chip, Field, Meter, PageHead, Shell } from "../ui.tsx";
 import { useNow } from "../useNow.ts";
 import { REMINDER_CHOICES, notificationState, readReminderMinutes, waterLine, writeReminderMinutes } from "../water.ts";
@@ -55,6 +55,8 @@ export function Assign() {
   const [picked, setPicked] = useState("");
   const template = bundle.meta.templates.find((item) => item.id === picked) || null;
   const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [points, setPoints] = useState("");
   const [note, setNote] = useState("");
   const [due, setDue] = useState("");
   const [repeat, setRepeat] = useState<"once" | "daily">("once");
@@ -74,6 +76,16 @@ export function Assign() {
     );
   }
 
+  const sealed = template?.completion === "adventure";
+  const reword = Boolean(template) && !template!.custom && !sealed;
+
+  function start(item: Template) {
+    setTitle(item.custom ? "" : item.title);
+    setSummary(item.summary);
+    setPoints(String(item.points));
+    setTarget(item.amountDefault ? String(item.amountDefault) : "");
+  }
+
   async function send() {
     if (!template) return;
     setPending(true);
@@ -83,6 +95,8 @@ export function Assign() {
         body: {
           templateId: template.id,
           title: title || template.title,
+          summary: reword ? summary : undefined,
+          points: sealed ? undefined : Number(points),
           note,
           repeat,
           category,
@@ -105,6 +119,12 @@ export function Assign() {
   if (own && category !== "adventure") templates.push(own);
   const canRepeat = template ? template.id !== "daily-adventure" : false;
   const theirs = bundle.partner ? firstName(bundle.partner.displayName) : "Your partner";
+  const changed = template
+    ? (!template.custom && title !== template.title) ||
+      (reword && summary !== template.summary) ||
+      (!sealed && points !== String(template.points)) ||
+      (template.amountDefault > 0 && target !== String(template.amountDefault))
+    : false;
   return (
     <Shell nav>
       <div className="pad">
@@ -126,9 +146,8 @@ export function Assign() {
               className={picked === item.id ? "task on" : "task"}
               onClick={() => {
                 setPicked(item.id);
-                setTitle(item.custom ? "" : item.title);
+                start(item);
                 setRepeat(item.habit ? "daily" : "once");
-                setTarget(item.amountDefault ? String(item.amountDefault) : "");
               }}
             >
               <strong>{item.title}</strong>
@@ -139,9 +158,21 @@ export function Assign() {
         </div>
         {template ? (
           <form className="card stack" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-            <Field label={template.custom ? "Name the task" : "Title"}>
-              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={template.custom ? "Text me good morning" : undefined} />
+            {sealed ? null : (
+              <div className="row spread">
+                <p className="eyebrow">Make it yours</p>
+                {changed ? <button className="ghost tiny" type="button" onClick={() => start(template)}>Put it back</button> : null}
+              </div>
+            )}
+            {sealed ? null : <p className="fine">Change anything you like before it goes. {theirs} gets your version{repeat === "daily" ? " every day" : ""}.</p>}
+            <Field label={template.custom ? "Name the task" : "What it’s called"}>
+              <input value={title} maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder={template.custom ? "Text me good morning" : undefined} />
             </Field>
+            {reword ? (
+              <Field label="What it asks">
+                <textarea value={summary} maxLength={400} onChange={(event) => setSummary(event.target.value)} rows={4} />
+              </Field>
+            ) : null}
             {template.completion === "amount" ? (
               <Field label={repeat === "daily" ? "How many ounces a day?" : "How many ounces?"}>
                 <input type="number" inputMode="numeric" min={8} max={300} step={1} value={target} onChange={(event) => setTarget(event.target.value)} />
@@ -151,6 +182,12 @@ export function Assign() {
             <Field label={template.noteLabel || "A note from you"}>
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={template.notePlaceholder || undefined} />
             </Field>
+            {sealed ? null : (
+              <Field label={repeat === "daily" ? "Points each day" : "Points"}>
+                <input type="number" inputMode="numeric" required min={1} max={50} step={1} value={points} onChange={(event) => setPoints(event.target.value)} />
+                <em className="fine">It comes as {template.points}. Anything from 1 to 50.</em>
+              </Field>
+            )}
             {canRepeat ? (
               <div className="stack">
                 <p className="eyebrow">How often?</p>

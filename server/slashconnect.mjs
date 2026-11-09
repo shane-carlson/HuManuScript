@@ -451,6 +451,16 @@ export function createSlashApp(options = {}) {
     return String(text || "").replaceAll(LEAD_TOKEN, leadRole());
   }
 
+  /**
+   * Wording the leading partner edits arrives with their role title written out.
+   * Putting the placeholder back lets it keep following the title if they change it.
+   */
+  function keepLead(text, original) {
+    if (text === nameLead(original)) return original;
+    const role = leadRole().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text.replace(new RegExp(`\\b(your) ${role}(?![\\p{L}\\p{N}])`, "giu"), `$1 ${LEAD_TOKEN}`);
+  }
+
   function meta(viewer) {
     const leading = viewer?.slashSide === "leading";
     return {
@@ -1227,7 +1237,14 @@ export function createSlashApp(options = {}) {
     const ownCategory = ["self-care", "fun", "spicy", "grounding"].includes(body.category) ? body.category : "self-care";
     const category = template.custom ? ownCategory : template.category;
     const consent = template.custom ? category === "spicy" : Boolean(template.consent);
-    const summary = template.custom ? "" : template.summary;
+    const sealed = template.completion === "adventure";
+    const reworded = !template.custom && !sealed && typeof body.summary === "string";
+    const summary = template.custom ? "" : reworded ? keepLead(cleanText(body.summary, 400), template.summary) : template.summary;
+    let points = template.points;
+    if (!sealed && body.points != null && body.points !== "") {
+      points = Math.round(Number(body.points));
+      if (!Number.isFinite(points) || points < 1 || points > 50) fail(400, "Points go from 1 to 50.");
+    }
     let target = 0;
     if (template.completion === "amount") {
       target = body.target == null || body.target === "" ? template.amountDefault : Math.round(Number(body.target));
@@ -1246,7 +1263,7 @@ export function createSlashApp(options = {}) {
         summary,
         note,
         prompt,
-        points: template.points,
+        points,
         bonuses: template.bonuses,
         consent,
         target,
@@ -1269,7 +1286,7 @@ export function createSlashApp(options = {}) {
       summary,
       note,
       prompt,
-      points: template.points,
+      points,
       bonuses: template.bonuses,
       consent,
       target,

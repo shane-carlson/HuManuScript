@@ -565,6 +565,71 @@ test("the leading partner sets the daily ounces", async () => {
   assert.equal(plain.body.task.repeat, "once");
 });
 
+test("the leading partner can change a task before giving it", async () => {
+  const app = tempApp(true);
+  const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
+  const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const give = (body) => call(app, "POST", "/api/tasks", { token: rowan, body: { clientDate: "2026-11-09", ...body } });
+
+  const asItComes = (await give({ templateId: "meds", repeat: "daily" })).body.task;
+  const stock = (await call(app, "GET", "/api/session", { token: rowan })).body.meta.templates.find((item) => item.id === "meds");
+  assert.equal(asItComes.summary, stock.summary);
+  assert.equal(asItComes.points, stock.points);
+
+  for (const points of [0, 51, "lots"]) {
+    assert.equal((await give({ templateId: "meal", repeat: "daily", points })).status, 400);
+  }
+
+  const given = await give({
+    templateId: "meal",
+    repeat: "daily",
+    title: "Eat lunch away from your desk",
+    summary: "A real plate, sitting down. Send your Domme a picture if you feel like it.",
+    points: 14,
+  });
+  assert.equal(given.status, 201, given.body.error);
+  assert.equal(given.body.task.title, "Eat lunch away from your desk");
+  assert.equal(given.body.task.summary, "A real plate, sitting down. Send your Domme a picture if you feel like it.");
+  assert.equal(given.body.task.points, 14);
+  assert.equal(given.body.task.repeat, "daily");
+
+  const before = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const done = await call(app, "POST", `/api/tasks/${given.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" }, clientDate: "2026-11-09" });
+  assert.equal(done.status, 200, done.body.error);
+  assert.equal(done.body.stats.points - before.stats.points, 14);
+
+  await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "Mistress" } });
+  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const fresh = next.tasks.find((task) => task.title === "Eat lunch away from your desk" && task.status === "open");
+  assert.equal(fresh.day, "2026-11-10");
+  assert.equal(fresh.points, 14);
+  assert.equal(fresh.summary, "A real plate, sitting down. Send your Mistress a picture if you feel like it.");
+  assert.equal(next.routines.find((item) => item.title === "Eat lunch away from your desk").points, 14);
+
+  const once = (await give({ templateId: "walk", summary: "", points: 3 })).body.task;
+  assert.equal(once.summary, "");
+  assert.equal(once.points, 3);
+  assert.equal(once.repeat, "once");
+
+  const own = (await give({ templateId: "own-task", title: "Text me good morning", category: "fun", points: 7, summary: "ignored" })).body.task;
+  assert.equal(own.summary, "");
+  assert.equal(own.points, 7);
+});
+
+test("the adventure keeps its own wording and points", async () => {
+  const seeded = tempApp(true);
+  const lead = (await call(seeded, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
+  const saved = JSON.parse(fs.readFileSync(seeded.dataFile, "utf8"));
+  saved.tasks = saved.tasks.filter((task) => task.id !== "task-adventure");
+  fs.writeFileSync(seeded.dataFile, JSON.stringify(saved));
+  const app = createSlashApp({ dataFile: seeded.dataFile, seedDemo: false });
+  const stock = (await call(app, "GET", "/api/session", { token: lead })).body.meta.templates.find((item) => item.id === "daily-adventure");
+  const given = await call(app, "POST", "/api/tasks", { token: lead, body: { templateId: "daily-adventure", summary: "Peek all you like.", points: 50 } });
+  assert.equal(given.status, 201, given.body.error);
+  assert.equal(given.body.task.summary, stock.summary);
+  assert.equal(given.body.task.points, stock.points);
+});
+
 test("tasks, streaks, goals, and agreed rewards persist", async () => {
   const app = tempApp(true);
   const rowan = await call(app, "POST", "/api/demo/login", { body: { who: "leading" } });
