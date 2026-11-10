@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { remoteServer, serverUrl } from "../api.ts";
 import { Mark } from "../guides.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
@@ -31,23 +32,31 @@ export function Welcome() {
 
   useEffect(() => {
     let cancel = false;
-    fetch("/api/health")
-      .then((response) => response.json())
-      .then((body: { hosted?: boolean; testerCode?: boolean }) => {
-        if (!cancel) setServer({ hosted: body.hosted === true, testerCode: body.testerCode === true });
-      })
-      .catch(() => {
-        if (!cancel) setServer({ hosted: false, testerCode: false });
-      });
+    let again = 0;
+    const ask = () => {
+      fetch(serverUrl("/api/health"))
+        .then((response) => response.json())
+        .then((body: { hosted?: boolean; testerCode?: boolean }) => {
+          if (!cancel) setServer({ hosted: remoteServer || body.hosted === true, testerCode: body.testerCode === true });
+        })
+        .catch(() => {
+          if (cancel) return;
+          // The phone apps have no demo pair to fall back on, so they keep asking.
+          setServer({ hosted: remoteServer, testerCode: false });
+          if (remoteServer) again = window.setTimeout(ask, 4000);
+        });
+    };
+    ask();
     return () => {
       cancel = true;
+      window.clearTimeout(again);
     };
   }, []);
 
   useEffect(() => {
     if (!invite) return;
     let cancel = false;
-    fetch(`/api/invites/preview?code=${encodeURIComponent(invite)}`)
+    fetch(serverUrl(`/api/invites/preview?code=${encodeURIComponent(invite)}`))
       .then((response) => response.json())
       .then((body: { fromName?: string; roleTitle?: string; pronouns?: string; error?: string }) => {
         if (cancel || body.error || !body.fromName) return;

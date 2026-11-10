@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clientDate, experienceLabel, firstName, prettyDate, prettyTime, supplyHint } from "../format.ts";
+import { askPhoneNotifications, onPhone, phoneNotifications } from "../phone.ts";
 import { compressImage } from "../photos.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
@@ -293,7 +294,10 @@ function AmountLog({ task, mine, theirs }: { task: Task; mine: boolean; theirs: 
   const { request } = useSession();
   const [other, setOther] = useState("");
   const [every, setEvery] = useState(readReminderMinutes);
-  const [permission, setPermission] = useState(notificationState);
+  const [permission, setPermission] = useState<"unsupported" | NotificationPermission>(() => (onPhone ? "default" : notificationState()));
+  useEffect(() => {
+    if (onPhone) void phoneNotifications().then(setPermission);
+  }, []);
   const now = useNow();
   const progress = task.progress!;
   const open = task.status === "open";
@@ -369,14 +373,21 @@ function AmountLog({ task, mine, theirs }: { task: Task; mine: boolean; theirs: 
               </Chip>
             ))}
           </div>
-          {every ? <p className="fine">Between 8am and 9pm, while the app is open. Each reminder tells you where you’re at.</p> : null}
+          {every && !onPhone ? <p className="fine">Between 8am and 9pm, while the app is open. Each reminder tells you where you’re at.</p> : null}
+          {every && onPhone ? <p className="fine">Between 8am and 9pm. Each reminder tells you where you’re at.</p> : null}
           {every && permission === "default" ? (
-            <button className="ghost" type="button" onClick={() => void Notification.requestPermission().then(setPermission)}>
-              Notify me on this device too
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => void (onPhone ? askPhoneNotifications() : Notification.requestPermission()).then(setPermission)}
+            >
+              {onPhone ? "Remind me when the app is closed too" : "Notify me on this device too"}
             </button>
           ) : null}
-          {every && permission === "granted" ? <p className="fine">Notifications are on for this device.</p> : null}
-          {every && permission === "denied" ? <p className="fine">Notifications are blocked for this app in your browser settings.</p> : null}
+          {every && permission === "granted" && !onPhone ? <p className="fine">Notifications are on for this device.</p> : null}
+          {every && permission === "granted" && onPhone ? <p className="fine">Your phone will remind you even with the app closed.</p> : null}
+          {every && permission === "denied" && !onPhone ? <p className="fine">Notifications are blocked for this app in your browser settings.</p> : null}
+          {every && permission === "denied" && onPhone ? <p className="fine">Notifications are off for SlashConnect in your phone’s settings, so reminders only show while the app is open.</p> : null}
         </div>
       ) : null}
     </section>

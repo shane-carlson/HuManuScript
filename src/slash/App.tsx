@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { followBackButton } from "./phone.ts";
 import { useHash } from "./route.ts";
 import { Goals } from "./screens/Goals.tsx";
 import { Ground } from "./screens/Ground.tsx";
@@ -17,6 +18,7 @@ import { Shell } from "./ui.tsx";
 export function SlashApp() {
   useEffect(() => {
     document.title = "SlashConnect";
+    followBackButton();
   }, []);
   const { token, data, loading } = useSession();
   const { parts } = useHash();

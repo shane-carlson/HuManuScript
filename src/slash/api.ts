@@ -1,6 +1,25 @@
 import { clientDate } from "./format.ts";
 import type { Bundle } from "./types.ts";
 
+/**
+ * Where the API lives. Empty on the web, where it is the same address as the page.
+ * The iOS and Android builds carry their pages inside the app, so they are built
+ * with the address of the hosted server.
+ */
+const SERVER = String(import.meta.env.VITE_SERVER_URL || "").replace(/\/+$/, "");
+
+/** True in the iOS and Android builds, which always talk to the hosted server. */
+export const remoteServer = SERVER !== "";
+
+export function serverUrl(path: string) {
+  return `${SERVER}${path}`;
+}
+
+/** The address to put in an invite link: one a partner can open in any browser. */
+export function siteUrl() {
+  return SERVER || window.location.origin;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -16,7 +35,7 @@ export async function api(
 ): Promise<Bundle> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(serverUrl(path), {
       method: opts.method ?? (opts.body === undefined ? "GET" : "POST"),
       headers: {
         ...(opts.body === undefined ? {} : { "content-type": "application/json" }),

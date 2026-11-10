@@ -29,7 +29,9 @@ data/
 
 # Firebase
 .firebase/
-.firebaserc
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+
+# Native apps
+dist-native

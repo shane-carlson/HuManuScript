@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { identityLine, sideWord } from "../format.ts";
+import { siteUrl } from "../api.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { Avatar, Field, PageHead, Shell } from "../ui.tsx";
@@ -12,7 +13,7 @@ export function Pair() {
   const [code, setCode] = useState(bundle.invites[0]?.code || "");
   const [join, setJoin] = useState("");
   const [pending, setPending] = useState(false);
-  const link = code ? `${window.location.origin}/?invite=${code}` : "";
+  const link = code ? `${siteUrl()}/?invite=${code}` : "";
 
   async function createInvite(next: "email" | "text" | "link") {
     setPending(true);
@@ -121,7 +122,7 @@ function PersonCard({ name, line, hue, mark }: { name: string; line: string; hue
 }
 
 function openDraft(channel: "email" | "text", contact: string, code: string) {
-  const link = `${window.location.origin}/?invite=${code}`;
+  const link = `${siteUrl()}/?invite=${code}`;
   const text = `Come join me on SlashConnect. Sign up (18+ only), then use this code to pair with me: ${code}. ${link}`;
   const href = channel === "email"
     ? `mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent("Come join me on SlashConnect")}&body=${encodeURIComponent(text)}`

@@ -34,6 +34,35 @@ export function waterLine(amount: number, target: number, unit: string, now: Dat
   return `You’re at ${amount} of ${target} ${unit}. Right on pace, ${left} to go.`;
 }
 
+// A reminder the phone delivers lands a minute after the app's own would, so
+// someone with the app open gets the one inside the app and not both.
+const PHONE_LAG = 60000;
+
+/**
+ * When a phone should speak up with the app closed: every gap from the last
+ * drink or reminder for the rest of today's water hours, then on the gap
+ * through tomorrow's, starting at 8.
+ */
+export function waterReminderTimes(now: Date, since: number, everyMinutes: number, doneToday = false) {
+  const times: { at: Date; tomorrow: boolean }[] = [];
+  if (!everyMinutes) return times;
+  const gap = everyMinutes * 60000;
+  const close = new Date(now);
+  close.setHours(DAY_END, 0, 0, 0);
+  const open = new Date(now);
+  open.setHours(DAY_START, 0, 0, 0);
+  if (!doneToday) {
+    let at = Math.max(since + gap, now.getTime(), open.getTime()) + PHONE_LAG;
+    for (; at < close.getTime(); at += gap) times.push({ at: new Date(at), tomorrow: false });
+  }
+  const next = new Date(open);
+  next.setDate(next.getDate() + 1);
+  const last = new Date(close);
+  last.setDate(last.getDate() + 1);
+  for (let at = next.getTime(); at < last.getTime(); at += gap) times.push({ at: new Date(at), tomorrow: true });
+  return times;
+}
+
 export function readReminderMinutes() {
   const saved = localStorage.getItem(EVERY_KEY);
   if (saved === null) return 60;

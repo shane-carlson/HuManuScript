@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SlashConnect</string>
+    <string name="title_activity_main">SlashConnect</string>
+    <string name="package_name">com.slashconnect.app</string>
+    <string name="custom_url_scheme">com.slashconnect.app</string>
+</resources>

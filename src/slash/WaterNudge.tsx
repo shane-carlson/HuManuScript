@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { clientDate } from "./format.ts";
 import { GuideFace } from "./guides.tsx";
+import { onPhone, planWaterReminders } from "./phone.ts";
 import { useSession } from "./session.tsx";
 import { useNow } from "./useNow.ts";
 import {
@@ -20,6 +21,8 @@ const CHECK_MS = 30000;
  * Reminds the following partner to drink, with the count as it stands right now.
  * A reminder is due when neither a reminder nor a logged drink has happened for
  * the chosen gap. It shows in the app, and as a system notification when allowed.
+ * The iOS and Android apps also hand the phone the reminders to come, so they
+ * arrive with the app closed.
  */
 export function WaterNudge() {
   const { data, request } = useSession();
@@ -36,16 +39,24 @@ export function WaterNudge() {
   const standing = `${taskId}:${amount}`;
 
   useEffect(() => {
-    if (!taskId) return;
+    if (!taskId) {
+      void planWaterReminders(null);
+      return;
+    }
     const check = () => {
       const every = readReminderMinutes();
       const moment = new Date();
+      const logged = lastLog ? Date.parse(lastLog) : 0;
+      void planWaterReminders({ taskId, amount, target, unit, every, since: Math.max(readLastReminder(), logged) }, moment);
       if (!every || !withinWaterDay(moment)) return;
-      const since = Math.max(readLastReminder(), lastLog ? Date.parse(lastLog) : 0);
+      // With the app tucked away, the phone's own reminder is the one that gets seen.
+      if (onPhone && document.visibilityState !== "visible") return;
+      const since = Math.max(readLastReminder(), logged);
       if (moment.getTime() - since < every * 60000) return;
       writeLastReminder(moment.getTime());
       writeRaisedReminder(standing);
       setRaisedAt(standing);
+      void planWaterReminders({ taskId, amount, target, unit, every, since: moment.getTime() }, moment);
       if (notificationState() === "granted") {
         try {
           new Notification("Water check", { body: waterLine(amount, target, unit, moment), tag: "slashconnect-water" });

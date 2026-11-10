@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { createSlashApp } from './server/slashconnect.mjs';
 
 const require = createRequire(import.meta.url);
@@ -67,8 +67,26 @@ function slashApiPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+/**
+ * `--mode native` builds the pages that go inside the iOS and Android apps.
+ * They cannot reach an API on their own address, so the build needs to know
+ * where the hosted server is.
+ */
+function nativeServerUrl(mode: string) {
+  if (mode !== 'native') return;
+  const url = loadEnv(mode, process.cwd(), 'VITE_').VITE_SERVER_URL || '';
+  if (!/^https?:\/\/[^/\s]+\/?$/.test(url)) {
+    throw new Error(
+      'VITE_SERVER_URL in .env.native must be the address of the hosted SlashConnect, for example https://slashconnect-bb3a8.web.app.',
+    );
+  }
+}
+
+export default defineConfig(({ mode }) => {
+  nativeServerUrl(mode);
+  return {
   base: electron ? './' : '/',
+  build: mode === 'native' ? { outDir: 'dist-native' } : undefined,
   plugins: [appVersionPlugin(), slashApiPlugin(), react()],
   server: {
     host: '127.0.0.1',
@@ -80,4 +98,5 @@ export default defineConfig({
     port: 47321,
     strictPort: true,
   },
+  };
 });

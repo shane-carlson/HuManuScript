@@ -16,9 +16,25 @@ function app() {
   return hosted;
 }
 
+// The iOS and Android apps load their pages from inside the app, so their
+// requests come from these origins instead of the Hosting address.
+const APP_ORIGINS = new Set(["capacitor://localhost", "https://localhost", "http://localhost"]);
+
 /** Firebase Hosting sends every /api request here. */
 export const api = onRequest({ region: "us-central1", memory: "512MiB", maxInstances: 5 }, async (req, res) => {
   res.set("cache-control", "no-store");
+  res.set("vary", "Origin");
+  const origin = String(req.get("origin") || "");
+  if (APP_ORIGINS.has(origin)) {
+    res.set("access-control-allow-origin", origin);
+    res.set("access-control-allow-methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.set("access-control-allow-headers", "authorization, content-type, x-client-date");
+    res.set("access-control-max-age", "3600");
+  }
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
   try {
     const header = String(req.get("authorization") || "");
     const result = await app().dispatch({
