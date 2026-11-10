@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { firstName } from "../format.ts";
 import { GuideFace } from "../guides.tsx";
+import { PlusCard, PlusPatch } from "../plans/Plus.tsx";
+import { usePlusCard } from "../plans/usePlusCard.tsx";
+import { usePlan } from "../plans/plan.ts";
 import { useSession } from "../session.tsx";
 import { PageHead, Shell } from "../ui.tsx";
 import "./Guide.css";
@@ -94,17 +97,26 @@ export function GuidePage() {
   const end = useRef<HTMLDivElement>(null);
   const settled = useRef(false);
   const questions = questionsFor(me.slashSide, partner ? firstName(partner.displayName) : "");
+  const sight = usePlan();
+  const plus = usePlusCard("deep-talk");
+  // A reflective question tapped on the Free plan: the card answers, and the thread is left as it was.
+  const [held, setHeld] = useState(false);
+  const carded = held || Boolean(plus.said);
 
   useEffect(() => {
-    if (entries.length < 2 && !thinking) return;
+    if (entries.length < 2 && !thinking && !carded) return;
     // Coming back to a long thread lands on its newest line; after that, new lines glide in.
     const glide = settled.current && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     settled.current = true;
     end.current?.scrollIntoView({ block: "end", behavior: glide ? "smooth" : "auto" });
-  }, [entries, thinking]);
+  }, [entries, thinking, carded]);
 
   async function ask(topic: string, label: string) {
     if (thinking) return;
+    plus.clear();
+    const deep = sight.shut("deep-talk") && sight.deep(topic, me.slashSide);
+    setHeld(deep);
+    if (deep) return;
     const body = asking(me.id, topic);
     setEntries(remember(me.id, "me", label));
     setThinking(true);
@@ -116,8 +128,9 @@ export function GuidePage() {
         if (visit) visit.last[topic] = { text, key: payload.line?.key || "" };
         setEntries(remember(me.id, "stuffie", text));
       }
-    } catch {
-      /* The toast shows the problem. */
+    } catch (caught) {
+      /* The toast shows the problem, unless it is a Plus question: then the card does. */
+      plus.refused(caught);
     } finally {
       setThinking(false);
     }
@@ -150,6 +163,8 @@ export function GuidePage() {
           ) : null}
         </ol>
 
+        {held ? <PlusCard feature="deep-talk" /> : plus.card}
+
         <div className="gt-ask">
           <p className="eyebrow">Ask {name}</p>
           <div className="gt-asks">
@@ -161,7 +176,12 @@ export function GuidePage() {
                 disabled={thinking}
                 onClick={() => void ask(question.id, question.label)}
               >
-                {question.label}
+                {sight.marked("deep-talk") && sight.deep(question.id, me.slashSide) ? (
+                  <span className="pl-with">
+                    {question.label}
+                    <PlusPatch />
+                  </span>
+                ) : question.label}
               </button>
             ))}
           </div>

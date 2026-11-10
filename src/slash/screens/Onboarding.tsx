@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { LookBuilder } from "../avatar/Builder.tsx";
 import { hueOf, lookOf, randomLook } from "../avatar/looks.ts";
 import { GuideFace } from "../guides.tsx";
+import { PlusCard, PlusPatch } from "../plans/Plus.tsx";
+import { usePlusCard } from "../plans/usePlusCard.tsx";
+import { samePlush, usePlan } from "../plans/plan.ts";
 import { go } from "../route.ts";
 import { seedFrom, seeded } from "../seeded.ts";
 import { useSession } from "../session.tsx";
@@ -41,6 +44,10 @@ export function Onboarding() {
   const maker = useRef<HTMLDivElement>(null);
   const avatar = { hue: hueOf(look), mark: me.avatar?.mark || "heart", look };
   const made = guideId === "custom";
+  const sight = usePlan();
+  const plus = usePlusCard("stuffie-keep");
+  // On the Free plan the maker is for rolling. One of the four comes home instead.
+  const rollOnly = made && sight.shut("stuffie-keep") && !samePlush(me.stuffie, stuffie);
 
   useEffect(() => {
     if (made) maker.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -83,8 +90,8 @@ export function Onboarding() {
       });
       sessionStorage.removeItem(STEP_KEY);
       go("/pair");
-    } catch {
-      /* toast */
+    } catch (caught) {
+      plus.refused(caught);
     } finally {
       setPending(false);
     }
@@ -295,7 +302,14 @@ export function Onboarding() {
               ))}
               <button type="button" className={made ? "guide-card made on" : "guide-card made"} aria-pressed={made} onClick={() => setGuideId("custom")}>
                 <GuideFace id="custom" stuffie={stuffie} />
-                <strong>Make your own</strong>
+                {sight.marked("stuffie-keep") ? (
+                  <strong className="pl-with">
+                    Make your own
+                    <PlusPatch />
+                  </strong>
+                ) : (
+                  <strong>Make your own</strong>
+                )}
                 <span>Roll a stuffie nobody else has, and name it.</span>
               </button>
             </div>
@@ -304,7 +318,12 @@ export function Onboarding() {
                 <StuffieMaker value={stuffie} onChange={setStuffie} />
               </div>
             ) : null}
-            <button className="primary" type="button" disabled={pending || !guideId || (made && !stuffie.name.trim())} onClick={() => void finish()}>
+            {rollOnly ? (
+              <PlusCard feature="stuffie-keep">
+                <p>Any of the four will happily come home with you. Pick one to carry on.</p>
+              </PlusCard>
+            ) : plus.card}
+            <button className="primary" type="button" disabled={pending || !guideId || (made && !stuffie.name.trim()) || rollOnly} onClick={() => void finish()}>
               {pending ? "Saving…" : "Let’s go"}
             </button>
           </div>

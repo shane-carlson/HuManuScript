@@ -1,4 +1,6 @@
 import { prettyDate } from "../format.ts";
+import { PlusCard, PlusNote } from "../plans/Plus.tsx";
+import { countWord } from "../plans/plan.ts";
 import { Badge, FlameMark } from "../progress/Badge.tsx";
 import { DayStrip, Ring, StepPips } from "../progress/parts.tsx";
 import { dayWords, daysInARow, monthName, restLine, shelfCount, sideOf, streakLine, todayLine, weekLine } from "../progress/words.ts";
@@ -67,6 +69,8 @@ export function Progress() {
   const stones = rules.streak.map((item) => item.days);
   const active = progress.calendar.filter((entry) => entry.state === "active" || entry.state === "full").length;
   const full = progress.calendar.filter((entry) => entry.state === "full").length;
+  const weeksShown = Math.round(progress.calendar.length / 7);
+  const weeksKept = progress.olderWeeks || 0;
 
   return (
     <Shell nav>
@@ -162,7 +166,7 @@ export function Progress() {
 
         <section className="card">
           <div className="row spread">
-            <h2>Twelve weeks</h2>
+            <h2>{countWord(weeksShown, true)} weeks</h2>
             <span className="pg-patch">
               {active} {active === 1 ? "day" : "days"} · {full} full
             </span>
@@ -173,6 +177,11 @@ export function Progress() {
             <span><i className="full" />Full day</span>
             <span><i className="rest" />Day off</span>
           </div>
+          {weeksKept > 0 ? (
+            <PlusCard feature="history" message={`The ${countWord(weeksKept)} weeks before these are kept safe, day by day. Plus shows all ${countWord(weeksShown + weeksKept)}.`} />
+          ) : (
+            <PlusNote feature="history" />
+          )}
         </section>
 
         <section className="card">

@@ -9,6 +9,7 @@ import { More } from "./screens/More.tsx";
 import { Onboarding } from "./screens/Onboarding.tsx";
 import { Gallery } from "./screens/Gallery.tsx";
 import { Pair } from "./screens/Pair.tsx";
+import { Plans } from "./screens/Plans.tsx";
 import { Profile } from "./screens/Profile.tsx";
 import { Progress } from "./screens/Progress.tsx";
 import { Rewards } from "./screens/Rewards.tsx";
@@ -51,6 +52,7 @@ export function SlashApp() {
   if (root === "weekly") return <Weekly week={id} />;
   if (root === "progress") return <Progress />;
   if (root === "gallery") return <Gallery />;
+  if (root === "plans") return <Plans />;
   if (root === "more") return <More />;
   return <Home />;
 }

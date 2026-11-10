@@ -56,6 +56,8 @@ export type Task = {
     photos: string[];
     checklist: string[];
     choice: string;
+    /** Photos that are kept but not shown on the Free plan, because the task was finished a while back. */
+    photosKept?: number;
   };
   supplyNote: string;
   coaching: string[];
@@ -192,6 +194,8 @@ export type Weekly = {
   limits: { text: number; note: number };
   choices: { id: string; label: string; ask: string; side: "" | "leading" | "following" }[];
   history: { week: string; weekEnd: string; mine: WeeklyRatings | null; partner: WeeklyRatings | null }[];
+  /** Earlier weeks that are kept but not shown on the Free plan. */
+  olderWeeks?: number;
   /** One week in full, when it was asked for. */
   opened?: WeeklyWeek | null;
 };
@@ -249,8 +253,10 @@ export type Progress = {
     next: { days: number; embers: number } | null;
   };
   week: { start: string; days: number; need: number; kept: boolean; daysLeft: number; streak: number; best: number; bonus: number };
-  /** Twelve weeks, Monday first, ending with this week. */
+  /** Twelve weeks, Monday first, ending with this week. The Free plan shows the last four. */
   calendar: ProgressDay[];
+  /** Weeks of the calendar that are kept but not shown on the Free plan. */
+  olderWeeks?: number;
   care: {
     points: number;
     level: { id: string; name: string; min: number; index: number; next: string | null; nextMin: number | null; progress: number };
@@ -299,6 +305,44 @@ export type CelebrationNews = {
   level?: { id: string; name: string; title: string; step: number; major: boolean };
 };
 
+/** One line of the Free and Plus table, with where this household stands on it. */
+export type PlanFeature = {
+  id: string;
+  title: string;
+  line: string;
+  /** The same on both plans. */
+  always: boolean;
+  /** What each plan gets, in words. Empty when `always`. */
+  free: string;
+  plus: string;
+  /** The Free limit and how much of it is used, for the lines that are counted. */
+  limit: number | null;
+  used: number | null;
+  usage: string;
+  /** What a Free household is told at this line's limit. */
+  nudge: string;
+  /** The Plus side of this line is theirs right now, or, for a counted line, there is room to add one. */
+  open: boolean;
+};
+
+/** The household's plan. One plan covers both partners. */
+export type Plan = {
+  tier: "free" | "plus";
+  /** Everything is open because the app is in testing. */
+  earlyAccess: boolean;
+  /** What the limits go by right now. */
+  effective: "free" | "plus";
+  /** Set while a plan is being tried out on a build that is not hosted. */
+  preview: "" | "free" | "plus";
+  canSwitch: boolean;
+  names: { free: string; plus: string };
+  note: string;
+  historyWeeks: number;
+  /** The stuffie questions that are on the Plus side. `side` keeps one to that side of the slash. */
+  deepTopics: { topic: string; side?: string }[];
+  features: PlanFeature[];
+};
+
 export type Bundle = {
   token?: string;
   me: Person;
@@ -324,6 +368,8 @@ export type Bundle = {
     /** What the level is counted in. Points are spent; embers never go down. */
     embers?: number;
   };
+  /** Free or Plus, and the table both are drawn from. Missing when the server is older than this app. */
+  plan?: Plan;
   /** The couple's progress, the same for both. Missing when the server is older than this app. */
   progress?: Progress;
   /** Every trophy there is, earned or not, in shelf order. */

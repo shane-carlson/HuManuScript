@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { clientDate, experienceLabel, firstName, prettyDate, prettyTime, supplyHint } from "../format.ts";
 import { askPhoneNotifications, onPhone, phoneNotifications } from "../phone.ts";
 import { compressImage } from "../photos.ts";
-import { go } from "../route.ts";
+import { PlusCard, PlusNote, PlusPatch } from "../plans/Plus.tsx";
+import { usePlusCard } from "../plans/usePlusCard.tsx";
+import { countWord, daysBefore, noteWords, usePlan } from "../plans/plan.ts";
+import { go, useHash } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { SharedPhoto } from "../SharedPhoto.tsx";
 import { SipButtons } from "../Sips.tsx";
@@ -53,7 +56,9 @@ export function Tasks() {
 export function Assign() {
   const { data, request } = useSession();
   const bundle = data!;
-  const [category, setCategory] = useState("self-care");
+  const { parts } = useHash();
+  // #/assign/fun opens on Fun, which is how a weekly check-in request lands here.
+  const [category, setCategory] = useState(() => (bundle.meta.categories.some((item) => item.id === parts[1]) ? parts[1] : "self-care"));
   const [picked, setPicked] = useState("");
   const template = bundle.meta.templates.find((item) => item.id === picked) || null;
   const [title, setTitle] = useState("");
@@ -65,6 +70,8 @@ export function Assign() {
   const [target, setTarget] = useState("");
   const [prompt, setPrompt] = useState(bundle.meta.journalPrompts[0] || "");
   const [pending, setPending] = useState(false);
+  const sight = usePlan();
+  const plus = usePlusCard("own-tasks");
 
   if (bundle.me.slashSide !== "leading") {
     return (
@@ -109,8 +116,9 @@ export function Assign() {
         },
       });
       go("/tasks");
-    } catch {
-      /* toast */
+    } catch (caught) {
+      // The engine checks a write-your-own task first, then whether there is room for another daily one.
+      plus.refused(caught, template.custom && !sight.feature("own-tasks")?.open ? "own-tasks" : repeat === "daily" ? "dailies" : "own-tasks");
     } finally {
       setPending(false);
     }
@@ -120,6 +128,9 @@ export function Assign() {
   const templates = bundle.meta.templates.filter((item) => item.category === category && !item.custom);
   if (own && category !== "adventure") templates.push(own);
   const canRepeat = template ? template.id !== "daily-adventure" : false;
+  // On the Free plan, a limit that is already reached is said in place, before anything is sent.
+  const ownFull = Boolean(template?.custom) && sight.shut("own-tasks");
+  const dailyFull = canRepeat && repeat === "daily" && sight.shut("dailies");
   const theirs = bundle.partner ? firstName(bundle.partner.displayName) : "Your partner";
   const changed = template
     ? (!template.custom && title !== template.title) ||
@@ -150,15 +161,25 @@ export function Assign() {
                 setPicked(item.id);
                 start(item);
                 setRepeat(item.habit ? "daily" : "once");
+                plus.clear();
               }}
             >
-              <strong>{item.title}</strong>
+              {item.custom && sight.marked("own-tasks") ? (
+                <strong className="pl-with">
+                  {item.title}
+                  <PlusPatch />
+                </strong>
+              ) : (
+                <strong>{item.title}</strong>
+              )}
               <em>{item.points} pts · {item.summary}</em>
+              {item.custom && noteWords(sight, "own-tasks") ? <em>{noteWords(sight, "own-tasks")}</em> : null}
               {bundle.partner && item.supplyHints.length ? <em>{supplyHint(item.supplyHints, bundle.partner.supplies)}</em> : null}
             </button>
           ))}
         </div>
-        {template ? (
+        {template && ownFull ? <PlusCard feature="own-tasks" /> : null}
+        {template && !ownFull ? (
           <form className="card stack" onSubmit={(event) => { event.preventDefault(); void send(); }}>
             {sealed ? null : (
               <div className="row spread">
@@ -197,7 +218,8 @@ export function Assign() {
                   <Chip pressed={repeat === "once"} onClick={() => setRepeat("once")}>Just once</Chip>
                   <Chip pressed={repeat === "daily"} onClick={() => setRepeat("daily")}>Every day</Chip>
                 </div>
-                {repeat === "daily" ? <p className="fine">{theirs} gets this fresh every day until you stop it.</p> : null}
+                {repeat === "daily" && !dailyFull ? <p className="fine">{theirs} gets this fresh every day until you stop it.</p> : null}
+                {dailyFull ? <PlusCard feature="dailies" /> : <PlusNote feature="dailies" />}
               </div>
             ) : null}
             {repeat === "once" || !canRepeat ? (
@@ -215,7 +237,8 @@ export function Assign() {
             {template.id === "anal-training" && bundle.partner ? (
               <p className="fine">The suggestions will match {theirs}’s experience level: {experienceLabel(bundle.partner.experienceLevel)}.</p>
             ) : null}
-            <button className="primary" type="submit" disabled={pending || !bundle.partner || (template.custom && title.trim().length < 2)}>
+            {plus.card}
+            <button className="primary" type="submit" disabled={pending || dailyFull || !bundle.partner || (template.custom && title.trim().length < 2)}>
               {bundle.partner ? `Send it to ${theirs}` : "Pair up first"}
             </button>
           </form>
@@ -466,7 +489,12 @@ function AdventureLock({ task, mine, theirs }: { task: Task; mine: boolean; thei
 }
 
 function Completion({ task }: { task: Task }) {
+  const sight = usePlan();
   const done = task.completion!;
+  const kept = done.photosKept || 0;
+  const weeks = sight.plan?.historyWeeks || 0;
+  // Photos this far back are the Plus side of looking back. While everything is open they wear the patch.
+  const keepsake = done.photos.length > 0 && weeks > 0 && String(task.completedAt || "").slice(0, 10) < daysBefore(clientDate(), weeks * 7);
   return (
     <section className="card">
       <p className="eyebrow">{task.status === "skipped" ? "Passed on" : "Done"}</p>
@@ -477,6 +505,18 @@ function Completion({ task }: { task: Task }) {
         <div className="photos">
           {done.photos.map((src, index) => <SharedPhoto key={`${task.id}-${index}`} src={src} alt="Shared between the two of you" />)}
         </div>
+      ) : null}
+      {keepsake ? (
+        <PlusNote
+          feature="photos"
+          says={`On ${sight.plan?.names.free || "Free"}, photos show for ${countWord(weeks)} weeks. ${done.photos.length === 1 ? "This one is" : "These are"} older.`}
+        />
+      ) : null}
+      {kept > 0 ? (
+        <PlusCard
+          feature="photos"
+          message={`${kept === 1 ? "The photo from this task is" : `The ${countWord(kept)} photos from this task are`} kept safe. Plus shows photos from more than ${countWord(weeks)} weeks back.`}
+        />
       ) : null}
     </section>
   );

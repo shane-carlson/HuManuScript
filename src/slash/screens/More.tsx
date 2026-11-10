@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/assign", title: "Give a task", detail: "Pick one and send it over.", leadingOnly: true },
   { href: "/pair", title: "The two of you", detail: "Invite your partner, or enter the code they sent." },
   { href: "/profile", title: "You", detail: "Your title, your stash, and which stuffie you keep." },
+  { href: "/plans", title: "Free and Plus", detail: "What’s in each plan, and what the two of you have now." },
 ];
 
 export function More() {

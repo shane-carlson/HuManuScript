@@ -4,6 +4,9 @@ import { AvatarFace } from "../avatar/Face.tsx";
 import { hueOf, lookOf } from "../avatar/looks.ts";
 import { EXPERIENCE, identityLine } from "../format.ts";
 import { GuideFace } from "../guides.tsx";
+import { PlusCard, PlusNote } from "../plans/Plus.tsx";
+import { usePlusCard } from "../plans/usePlusCard.tsx";
+import { samePlush, usePlan } from "../plans/plan.ts";
 import { go } from "../route.ts";
 import { seedFrom } from "../seeded.ts";
 import { useSession } from "../session.tsx";
@@ -26,7 +29,11 @@ export function Profile() {
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
   const made = guideId === "custom";
-  const nameless = made && !stuffie.name.trim();
+  const sight = usePlan();
+  const plus = usePlusCard("stuffie-keep");
+  // On the Free plan the maker rolls freely, and a stuffie already kept can be renamed. A new roll is not sent to be kept.
+  const rollOnly = made && sight.shut("stuffie-keep") && !samePlush(me.stuffie, stuffie);
+  const nameless = made && !rollOnly && !stuffie.name.trim();
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -42,15 +49,15 @@ export function Profile() {
           roleTitle: role,
           supplies: supplies.split(",").map((item) => item.trim()).filter(Boolean),
           experienceLevel: experience,
-          guideId,
-          ...(made ? { stuffie: { ...stuffie, name: stuffie.name.trim() } } : {}),
+          guideId: rollOnly ? me.guideId : guideId,
+          ...(made && !rollOnly ? { stuffie: { ...stuffie, name: stuffie.name.trim() } } : {}),
           avatar: { hue: hueOf(look), mark: me.avatar?.mark || "heart", look },
         },
       });
       setSaved(true);
       setDressing(false);
-    } catch {
-      /* toast */
+    } catch (caught) {
+      plus.refused(caught);
     } finally {
       setPending(false);
     }
@@ -125,7 +132,16 @@ export function Profile() {
               <span>{me.stuffie ? stuffie.name.trim() || "Yours" : "Make your own"}</span>
             </button>
           </div>
+          <PlusNote feature="stuffie-keep" says="Rolling your own is free. Keeping the one you fall for is Plus." />
           {made ? <StuffieMaker value={stuffie} onChange={setStuffie} /> : null}
+          {rollOnly ? (
+            <PlusCard
+              feature="stuffie-keep"
+              message={me.stuffie ? `${me.stuffie.name} is yours and is staying put. Sewing a different one is part of Plus.` : undefined}
+            >
+              <p>Everything else on this page still saves.</p>
+            </PlusCard>
+          ) : plus.card}
           {saveButton}
           {saved ? <p className="fine">Saved.</p> : null}
         </form>

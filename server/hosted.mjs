@@ -317,7 +317,7 @@ export function createHostedApp(options = {}) {
 /** What a failed request sends back. Anything without a status is ours, and is not described. */
 export function errorBody(error) {
   if (!error.status) return { error: "Something went wrong." };
-  return error.code ? { error: error.message, code: error.code } : { error: error.message };
+  return error.code ? { error: error.message, code: error.code, ...(error.feature ? { feature: error.feature } : {}) } : { error: error.message };
 }
 
 /**

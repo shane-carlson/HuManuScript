@@ -68,6 +68,8 @@ body {
 }
 
 .pad, .welcome, .setup { padding: 22px 18px 28px; }
+.pad > * + section, .pad > section + * { margin-top: 16px; }
+.pad > .stack + .card, .pad > .stack + form, .pad > form + .card { margin-top: 12px; }
 .welcome { padding-top: 28px; }
 
 .tabbar {
@@ -98,7 +100,7 @@ body {
 .tab.on { color: #d63d68; background: #fff0f4; }
 
 .primary, .ghost, .texty {
-  border-radius: 999px;
+  border-radius: 16px;
   padding: 12px 16px;
   min-height: 48px;
 }
@@ -167,13 +169,21 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .field textarea { resize: vertical; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Choices are sewn-on patches: a soft square of felt, with a stitch line once picked. */
 .chip {
-  background: white;
-  border-radius: 999px;
-  padding: 8px 12px;
-  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.12);
+  background: #fffdfb;
+  border-radius: 11px;
+  padding: 8px 13px;
+  min-height: 40px;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.14), 0 2px 0 rgba(42, 27, 51, 0.06);
 }
-.chip.on { background: #2a1b33; color: white; box-shadow: none; }
+.chip.on {
+  background: #2a1b33;
+  color: white;
+  box-shadow: 0 2px 0 rgba(42, 27, 51, 0.25);
+  outline: 1.5px dashed rgba(255, 255, 255, 0.6);
+  outline-offset: -5px;
+}
 
 .choice, .guide-card, .demo-card, .task {
   text-align: left;
@@ -325,20 +335,44 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .nudge .texty { width: auto; min-height: 40px; padding: 8px 10px; }
 .guide-face.small { width: 54px; height: 54px; }
 
+/* Labels are little stitched patches, each with the mark of what it is, rather than capsules. */
 .pill {
   display: inline-flex;
+  align-items: center;
+  gap: 5px;
   width: fit-content;
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 0.72rem;
+  border-radius: 8px 10px 7px 9px;
+  padding: 2px 9px 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   background: #ffe1ea;
   color: #a1264d;
+  border: 1.5px dashed rgba(161, 38, 77, 0.42);
+  transform: rotate(-1.4deg);
+  transform-origin: left center;
 }
-.pill.fun, .pill.gold { background: #fff1c9; color: #8a5a00; }
-.pill.spicy { background: #eee6ff; color: #5d3e9a; }
-.pill.grounding { background: #d9fff6; color: #0d6e66; }
+.pill::before {
+  content: "";
+  flex: none;
+  width: 11px;
+  height: 11px;
+  background: currentColor;
+  -webkit-mask: var(--patch-mark) center / contain no-repeat;
+  mask: var(--patch-mark) center / contain no-repeat;
+  --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 10.7 1.6 6.4a2.7 2.7 0 0 1 3.8-3.8l.6.5.6-.5a2.7 2.7 0 0 1 3.8 3.8z'/%3E%3C/svg%3E");
+}
+.pill.fun { background: #fff1c9; color: #8a5a00; border-color: rgba(138, 90, 0, 0.42); }
+.pill.fun::before { --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 .7l1.6 3.4 3.7.5-2.7 2.5.7 3.7L6 9l-3.3 1.8.7-3.7L.7 4.6l3.7-.5z'/%3E%3C/svg%3E"); }
+.pill.gold { background: #fff1c9; color: #8a5a00; border-color: rgba(138, 90, 0, 0.42); }
+.pill.gold::before { --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 .4l1.4 4.2L11.6 6 7.4 7.4 6 11.6 4.6 7.4.4 6l4.2-1.4z'/%3E%3C/svg%3E"); }
+.pill.adventure { background: #ffe9d2; color: #8f4a12; border-color: rgba(143, 74, 18, 0.42); }
+.pill.adventure::before { --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill-rule='evenodd' d='M2.5 11V4.5a3.5 3.5 0 0 1 7 0V11zM7.6 6.6a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z'/%3E%3C/svg%3E"); }
+.pill.spicy { background: #eee6ff; color: #5d3e9a; border-color: rgba(93, 62, 154, 0.42); }
+.pill.spicy::before { --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6.4.5c.3 2-1 3-1.9 4C3.6 5.6 3 6.6 3 7.8a3 3 0 0 0 6 .1c0-1-.4-1.9-1-2.6-.2.8-.6 1.3-1.1 1.5.4-2.1-.1-4.4-.5-6.3z'/%3E%3C/svg%3E"); }
+.pill.grounding { background: #d9fff6; color: #0d6e66; border-color: rgba(13, 110, 102, 0.42); }
+.pill.grounding::before { --patch-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M10.6 1.4C5.2 1.1 1.9 3.9 1.7 8.2L.8 10.5l1 .5.8-1.7c4.6.2 7.8-2.5 8-7.9z'/%3E%3C/svg%3E"); }
 .pill.self-care { background: #ffe1ea; color: #a1264d; }
 
 .page-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 12px; }

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { firstName, prettyDate } from "../format.ts";
+import { PlusCard, PlusPatch } from "../plans/Plus.tsx";
+import { countWord, daysBefore, plusRefusal, usePlan } from "../plans/plan.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import type { Person, Weekly as WeeklyData, WeeklyEntry, WeeklyWeek } from "../types.ts";
@@ -326,17 +328,28 @@ function Trend({ weekly }: { weekly: WeeklyData }) {
 }
 
 function History({ weekly, partnerName }: { weekly: WeeklyData; partnerName: string }) {
+  const sight = usePlan();
+  const older = weekly.olderWeeks || 0;
+  // Weeks from before this are the Plus side of looking back. While everything is open they wear the patch.
+  const plusBefore = sight.plan && sight.marked("history") ? daysBefore(weekly.week, sight.plan.historyWeeks * 7) : "";
   return (
     <section className="wk-history">
       <h2>Earlier weeks</h2>
-      {weekly.history.length === 0 ? (
+      {weekly.history.length === 0 && older === 0 ? (
         <p className="muted">Past weeks collect here, so you can both look back and see how things have moved.</p>
       ) : (
         <div className="stack">
           <Trend weekly={weekly} />
           {weekly.history.map((item) => (
             <button key={item.week} className="task" type="button" onClick={() => go(`/weekly/${item.week}`)}>
-              <strong>{weekRange(item.week, item.weekEnd)}</strong>
+              {item.week < plusBefore ? (
+                <strong className="pl-with">
+                  {weekRange(item.week, item.weekEnd)}
+                  <PlusPatch />
+                </strong>
+              ) : (
+                <strong>{weekRange(item.week, item.weekEnd)}</strong>
+              )}
               <em>
                 {item.mine && item.partner
                   ? "Both of you checked in"
@@ -346,6 +359,12 @@ function History({ weekly, partnerName }: { weekly: WeeklyData; partnerName: str
               </em>
             </button>
           ))}
+          {older > 0 ? (
+            <PlusCard
+              feature="history"
+              message={`${older === 1 ? "One earlier week is" : `${countWord(older, true)} earlier weeks are`} kept safe, every word. Plus opens them all.`}
+            />
+          ) : null}
         </div>
       )}
     </section>
@@ -433,6 +452,7 @@ function PastWeek({ week, weekly, me, partner }: { week: string; weekly: WeeklyD
   const { token } = useSession();
   const [pair, setPair] = useState<WeeklyWeek | null>(null);
   const [missing, setMissing] = useState(false);
+  const [plusOnly, setPlusOnly] = useState("");
   const theirName = firstName(partner.displayName);
 
   useEffect(() => {
@@ -445,8 +465,11 @@ function PastWeek({ week, weekly, me, partner }: { week: string; weekly: WeeklyD
         if (opened) setPair(opened);
         else setMissing(true);
       })
-      .catch(() => {
-        if (!cancel) setMissing(true);
+      .catch((caught: unknown) => {
+        if (cancel) return;
+        const refused = plusRefusal(caught);
+        if (refused) setPlusOnly(refused);
+        else setMissing(true);
       });
     return () => {
       cancel = true;
@@ -462,7 +485,8 @@ function PastWeek({ week, weekly, me, partner }: { week: string; weekly: WeeklyD
           kicker={summary ? weekRange(summary.week, summary.weekEnd) : pair ? weekRange(pair.week, pair.weekEnd) : "An earlier week"}
         />
         {missing ? <p className="lead">There’s no check-in from that week.</p> : null}
-        {!pair && !missing ? <p className="lead">One sec…</p> : null}
+        {plusOnly ? <PlusCard feature="history" message={plusOnly} /> : null}
+        {!pair && !missing && !plusOnly ? <p className="lead">One sec…</p> : null}
         {pair ? (
           <>
             {pair.mine && pair.partner ? <p className="lead">Both of you checked in that week.</p> : null}

@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { firstName } from "../format.ts";
+import { PlusCard, PlusNote } from "../plans/Plus.tsx";
+import { usePlusCard } from "../plans/usePlusCard.tsx";
+import { usePlan } from "../plans/plan.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { Field, PageHead, Shell } from "../ui.tsx";
@@ -12,6 +15,8 @@ export function Rewards() {
   const [detail, setDetail] = useState("");
   const [cost, setCost] = useState(25);
   const [pending, setPending] = useState(false);
+  const sight = usePlan();
+  const plus = usePlusCard("rewards");
 
   async function propose(event: React.FormEvent) {
     event.preventDefault();
@@ -20,8 +25,8 @@ export function Rewards() {
       await request("/api/rewards", { method: "POST", body: { title, detail, cost } });
       setTitle("");
       setDetail("");
-    } catch {
-      /* toast */
+    } catch (caught) {
+      plus.refused(caught);
     } finally {
       setPending(false);
     }
@@ -74,19 +79,28 @@ export function Rewards() {
             );
           })}
         </div>
-        <form className="card stack" onSubmit={(event) => void propose(event)}>
-          <h2>Put a reward on the table</h2>
-          <Field label="The reward">
-            <input value={title} onChange={(event) => setTitle(event.target.value)} required />
-          </Field>
-          <Field label="The details">
-            <textarea value={detail} rows={3} onChange={(event) => setDetail(event.target.value)} />
-          </Field>
-          <Field label={`Costs ${cost} points`}>
-            <input type="range" min={5} max={150} value={cost} onChange={(event) => setCost(Number(event.target.value))} />
-          </Field>
-          <button className="primary" type="submit" disabled={pending}>Suggest it</button>
-        </form>
+        {sight.shut("rewards") ? (
+          <section className="card stack">
+            <h2>Put a reward on the table</h2>
+            <PlusCard feature="rewards" />
+          </section>
+        ) : (
+          <form className="card stack" onSubmit={(event) => void propose(event)}>
+            <h2>Put a reward on the table</h2>
+            <PlusNote feature="rewards" />
+            <Field label="The reward">
+              <input value={title} onChange={(event) => setTitle(event.target.value)} required />
+            </Field>
+            <Field label="The details">
+              <textarea value={detail} rows={3} onChange={(event) => setDetail(event.target.value)} />
+            </Field>
+            <Field label={`Costs ${cost} points`}>
+              <input type="range" min={5} max={150} value={cost} onChange={(event) => setCost(Number(event.target.value))} />
+            </Field>
+            {plus.card}
+            <button className="primary" type="submit" disabled={pending}>Suggest it</button>
+          </form>
+        )}
         {bundle.partner ? (
           <p className="fine">
             {me.slashSide === "following"

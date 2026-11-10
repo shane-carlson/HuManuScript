@@ -3,6 +3,7 @@ import { identityLine, sideWord } from "../format.ts";
 import { siteUrl } from "../api.ts";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
+import type { Person } from "../types.ts";
 import { Avatar, Field, PageHead, Shell } from "../ui.tsx";
 
 export function Pair() {
@@ -56,10 +57,10 @@ export function Pair() {
       <div className="pad">
         <PageHead title="The two of you" kicker="Room for two, no more" />
         <div className="pair">
-          <PersonCard name={bundle.me.displayName} line={`${sideWord(bundle.me.slashSide)} · ${identityLine(bundle.me)}`} hue={bundle.me.avatar.hue} mark={bundle.me.avatar.mark} />
+          <PersonCard name={bundle.me.displayName} line={`${sideWord(bundle.me.slashSide)} · ${identityLine(bundle.me)}`} avatar={bundle.me.avatar} />
           <span className="slash-mark" aria-hidden="true">/</span>
           {bundle.partner ? (
-            <PersonCard name={bundle.partner.displayName} line={`${sideWord(bundle.partner.slashSide)} · ${identityLine(bundle.partner)}`} hue={bundle.partner.avatar.hue} mark={bundle.partner.avatar.mark} />
+            <PersonCard name={bundle.partner.displayName} line={`${sideWord(bundle.partner.slashSide)} · ${identityLine(bundle.partner)}`} avatar={bundle.partner.avatar} />
           ) : (
             <div className="card slim center">
               <p>Saving a seat for your partner.</p>
@@ -111,10 +112,10 @@ export function Pair() {
   );
 }
 
-function PersonCard({ name, line, hue, mark }: { name: string; line: string; hue: number; mark: string }) {
+function PersonCard({ name, line, avatar }: { name: string; line: string; avatar: Person["avatar"] }) {
   return (
     <article className="card slim center">
-      <Avatar person={{ displayName: name, avatar: { hue, mark } }} />
+      <Avatar person={{ displayName: name, avatar }} />
       <strong>{name}</strong>
       <p className="fine">{line}</p>
     </article>

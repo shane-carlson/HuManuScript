@@ -9,6 +9,7 @@ import {
   GOAL_OPTIONS,
   GUIDES,
   JOURNAL_PROMPTS,
+  LEVELS,
   PRONOUN_PRESETS,
   ROLE_SUGGESTIONS,
   TEMPLATES,
@@ -22,6 +23,7 @@ import { beginProgress, finishProgress, followingDay, progressCheer, progressVie
 import { weeklyCheer, weeklyRoute, weeklyView } from "./weekly.mjs";
 import { DEMO_LOOKS, cleanAvatar } from "./looks.mjs";
 import { cleanStuffie, guidesFor } from "./stuffie.mjs";
+import { earlyAccessFrom, planOf, previewPlan, refusal, throughPlan } from "./plans.mjs";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEMO_PASSWORD = "together";
@@ -34,9 +36,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function fail(status, error) {
+function fail(status, error, extra) {
   const err = new Error(error);
   err.status = status;
+  if (extra) Object.assign(err, extra);
   throw err;
 }
 
@@ -128,6 +131,8 @@ export function createSlashApp(options = {}) {
   const hosted = options.hosted === true;
   const seedDemo = !hosted && options.seedDemo !== false;
   const tokenPrefix = typeof options.tokenPrefix === "string" ? options.tokenPrefix : "";
+  // While the app is in testing every household has everything. SLASH_EARLY_ACCESS=0 ends that without a code change.
+  const planOptions = { hosted, earlyAccess: options.earlyAccess ?? earlyAccessFrom(process.env.SLASH_EARLY_ACCESS) };
   // Where the household is kept. The default is one file on this computer; a hosted
   // server hands in its own, so the same rules run over a database record.
   const store = options.store || {
@@ -159,6 +164,12 @@ export function createSlashApp(options = {}) {
 
   function save() {
     store.write(db);
+  }
+
+  /** Stops an action that is on the Plus side for this household. The limits themselves live in plans.mjs. */
+  function plusOnly(feature, context) {
+    const sorry = refusal(db, planOf(db, planOptions), feature, context);
+    if (sorry) fail(402, sorry, { code: "plus", feature });
   }
 
   function seed(base) {
@@ -487,7 +498,7 @@ export function createSlashApp(options = {}) {
       seals: ADVENTURE_SEALS,
       templates: leading ? TEMPLATES.map((item) => ({ ...item, summary: nameLead(item.summary), photoLabel: nameLead(item.photoLabel) })) : [],
       journalPrompts: JOURNAL_PROMPTS,
-      levelLadder: ["Spark", "Glow", "Flame", "Hearth", "Beacon", "Constellation"],
+      levelLadder: LEVELS.map((level) => level.name),
     };
   }
 
@@ -646,7 +657,8 @@ export function createSlashApp(options = {}) {
         if (a.status !== b.status) return a.status === "open" ? -1 : 1;
         return String(b.createdAt).localeCompare(String(a.createdAt));
       });
-    return {
+    // Adds `plan`, and leaves the older weeks out of what a Free household is shown. Nothing is removed from `db`.
+    return throughPlan(db, {
       me: publicUser(user),
       partner: publicUser(partner),
       pair: db.pair,
@@ -674,7 +686,7 @@ export function createSlashApp(options = {}) {
       meta: meta(user),
       ...extra,
       ...guideBundle(db, user, extra, { today: user.lastSeenDay }),
-    };
+    }, planOptions);
   }
 
   /** Queues a celebration for the partner. It waits until their app says it was seen. */
@@ -979,6 +991,7 @@ export function createSlashApp(options = {}) {
     if (route === "POST /api/rewards") {
       const title = cleanText(body?.title, 80);
       if (title.length < 2) fail(400, "Give the reward a name.");
+      plusOnly("rewards");
       const cost = Math.min(500, Math.max(5, Number(body?.cost) || 20));
       db.rewards.push({
         id: nid(),
@@ -1044,6 +1057,7 @@ export function createSlashApp(options = {}) {
     }
 
     if (parts[0] === "api" && parts[1] === "weekly") {
+      if (method.toUpperCase() === "GET" && parts[2]) plusOnly("history", { week: parts[2], clientDate: today });
       const mark = method.toUpperCase() === "POST" && !parts[2] ? progressStart(user, today) : null;
       const done = weeklyRoute(db, user, { method, parts, body, clientDate: today }, { queueCheer });
       if (mark && done.extra.celebration) done.extra.celebration = progressEnd(user, mark, done.extra.celebration);
@@ -1051,7 +1065,16 @@ export function createSlashApp(options = {}) {
       return { status: done.status, body: bundle(user, done.extra) };
     }
 
+    if (route === "POST /api/plan") {
+      // Trying a plan out is for this computer's build. A hosted household's plan only ever follows a purchase.
+      if (hosted) fail(404, "Plans can’t be switched from here.");
+      if (!previewPlan(db, body?.plan, planOptions, nowIso())) fail(400, "Pick Free or Plus.");
+      save();
+      return { status: 200, body: bundle(user) };
+    }
+
     if (route === "POST /api/guide/nudge" || route === "POST /api/guide/ask") {
+      plusOnly("deep-talk", { user, topic: typeof body?.topic === "string" ? body.topic : body?.event });
       const answer = guideAnswer(db, user, body, { today: today || user.lastSeenDay });
       if (answer.clock != null && answer.clock !== user.guideClock) {
         user.guideClock = answer.clock;
@@ -1064,6 +1087,7 @@ export function createSlashApp(options = {}) {
   }
 
   function applyProfile(user, body) {
+    plusOnly("stuffie-keep", { user, stuffie: body.stuffie });
     if (body.pronouns) {
       const pronouns = pronounsFrom(body.pronouns);
       if (!pronouns) fail(400, "Fill in all three pronouns.");
@@ -1283,6 +1307,8 @@ export function createSlashApp(options = {}) {
     if (template.promptPool === "journal") {
       prompt = cleanText(body.prompt, 180) || JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
     }
+    if (template.custom) plusOnly("own-tasks");
+    if (daily) plusOnly("dailies");
     if (daily) {
       const routine = {
         id: nid(),
@@ -1531,7 +1557,8 @@ export function createSlashApp(options = {}) {
       sendJson(res, result.status, result.body);
     } catch (error) {
       const status = error.status || 500;
-      sendJson(res, status, { error: error.status ? error.message : "Something went wrong." });
+      const told = error.status && error.code ? { code: error.code, feature: error.feature } : {};
+      sendJson(res, status, { error: error.status ? error.message : "Something went wrong.", ...told });
     }
   }
 
