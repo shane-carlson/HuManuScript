@@ -1,4 +1,9 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
+import { useSession } from "./session.tsx";
+import { Blush, ButtonEyes, Floater, HappyEyes, Looks, Part, Shadow, Tuft } from "./stuffie/bits.tsx";
+import { MadeStuffie } from "./stuffie/Plush.tsx";
+import { soundStuffie, type Stuffie } from "./stuffie/roll.ts";
+import { FLAME, HEART, INK, SPARKLE, STAR, STITCH, THREAD } from "./stuffie/thread.ts";
 
 export function Mark({ className = "mark" }: { className?: string }) {
   return (
@@ -10,112 +15,32 @@ export function Mark({ className = "mark" }: { className?: string }) {
   );
 }
 
-const INK = "#2a1b33";
-const STITCH = {
-  fill: "none",
-  stroke: INK,
-  strokeWidth: 1.3,
-  strokeLinecap: "round" as const,
-  strokeDasharray: "2.6 3.2",
-  opacity: 0.38,
-};
-const THREAD = { fill: "none", stroke: INK, strokeWidth: 2.2, strokeLinecap: "round" as const };
-
 type GuideProps = { className: string; cheer: boolean };
 
 /**
  * Each guide is a sitting plush: button eyes, stitched seams, a belly patch.
  * With `cheer` the same plush celebrates. Its parts move from styles.css, and
  * it gains the extras only that guide has (foxfire, embers, puffs, a rainbow).
+ *
+ * `custom` is the stuffie a person made. Most screens only know the id, so
+ * without a `stuffie` it draws the one that belongs to whoever is signed in.
  */
-export function GuideFace({ id, className = "guide-face", cheer = false }: { id: string; className?: string; cheer?: boolean }) {
+export function GuideFace({ id, className = "guide-face", cheer = false, stuffie }: { id: string; className?: string; cheer?: boolean; stuffie?: Stuffie | null }) {
   const classes = cheer ? `${className} cheering` : className;
+  if (id === "custom") {
+    const made = soundStuffie(stuffie);
+    return made ? <MadeStuffie stuffie={made} className={classes} cheer={cheer} /> : <OwnStuffie className={classes} cheer={cheer} />;
+  }
   if (id === "pip") return <Pip className={classes} cheer={cheer} />;
   if (id === "moss") return <Moss className={classes} cheer={cheer} />;
   if (id === "sol") return <Sol className={classes} cheer={cheer} />;
   return <Lumen className={classes} cheer={cheer} />;
 }
 
-/** A piece of the plush that turns or stretches around `at`, given in the drawing's own units. */
-function Part({ name, at, children }: { name: string; at: [number, number]; children: ReactNode }) {
-  return (
-    <g className={`gp gp-${name}`} style={{ transformOrigin: `${at[0]}px ${at[1]}px` }}>
-      {children}
-    </g>
-  );
-}
-
-function Shadow({ cx, rx, fill }: { cx: number; rx: number; fill: string }) {
-  return <ellipse className="gp gp-shadow" cx={cx} cy="112" rx={rx} ry="5" fill={fill} style={{ transformOrigin: `${cx}px 112px` }} />;
-}
-
-/** The everyday face, plus the celebrating face that swaps in while the plush cheers. */
-function Looks({ idle, happy, cheer }: { idle: ReactNode; happy: ReactNode; cheer: boolean }) {
-  return (
-    <>
-      <g className="gp-look-idle">{idle}</g>
-      {cheer ? <g className="gp-look-cheer">{happy}</g> : null}
-    </>
-  );
-}
-
-function ButtonEyes({ y, left = 47, right = 73 }: { y: number; left?: number; right?: number }) {
-  return (
-    <>
-      <circle cx={left} cy={y} r="4.8" fill={INK} />
-      <circle cx={right} cy={y} r="4.8" fill={INK} />
-      <circle cx={left + 1.6} cy={y - 1.7} r="1.6" fill="#fff" />
-      <circle cx={right + 1.6} cy={y - 1.7} r="1.6" fill="#fff" />
-    </>
-  );
-}
-
-function HappyEyes({ y, left = 47, right = 73 }: { y: number; left?: number; right?: number }) {
-  const arc = (x: number) => `M${x - 5.4} ${y + 2.4}q5.4 -8.2 10.8 0`;
-  return <path d={arc(left) + arc(right)} {...THREAD} strokeWidth="2.9" />;
-}
-
-function Blush({ y, left = 37, right = 83 }: { y: number; left?: number; right?: number }) {
-  return (
-    <g className="gp-blush">
-      <ellipse cx={left} cy={y} rx="4.6" ry="3.2" fill="#ff8fa3" opacity="0.7" />
-      <ellipse cx={right} cy={y} rx="4.6" ry="3.2" fill="#ff8fa3" opacity="0.7" />
-    </g>
-  );
-}
-
-/** A soft teardrop that starts at 0,0 and points up, for tails, flames, and manes. */
-function Tuft({ x, y, turn, length, fill, tip }: { x: number; y: number; turn: number; length: number; fill: string; tip?: string }) {
-  const half = length * 0.3;
-  const body = `M0 0C${-half} ${-length * 0.25} ${-half} ${-length * 0.7} 0 ${-length}C${half} ${-length * 0.7} ${half} ${-length * 0.25} 0 0z`;
-  const cap = `M0 ${-length}C${-half * 0.62} ${-length * 0.84} ${-half * 0.78} ${-length * 0.72} ${-half * 0.8} ${-length * 0.62}C${-half * 0.3} ${-length * 0.7} ${half * 0.3} ${-length * 0.7} ${half * 0.8} ${-length * 0.62}C${half * 0.78} ${-length * 0.72} ${half * 0.62} ${-length * 0.84} 0 ${-length}z`;
-  return (
-    <g transform={`translate(${x} ${y}) rotate(${turn})`}>
-      <path d={body} fill={fill} />
-      {tip ? <path d={cap} fill={tip} /> : null}
-      <path d={`M0 ${-length * 0.2}V${-length * 0.62}`} {...STITCH} />
-    </g>
-  );
-}
-
-const FLAME = "M0 -11C6 -4 7 1 5 5.5C3.6 9 -3.6 9 -5 5.5C-7 1 -6 -4 0 -11z";
-const HEART = "M0 7C-9 0.5 -8 -7 -3.6 -7C-1.4 -7 0 -5.4 0 -4C0 -5.4 1.4 -7 3.6 -7C8 -7 9 0.5 0 7z";
-const STAR = "M0 -9l2.6 5.6 6.1.7-4.5 4.2 1.2 6L0 3.6l-5.4 2.9 1.2-6-4.5-4.2 6.1-.7z";
-const SPARKLE = "M0 -9C1 -2.4 2.4 -1 9 0C2.4 1 1 2.4 0 9C-1 2.4 -2.4 1 -9 0C-2.4 -1 -1 -2.4 0 -9z";
-
-/** A small extra that floats near the plush while it cheers. `drift` is where it travels to. */
-function Floater({ name, x, y, drift, delay, children }: { name: string; x: number; y: number; drift?: [number, number]; delay: number; children: ReactNode }) {
-  const style = {
-    transformOrigin: `${x}px ${y}px`,
-    animationDelay: `${delay}s`,
-    "--dx": `${drift?.[0] ?? 0}px`,
-    "--dy": `${drift?.[1] ?? 0}px`,
-  } as CSSProperties;
-  return (
-    <g className={`gp gp-${name}`} style={style}>
-      <g transform={`translate(${x} ${y})`}>{children}</g>
-    </g>
-  );
+function OwnStuffie({ className, cheer }: GuideProps) {
+  const { data } = useSession();
+  const made = soundStuffie(data?.me.stuffie);
+  return made ? <MadeStuffie stuffie={made} className={className} cheer={cheer} /> : <Lumen className={className} cheer={cheer} />;
 }
 
 function Lumen({ className, cheer }: GuideProps) {
@@ -442,7 +367,7 @@ function Burst({ kind }: { kind: string }) {
 }
 
 /** The guide, celebrating. `kind` is the celebration: task, praise, level, streak, reward, or pair. */
-export function GuideCheer({ id, kind }: { id: string; kind: string }) {
+export function GuideCheer({ id, kind, stuffie }: { id: string; kind: string; stuffie?: Stuffie | null }) {
   return (
     <div className={`cheer-stage cheer-${kind}`} aria-hidden="true">
       <span className="cheer-halo" />
@@ -455,64 +380,8 @@ export function GuideCheer({ id, kind }: { id: string; kind: string }) {
       ) : null}
       <Burst kind={kind} />
       <div className="cheer-hop">
-        <GuideFace id={id} className="guide-face xl" cheer />
+        <GuideFace id={id} className="guide-face xl" cheer stuffie={stuffie} />
       </div>
     </div>
-  );
-}
-
-export function MarkGlyph({ mark }: { mark: string }) {
-  const common = { width: 14, height: 14, viewBox: "0 0 16 16", "aria-hidden": true as const };
-  if (mark === "star" || mark === "spark") {
-    return (
-      <svg {...common}>
-        <path d="M8 1.4l1.6 4.2 4.4.3-3.4 2.8 1.1 4.3L8 10.6 4.3 13l1.1-4.3L2 5.9l4.4-.3z" fill="#fff" />
-      </svg>
-    );
-  }
-  if (mark === "moon") {
-    return (
-      <svg {...common}>
-        <path d="M9 1.5a6 6 0 1 0 5.2 9A5 5 0 0 1 9 1.5z" fill="#fff" />
-      </svg>
-    );
-  }
-  if (mark === "leaf") {
-    return (
-      <svg {...common}>
-        <path d="M13 2C6 3 2 8 2 13c5 0 10-3 11-11z" fill="#fff" />
-      </svg>
-    );
-  }
-  if (mark === "sun") {
-    return (
-      <svg {...common}>
-        <circle cx="8" cy="8" r="3" fill="#fff" />
-        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13" stroke="#fff" strokeWidth="1.4" />
-      </svg>
-    );
-  }
-  if (mark === "fox") {
-    return (
-      <svg {...common}>
-        <path d="M2 3l3 4-2 6h4l1-3 1 3h4l-2-6 3-4-4 2L8 2 6 5z" fill="#fff" />
-      </svg>
-    );
-  }
-  if (mark === "flower") {
-    return (
-      <svg {...common}>
-        <circle cx="8" cy="8" r="2" fill="#fff" />
-        <circle cx="8" cy="3.2" r="2" fill="#fff" />
-        <circle cx="8" cy="12.8" r="2" fill="#fff" />
-        <circle cx="3.2" cy="8" r="2" fill="#fff" />
-        <circle cx="12.8" cy="8" r="2" fill="#fff" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <path d="M8 13s-5-3.1-5-6.2A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5 1.8C13 9.9 8 13 8 13z" fill="#fff" />
-    </svg>
   );
 }

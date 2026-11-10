@@ -7,10 +7,13 @@ import { GuidePage } from "./screens/Guide.tsx";
 import { Home } from "./screens/Home.tsx";
 import { More } from "./screens/More.tsx";
 import { Onboarding } from "./screens/Onboarding.tsx";
+import { Gallery } from "./screens/Gallery.tsx";
 import { Pair } from "./screens/Pair.tsx";
 import { Profile } from "./screens/Profile.tsx";
+import { Progress } from "./screens/Progress.tsx";
 import { Rewards } from "./screens/Rewards.tsx";
 import { Assign, TaskDetail, Tasks } from "./screens/Tasks.tsx";
+import { Weekly } from "./screens/Weekly.tsx";
 import { Welcome } from "./screens/Welcome.tsx";
 import { useSession } from "./session.tsx";
 import { Shell } from "./ui.tsx";
@@ -45,6 +48,9 @@ export function SlashApp() {
   if (root === "guide") return <GuidePage />;
   if (root === "ground") return <Ground />;
   if (root === "profile") return <Profile />;
+  if (root === "weekly") return <Weekly week={id} />;
+  if (root === "progress") return <Progress />;
+  if (root === "gallery") return <Gallery />;
   if (root === "more") return <More />;
   return <Home />;
 }

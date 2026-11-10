@@ -54,13 +54,41 @@ export const GUIDES = [
   },
 ];
 
+/**
+ * Twelve levels, each climbed in five steps. `min` is counted in embers: every
+ * point ever earned plus the bonuses for showing up. Embers are never spent, so
+ * cashing in a reward does not cost a level. At thirty-odd embers a day Spark
+ * takes about a week, Glow and Flame two to three weeks each, and the later
+ * levels a month or more.
+ */
 export const LEVELS = [
   { id: "spark", name: "Spark", min: 0 },
-  { id: "glow", name: "Glow", min: 40 },
-  { id: "flame", name: "Flame", min: 90 },
-  { id: "hearth", name: "Hearth", min: 160 },
-  { id: "beacon", name: "Beacon", min: 250 },
-  { id: "constellation", name: "Constellation", min: 400 },
+  { id: "glow", name: "Glow", min: 300 },
+  { id: "flame", name: "Flame", min: 800 },
+  { id: "hearth", name: "Hearth", min: 1450 },
+  { id: "beacon", name: "Beacon", min: 2250 },
+  { id: "constellation", name: "Constellation", min: 3250 },
+  { id: "aurora", name: "Aurora", min: 4450 },
+  { id: "comet", name: "Comet", min: 5850 },
+  { id: "solstice", name: "Solstice", min: 7450 },
+  { id: "daystar", name: "Daystar", min: 9250 },
+  { id: "supernova", name: "Supernova", min: 11250 },
+  { id: "everflame", name: "Everflame", min: 13500 },
+];
+
+/** How far the last level runs, since there is no next one to measure it against. */
+const TOP_LEVEL_SPAN = 2500;
+
+/**
+ * The five steps inside every level. `at` is how far through the level a step
+ * starts, so the first steps of a new level come quickly and the last one is a climb.
+ */
+export const LEVEL_STEPS = [
+  { numeral: "I", name: "kindled", at: 0 },
+  { numeral: "II", name: "catching", at: 0.05 },
+  { numeral: "III", name: "steady", at: 0.17 },
+  { numeral: "IV", name: "bright", at: 0.37 },
+  { numeral: "V", name: "blazing", at: 0.63 },
 ];
 
 export const JOURNAL_PROMPTS = [
@@ -98,23 +126,57 @@ const ANAL_NOTES = {
   ],
 };
 
-export function levelFor(points) {
-  const score = Math.max(0, Number(points) || 0);
-  let current = LEVELS[0];
-  for (const level of LEVELS) {
-    if (score >= level.min) current = level;
-  }
-  const index = LEVELS.findIndex((level) => level.id === current.id);
+/** Where each of a level's five steps starts, in embers. */
+export function levelStepMins(index) {
+  const level = LEVELS[index];
+  const next = LEVELS[index + 1];
+  const span = next ? next.min - level.min : TOP_LEVEL_SPAN;
+  return LEVEL_STEPS.map((step) => level.min + Math.round((span * step.at) / 5) * 5);
+}
+
+/**
+ * The level and step for a number of embers. `name`, `min`, `next`, `nextMin`
+ * and `progress` describe the level; `step` is the place inside it, and `rank`
+ * counts every step from the bottom so two places can be compared.
+ */
+export function levelFor(embers) {
+  const score = Math.max(0, Math.floor(Number(embers) || 0));
+  let index = 0;
+  LEVELS.forEach((level, at) => {
+    if (score >= level.min) index = at;
+  });
+  const current = LEVELS[index];
   const next = LEVELS[index + 1] || null;
-  const span = next ? next.min - current.min : 1;
-  const progress = next ? Math.min(1, (score - current.min) / span) : 1;
+  const mins = levelStepMins(index);
+  let stepIndex = 0;
+  mins.forEach((min, at) => {
+    if (score >= min) stepIndex = at;
+  });
+  const lastStep = stepIndex === mins.length - 1;
+  const stepNextMin = lastStep ? (next ? next.min : null) : mins[stepIndex + 1];
+  const stepSpan = stepNextMin == null ? 1 : stepNextMin - mins[stepIndex];
+  const nextTitle = stepNextMin == null ? null : lastStep ? `${next.name} I` : `${current.name} ${LEVEL_STEPS[stepIndex + 1].numeral}`;
   return {
     name: current.name,
     id: current.id,
     min: current.min,
     next: next ? next.name : null,
     nextMin: next ? next.min : null,
-    progress,
+    progress: next ? Math.min(1, (score - current.min) / (next.min - current.min)) : 1,
+    index,
+    title: `${current.name} ${LEVEL_STEPS[stepIndex].numeral}`,
+    rank: index * LEVEL_STEPS.length + stepIndex,
+    step: {
+      index: stepIndex,
+      of: LEVEL_STEPS.length,
+      numeral: LEVEL_STEPS[stepIndex].numeral,
+      name: LEVEL_STEPS[stepIndex].name,
+      min: mins[stepIndex],
+      nextMin: stepNextMin,
+      nextTitle,
+      toNext: stepNextMin == null ? 0 : stepNextMin - score,
+      progress: stepNextMin == null ? 1 : Math.min(1, (score - mins[stepIndex]) / stepSpan),
+    },
   };
 }
 
@@ -178,7 +240,7 @@ const GUIDE_LINES = {
     home: [
       "Hi {name}. No rush. I’m here.",
       "Go slow today if you need to. It still counts.",
-      "If {partner}'s busy, come sit with me in grounding.",
+      "If {partner}’s busy, come sit with me in grounding.",
     ],
     homeLead: [
       "Hi {name}. Maybe something gentle for {partner} today.",
@@ -187,7 +249,7 @@ const GUIDE_LINES = {
     ],
     done: ["You did it. Good.", "That’s done. You can rest now.", "I saw. {partner} will too."],
     streak: ["{streak} days. That’s a lot of showing up.", "{streak} in a row. I’m proud of you, in a sleepy way."],
-    streakLead: ["{partner}'s at {streak} days. That took effort.", "{streak} days in a row for {partner}. Say something kind."],
+    streakLead: ["{partner}’s at {streak} days. That took effort.", "{streak} days in a row for {partner}. Say something kind."],
     streakStart: ["No streak yet. That’s okay. One task starts it."],
     ground: ["In for four. Hold. Out for four. Hold. I’ll stay.", "What’s under your hands right now? Start there."],
     nudge: ["Pick whichever task asks the least of you.", "A minute at the mirror is plenty on a hard day."],
@@ -201,13 +263,13 @@ const GUIDE_LINES = {
       "I’ve been bragging about you all day.",
     ],
     homeLead: [
-      "{name}! Go see what {partner}'s been up to.",
+      "{name}! Go see what {partner}’s been up to.",
       "Tell {partner} what you noticed this week. Out loud.",
       "Have a look at the rewards. Somebody might’ve earned one.",
     ],
     done: ["Gorgeous. Done and dusted.", "That’s my {name}.", "Go tell {partner}. Show off a little."],
     streak: ["{streak} days! I’m telling everyone.", "{streak} in a row. Keep going and I’m growing a second horn."],
-    streakLead: ["{partner}'s on {streak} days. You picked a good one.", "{streak} days running for {partner}. Go brag."],
+    streakLead: ["{partner}’s on {streak} days. You picked a good one.", "{streak} days running for {partner}. Go brag."],
     streakStart: ["No streak yet. Give me one task today and I’ll start bragging."],
     ground: ["Shine later. Breathe now.", "Come sit by me. Everything else can wait."],
     nudge: ["Do one thing so I can brag about it.", "Got points? Go cash some in."],

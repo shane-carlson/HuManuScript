@@ -48,8 +48,6 @@ export const EXPERIENCE = [
   { id: "experienced", label: "Lots of practice" },
 ] as const;
 
-export const MARKS = ["heart", "star", "moon", "spark", "leaf", "sun", "fox", "flower"] as const;
-
 export function experienceLabel(id: string) {
   return EXPERIENCE.find((item) => item.id === id)?.label || "Not set";
 }

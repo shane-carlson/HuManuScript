@@ -1,17 +1,43 @@
 import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { onRequest } from "firebase-functions/v2/https";
 import { firestoreStore } from "./firestoreStore.js";
 // Built from server/hosted.mjs by `npm run build:functions`.
-import { createHostedApp } from "./lib/hosted.mjs";
+import { createHostedApp, errorBody } from "./lib/hosted.mjs";
+
+// With this set, the Admin SDK takes ID tokens without checking who signed them.
+// The emulators set it for themselves. Anywhere else it would let anyone in.
+if (process.env.FIREBASE_AUTH_EMULATOR_HOST && process.env.FUNCTIONS_EMULATOR !== "true") {
+  throw new Error("FIREBASE_AUTH_EMULATOR_HOST is set outside the Firebase emulators. Remove it before deploying.");
+}
 
 initializeApp();
+
+/**
+ * Says whose Firebase ID token this is, or nothing if it is not a good one.
+ * Everything the app does for a person starts from this answer.
+ */
+async function verifyToken(token) {
+  try {
+    const claims = await getAuth().verifyIdToken(token);
+    return { uid: claims.uid, email: claims.email || "", emailVerified: claims.email_verified === true };
+  } catch (error) {
+    // Not being able to fetch Google's signing keys is our trouble, not a bad token,
+    // and must not sign anyone out.
+    if (!String(error?.code || "").startsWith("auth/") || /Error fetching/.test(String(error?.message))) throw error;
+    return null;
+  }
+}
 
 let hosted;
 function app() {
   hosted ||= createHostedApp({
     store: firestoreStore(getFirestore()),
+    verifyToken,
     testerCode: process.env.TESTER_CODE || "",
+    // Set by the Firebase emulators, never in the cloud. The app then signs in against the emulator too.
+    authEmulator: process.env.FIREBASE_AUTH_EMULATOR_HOST || "",
   });
   return hosted;
 }
@@ -47,6 +73,6 @@ export const api = onRequest({ region: "us-central1", memory: "512MiB", maxInsta
     res.status(result.status).json(result.body);
   } catch (error) {
     if (!error.status) console.error(error);
-    res.status(error.status || 500).json({ error: error.status ? error.message : "Something went wrong." });
+    res.status(error.status || 500).json(errorBody(error));
   }
 });

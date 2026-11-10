@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import { GuideCheer, MarkGlyph } from "./guides.tsx";
+import { PersonAvatar } from "./avatar/Face.tsx";
+import { GuideCheer } from "./guides.tsx";
+import { CelebrationExtras } from "./progress/CelebrationExtras.tsx";
 import { go, useHash } from "./route.ts";
 import { useSession } from "./session.tsx";
 import type { Person } from "./types.ts";
@@ -33,9 +35,10 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
             <div className="celebrate" role="dialog" aria-label={celebration.title} key={celebration.key}>
               <Confetti rounds={celebration.kind === "level" ? 3 : 2} />
               <GuideCheer id={data.me.guideId || "lumen"} kind={celebration.kind} />
-              <p className="eyebrow">{cheer(celebration.kind, celebration.from)}</p>
+              <p className="eyebrow">{celebration.eyebrow || cheer(celebration.kind, celebration.from)}</p>
               <h2>{celebration.title}</h2>
               <p>{celebration.detail}</p>
+              <CelebrationExtras celebration={celebration} />
               <button className="primary" type="button" onClick={clearCelebration}>
                 Carry on
               </button>
@@ -116,20 +119,7 @@ function TabIcon({ id }: { id: string }) {
 }
 
 export function Avatar({ person, size = 52 }: { person: Pick<Person, "displayName" | "avatar">; size?: number }) {
-  const initials = person.displayName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0] || "")
-    .join("")
-    .toUpperCase();
-  return (
-    <span className="avatar" style={{ width: size, height: size, background: `hsl(${person.avatar?.hue ?? 16} 78% 58%)` }}>
-      <span>{initials}</span>
-      <i>
-        <MarkGlyph mark={person.avatar?.mark || "heart"} />
-      </i>
-    </span>
-  );
+  return <PersonAvatar person={person} size={size} />;
 }
 
 export function Confetti({ rounds = 1 }: { rounds?: number }) {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { firstName } from "../format.ts";
+import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { Field, PageHead, Shell } from "../ui.tsx";
 
@@ -29,7 +30,11 @@ export function Rewards() {
   return (
     <Shell nav>
       <div className="pad">
-        <PageHead title="Rewards" kicker={`${bundle.stats.points} points to spend`} />
+        <PageHead
+          title="Rewards"
+          kicker={`${bundle.stats.points} points to spend`}
+          action={<button className="texty" type="button" onClick={() => go("/gallery")}>Trophy shelf</button>}
+        />
         <p className="lead">Either of you can put a reward on the table. It only counts once you’ve both said yes.</p>
         <div className="stack">
           {bundle.rewards.map((reward) => {

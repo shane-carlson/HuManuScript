@@ -1,7 +1,15 @@
 rules_version = '2';
 
 // Phones never talk to the database. Everything goes through the /api function,
-// which checks who is asking, so nothing here is readable or writable directly.
+// which checks the Firebase sign-in on every request and only then reads or
+// writes for that person, so nothing here is readable or writable directly.
+// Being signed in with Firebase Authentication does not change that.
+//
+// What the function keeps (server/hosted.mjs):
+//   households/{id}               one couple's household
+//   households/{id}/photos/{id}   their shared photos
+//   accounts/{uid}                which household a Firebase account belongs to
+//   invites/{code}                which household an open invite belongs to
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {

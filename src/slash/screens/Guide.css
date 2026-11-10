@@ -1,0 +1,117 @@
+/* Talking with the stuffie: the thread and the questions under it.
+   This file loads before styles.css, so every rule starts with .slash to win a tie. */
+
+.slash .gt { padding-bottom: 0; }
+
+.slash .gt-who {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin: -4px 0 14px;
+}
+.slash .gt-who .guide-face { width: 84px; height: 84px; }
+.slash .gt-who p { margin: 0; color: #4d3b59; }
+
+.slash .gt-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 16px;
+  display: grid;
+  gap: 10px;
+}
+.slash .gt-line {
+  justify-self: start;
+  max-width: 88%;
+  display: grid;
+  gap: 3px;
+  animation: gt-in 0.28s ease both;
+}
+.slash .gt-line p {
+  margin: 0;
+  padding: 11px 14px;
+  background: #fff;
+  color: #2a1b33;
+  border-radius: 18px 18px 18px 6px;
+  box-shadow: 0 8px 22px rgba(90, 30, 50, 0.07), inset 0 0 0 1.5px rgba(42, 27, 51, 0.06);
+  line-height: 1.42;
+}
+.slash .gt-by {
+  padding-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b14b6a;
+}
+.slash .gt-line.mine { justify-self: end; }
+.slash .gt-line.mine p {
+  background: #2a1b33;
+  color: #fff;
+  border-radius: 18px 18px 6px 18px;
+  box-shadow: none;
+}
+
+.slash .gt-wait p { display: flex; gap: 5px; align-items: center; padding: 15px 16px; }
+.slash .gt-wait i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5a7a;
+  animation: gt-dot 0.9s ease-in-out infinite;
+}
+.slash .gt-wait i:nth-child(2) { animation-delay: 0.15s; }
+.slash .gt-wait i:nth-child(3) { animation-delay: 0.3s; }
+
+/* The questions stay within reach at the foot of the page while the thread grows above them. */
+.slash .gt-ask {
+  position: sticky;
+  bottom: -28px;
+  margin: 0 -18px;
+  padding: 12px 18px 40px;
+  background: linear-gradient(180deg, rgba(255, 243, 236, 0), #fff3ec 14px);
+}
+.slash .gt-ask .eyebrow { margin: 0 0 8px; }
+.slash .gt-asks { display: flex; flex-wrap: wrap; gap: 9px 8px; }
+.slash .gt-q {
+  flex: 1 1 auto;
+  cursor: pointer;
+  min-height: 38px;
+  padding: 7px 10px;
+  background: #fffaf3;
+  color: #2a1b33;
+  border: 1.5px dashed rgba(42, 27, 51, 0.38);
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px #fffaf3, 0 6px 14px rgba(90, 30, 50, 0.08);
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-align: center;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.slash .gt-q:active { transform: translateY(1px) scale(0.985); background: #ffe9ee; }
+.slash .gt-q:focus-visible { outline: 2px solid #ff5a7a; outline-offset: 4px; }
+.slash .gt-q.calm { background: #eefaf7; border-color: rgba(12, 127, 118, 0.5); color: #0c5f58; box-shadow: 0 0 0 3px #eefaf7, 0 6px 14px rgba(18, 181, 168, 0.1); }
+.slash .gt-q:disabled { opacity: 0.6; cursor: default; }
+
+/* The same stuffie on Home: tap it and it says the next thing. */
+.slash .guide-bubble {
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  box-shadow: 0 10px 30px rgba(90, 30, 50, 0.07), inset 0 0 0 1.5px rgba(42, 27, 51, 0.06);
+}
+.slash .guide-bubble:focus-visible { outline: 2px solid #ff5a7a; outline-offset: 3px; }
+
+@keyframes gt-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gt-dot {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slash .gt-line, .slash .gt-wait i { animation: none; }
+  .slash .gt-q { transition: none; }
+}

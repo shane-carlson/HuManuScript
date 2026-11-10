@@ -1,0 +1,103 @@
+/* The leading partner's things to do, on Home.
+   This file loads before styles.css, so every rule starts with .slash to win a tie. */
+
+.slash .la {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 12px 30px rgba(90, 30, 50, 0.1), inset 0 0 0 1.5px rgba(42, 27, 51, 0.07);
+}
+.slash .la-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 2px; }
+.slash .la-head h2 { margin: 0; }
+.slash .la-total {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  display: grid;
+  place-items: center;
+  background: #fff1c9;
+  border: 1.5px dashed rgba(138, 90, 0, 0.5);
+  border-radius: 10px;
+  color: #5c3d00;
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.slash .la-calm { margin: 0; padding: 0 2px; color: #4d3b59; }
+.slash .la-list { display: grid; gap: 8px; }
+.slash .la-row { display: flex; align-items: stretch; gap: 4px; }
+.slash .la-row.under { margin-left: 18px; }
+.slash .la-row.can-wait { flex-direction: column; align-items: flex-end; gap: 0; }
+.slash .la-row.can-wait .la-go { width: 100%; }
+
+.slash .la-go {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px 10px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: #fffaf7;
+  color: #2a1b33;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.2), 0 3px 0 rgba(42, 27, 51, 0.14);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.slash .la-go:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.2), 0 1px 0 rgba(42, 27, 51, 0.14); }
+.slash .la-go > svg { color: #d63d68; }
+.slash .la-text { display: grid; gap: 1px; min-width: 0; }
+.slash .la-go strong { font-size: 1.06rem; line-height: 1.25; overflow-wrap: break-word; }
+.slash .la-go em { font-style: normal; font-size: 0.88rem; line-height: 1.3; color: #6d5a78; overflow-wrap: break-word; }
+
+.slash .la-go.main {
+  background: linear-gradient(180deg, #ff6d88, #e23e68);
+  color: #fff;
+  box-shadow: 0 4px 0 #a8264d, 0 12px 22px rgba(226, 62, 104, 0.24);
+}
+.slash .la-go.main:active { box-shadow: 0 2px 0 #a8264d, 0 6px 12px rgba(226, 62, 104, 0.2); }
+.slash .la-go.main em { color: rgba(255, 255, 255, 0.92); }
+.slash .la-go.main > svg { color: #fff; }
+
+.slash .la-row.under .la-go { min-height: 50px; padding-top: 8px; padding-bottom: 8px; }
+.slash .la-row.under .la-go strong { font-size: 0.98rem; }
+
+.slash .la-count {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  background: #fff1c9;
+  border: 1.5px dashed rgba(138, 90, 0, 0.5);
+  border-radius: 8px;
+  color: #5c3d00;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+.slash .la-go.main .la-count { background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.8); color: #fff; }
+
+.slash .la-later {
+  flex: none;
+  min-height: 44px;
+  margin-bottom: -8px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: #b14b6a;
+  font-size: 0.9rem;
+  text-decoration: underline dashed rgba(177, 75, 106, 0.5);
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slash .la-go { transition: none; }
+}

@@ -32,10 +32,10 @@ function nextDay(iso) {
 
 test("levels move at the published thresholds", () => {
   assert.equal(levelFor(0).name, "Spark");
-  assert.equal(levelFor(40).name, "Glow");
-  assert.equal(levelFor(89).name, "Glow");
-  assert.equal(levelFor(90).name, "Flame");
-  assert.equal(levelFor(400).progress, 1);
+  assert.equal(levelFor(300).name, "Glow");
+  assert.equal(levelFor(799).name, "Glow");
+  assert.equal(levelFor(800).name, "Flame");
+  assert.equal(levelFor(13500).progress, 1);
 });
 
 test("anal coaching follows experience and stays short", () => {
@@ -679,8 +679,9 @@ test("tasks, streaks, goals, and agreed rewards persist", async () => {
     body: { note: "Long bath, used the bubble bath.", bonuses: ["bubbles"], clientDate: today },
   });
   assert.equal(leveled.status, 200, leveled.body.error);
-  assert.equal(leveled.body.stats.level.name, "Flame");
-  assert.equal(leveled.body.celebration.kind, "level");
+  assert.equal(leveled.body.stats.level.name, "Glow");
+  assert.equal(leveled.body.stats.level.title, "Glow IV");
+  assert.equal(leveled.body.celebration.kind, "task");
 
   const ack = await call(app, "POST", `/api/tasks/${shower.id}/acknowledge`, { token: lead });
   assert.equal(ack.status, 200);

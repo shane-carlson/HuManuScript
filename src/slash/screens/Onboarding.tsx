@@ -1,8 +1,12 @@
-import { useState } from "react";
-import { MARKS } from "../format.ts";
+import { useEffect, useRef, useState } from "react";
+import { LookBuilder } from "../avatar/Builder.tsx";
+import { hueOf, lookOf, randomLook } from "../avatar/looks.ts";
 import { GuideFace } from "../guides.tsx";
 import { go } from "../route.ts";
+import { seedFrom, seeded } from "../seeded.ts";
 import { useSession } from "../session.tsx";
+import { StuffieMaker } from "../stuffie/Maker.tsx";
+import { rollStuffie, soundStuffie } from "../stuffie/roll.ts";
 import type { Pronouns } from "../types.ts";
 import { Chip, Field, Shell } from "../ui.tsx";
 
@@ -29,10 +33,18 @@ export function Onboarding() {
   const [goals, setGoals] = useState<string[]>(me.goals || []);
   const [supplies, setSupplies] = useState<string[]>(me.supplies || []);
   const [supplyDraft, setSupplyDraft] = useState("");
-  const [hue, setHue] = useState(me.avatar?.hue ?? 16);
-  const [mark, setMark] = useState(me.avatar?.mark || "heart");
+  // Someone who has not made a face yet starts from one rolled just for them, not the same face as everybody else.
+  const [look, setLook] = useState(() => (me.avatar?.look ? lookOf(me.avatar) : randomLook(seeded(seedFrom(me.id)))));
   const [guideId, setGuideId] = useState(me.guideId || "");
+  const [stuffie, setStuffie] = useState(() => soundStuffie(me.stuffie) || rollStuffie(seedFrom(`stuffie:${me.id}`)));
   const [pending, setPending] = useState(false);
+  const maker = useRef<HTMLDivElement>(null);
+  const avatar = { hue: hueOf(look), mark: me.avatar?.mark || "heart", look };
+  const made = guideId === "custom";
+
+  useEffect(() => {
+    if (made) maker.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [made]);
 
   function remember(next: number) {
     sessionStorage.setItem(STEP_KEY, String(next));
@@ -63,8 +75,9 @@ export function Onboarding() {
           roleTitle: role,
           goals,
           supplies,
-          avatar: { hue, mark },
+          avatar,
           guideId,
+          ...(made ? { stuffie: { ...stuffie, name: stuffie.name.trim() } } : {}),
           onboardingComplete: true,
         },
       });
@@ -261,20 +274,9 @@ export function Onboarding() {
 
         {step === 6 ? (
           <div className="stack">
-            <span className="avatar xl" style={{ background: `hsl(${hue} 78% 58%)` }}>
-              {me.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <Field label="Color">
-              <input type="range" min={0} max={360} value={hue} onChange={(event) => setHue(Number(event.target.value))} />
-            </Field>
-            <div className="chips">
-              {MARKS.map((item) => (
-                <Chip key={item} pressed={mark === item} onClick={() => setMark(item)}>
-                  {item}
-                </Chip>
-              ))}
-            </div>
-            <button className="primary" type="button" disabled={pending} onClick={() => void save({ avatar: { hue, mark } }, 7)}>
+            <p className="lead">Make it look like you, or like who you are in this dynamic. You can change it whenever you like.</p>
+            <LookBuilder look={look} onChange={setLook} />
+            <button className="primary" type="button" disabled={pending} onClick={() => void save({ avatar }, 7)}>
               Next
             </button>
           </div>
@@ -283,16 +285,26 @@ export function Onboarding() {
         {step === 7 ? (
           <div className="stack">
             <p className="lead">They live on your home screen and have opinions. Tap them when you want a word.</p>
-            <div className="guide-pick">
-              {meta.guides.map((guide) => (
-                <button key={guide.id} type="button" className={guideId === guide.id ? "guide-card on" : "guide-card"} onClick={() => setGuideId(guide.id)}>
+            <div className="guide-pick two">
+              {meta.guides.filter((guide) => guide.id !== "custom").map((guide) => (
+                <button key={guide.id} type="button" className={guideId === guide.id ? "guide-card on" : "guide-card"} aria-pressed={guideId === guide.id} onClick={() => setGuideId(guide.id)}>
                   <GuideFace id={guide.id} />
                   <strong>{guide.name}</strong>
                   <span>{guide.blurb}</span>
                 </button>
               ))}
+              <button type="button" className={made ? "guide-card made on" : "guide-card made"} aria-pressed={made} onClick={() => setGuideId("custom")}>
+                <GuideFace id="custom" stuffie={stuffie} />
+                <strong>Make your own</strong>
+                <span>Roll a stuffie nobody else has, and name it.</span>
+              </button>
             </div>
-            <button className="primary" type="button" disabled={pending || !guideId} onClick={() => void finish()}>
+            {made ? (
+              <div ref={maker}>
+                <StuffieMaker value={stuffie} onChange={setStuffie} />
+              </div>
+            ) : null}
+            <button className="primary" type="button" disabled={pending || !guideId || (made && !stuffie.name.trim())} onClick={() => void finish()}>
               {pending ? "Saving…" : "Let’s go"}
             </button>
           </div>

@@ -1,0 +1,166 @@
+/* A made stuffie celebrating. It is built on the same moving parts as the four
+   ready-made guides (see styles.css), so ears, arms and head already move. Here
+   its body moves in the manner of its temperament, and its own wings, tail and
+   antennae join in. Without animation the raised arms, spread wings and happy
+   eyes still hold as a pose. */
+.cheering[data-guide="custom"] .gp-tail { animation-duration: 0.46s; }
+.cheering[data-guide="custom"] .t1 { --from: -18deg; --to: 6deg; }
+.cheering[data-guide="custom"] .t2 { --from: -9deg; --to: 11deg; animation-delay: -0.16s; }
+.cheering[data-guide="custom"] .t3 { --from: -2deg; --to: 18deg; animation-delay: -0.32s; }
+.cheering[data-guide="custom"] .gp-wing { animation-duration: 0.34s; }
+.cheering[data-guide="custom"] .wing-l { --from: -10deg; --to: 32deg; transform: rotate(20deg); }
+.cheering[data-guide="custom"] .wing-r { --from: 10deg; --to: -32deg; transform: rotate(-20deg); }
+.cheering[data-guide="custom"] .gp-topper { animation: swish 0.38s ease-in-out infinite alternate; }
+.cheering[data-guide="custom"] .topper-l { --from: -12deg; --to: 7deg; }
+.cheering[data-guide="custom"] .topper-r { --from: 12deg; --to: -7deg; animation-delay: -0.14s; }
+.cheering[data-guide="custom"] .tp-mid { animation: made-horn 0.6s ease-in-out infinite alternate; }
+.cheering[data-guide="custom"][data-ears="long"] .ear-l { --from: -16deg; --to: 9deg; animation-duration: 0.4s; }
+.cheering[data-guide="custom"][data-ears="long"] .ear-r { --from: 16deg; --to: -9deg; animation-duration: 0.4s; }
+.cheering[data-guide="custom"][data-ears="floppy"] .ear-l { --from: 2deg; --to: 30deg; transform: rotate(16deg); animation-duration: 0.36s; }
+.cheering[data-guide="custom"][data-ears="floppy"] .ear-r { --from: -2deg; --to: -30deg; transform: rotate(-16deg); animation-duration: 0.36s; }
+.cheering[data-guide="custom"][data-ears="fin"] .ear-l { --from: -12deg; --to: 12deg; animation-duration: 0.44s; }
+.cheering[data-guide="custom"][data-ears="fin"] .ear-r { --from: 12deg; --to: -12deg; animation-duration: 0.44s; }
+.cheering[data-guide="custom"] .gp-glow { opacity: 0.5; filter: blur(5px); }
+
+/* Smug: two neat hops, then a proud puff of the chest. */
+.cheering[data-guide="custom"][data-mood="lumen"] .gp-body { animation: made-hop 2.3s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="lumen"] .gp-shadow { animation: made-hop-shadow 2.3s ease-in-out infinite; }
+/* Excitable: non-stop bouncing from foot to foot, arms going. */
+.cheering[data-guide="custom"][data-mood="pip"] .gp-body { animation: made-bounce 0.92s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="pip"] .gp-shadow { animation: made-bounce-shadow 0.92s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="pip"] .gp-arm { animation-duration: 0.22s; }
+.cheering[data-guide="custom"][data-mood="pip"] .gp-wing { animation-duration: 0.18s; }
+/* Gentle: a slow, happy rock from side to side with a small lift in the middle. */
+.cheering[data-guide="custom"][data-mood="moss"] .gp-body { animation: made-rock 2.9s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="moss"] .gp-shadow { animation: made-rock-shadow 2.9s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="moss"] .gp-arm { animation-duration: 0.7s; }
+.cheering[data-guide="custom"][data-mood="moss"] .gp-wing { animation-duration: 0.6s; }
+.cheering[data-guide="custom"][data-mood="moss"] .gp-tail { animation-duration: 0.6s; }
+/* Sparkly: leans back, springs up, lands with a shimmy. */
+.cheering[data-guide="custom"][data-mood="sol"] .gp-body { animation: made-prance 2s ease-in-out infinite; }
+.cheering[data-guide="custom"][data-mood="sol"] .gp-shadow { animation: made-prance-shadow 2s ease-in-out infinite; }
+
+@keyframes made-horn {
+  from { transform: rotate(-5deg) scale(1, 0.96); }
+  to { transform: rotate(5deg) scale(1, 1.1); }
+}
+@keyframes made-hop {
+  0%, 100% { transform: none; }
+  7% { transform: scale(1.09, 0.88); }
+  21% { transform: translateY(-18px) scale(0.94, 1.08); }
+  35% { transform: scale(1.08, 0.9); }
+  42% { transform: scale(1.06, 0.92); }
+  55% { transform: translateY(-11px) scale(0.96, 1.05); }
+  67% { transform: scale(1.05, 0.94); }
+  76%, 92% { transform: translateY(-2px) scale(1.04); }
+}
+@keyframes made-hop-shadow {
+  0%, 7%, 35%, 42%, 67%, 100% { transform: none; opacity: 1; }
+  21% { transform: scale(0.66); opacity: 0.6; }
+  55% { transform: scale(0.8); opacity: 0.75; }
+}
+@keyframes made-bounce {
+  0%, 100% { transform: rotate(-6deg) scale(1.07, 0.91); }
+  25% { transform: translateY(-20px) rotate(-8deg) scale(0.95, 1.07); }
+  50% { transform: rotate(6deg) scale(1.07, 0.91); }
+  75% { transform: translateY(-20px) rotate(8deg) scale(0.95, 1.07); }
+}
+@keyframes made-bounce-shadow {
+  0%, 50%, 100% { transform: none; opacity: 1; }
+  25%, 75% { transform: scale(0.64); opacity: 0.58; }
+}
+@keyframes made-rock {
+  0%, 100% { transform: rotate(-7deg); }
+  12% { transform: rotate(-7deg) scale(1.04, 0.95); }
+  26% { transform: translateY(-9px) scale(0.97, 1.05); }
+  50% { transform: rotate(7deg); }
+  62% { transform: rotate(7deg) scale(1.04, 0.95); }
+  76% { transform: translateY(-9px) scale(0.97, 1.05); }
+}
+@keyframes made-rock-shadow {
+  0%, 50%, 100% { transform: none; opacity: 1; }
+  26%, 76% { transform: scale(0.78); opacity: 0.72; }
+}
+@keyframes made-prance {
+  0%, 100% { transform: none; }
+  12% { transform: rotate(-9deg) translateY(-2px); }
+  28% { transform: rotate(-9deg) translateY(-16px); }
+  44% { transform: rotate(3deg) scale(1.07, 0.92); }
+  56% { transform: rotate(6deg) translateY(-8px); }
+  68% { transform: rotate(-4deg) scale(1.03, 0.97); }
+  80% { transform: rotate(4deg); }
+  90% { transform: rotate(-2deg); }
+}
+@keyframes made-prance-shadow {
+  0%, 44%, 68%, 100% { transform: none; opacity: 1; }
+  28% { transform: scale(0.68); opacity: 0.62; }
+  56% { transform: scale(0.84); opacity: 0.8; }
+}
+
+/* Picking a stuffie: the four ready-made ones two by two, then the one you make. */
+.guide-pick.two { grid-template-columns: 1fr 1fr; }
+.guide-pick.two .guide-card { padding: 12px 10px; align-content: start; }
+.guide-pick.two .guide-card span { font-size: 0.84rem; line-height: 1.3; }
+.guide-pick.two .guide-card.made { grid-column: 1 / -1; grid-template-columns: auto 1fr; gap: 4px 12px; justify-items: start; text-align: left; align-items: center; }
+.guide-card.made .guide-face { grid-row: 1 / 3; width: 84px; height: 84px; }
+.guide-card.made strong { align-self: end; }
+.guide-card.made span { align-self: start; }
+
+.guide-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.guide-tile {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.08);
+  cursor: pointer;
+  min-width: 0;
+}
+.guide-tile .guide-face { width: 62px; height: 62px; }
+.guide-tile span { font-size: 0.84rem; font-weight: 700; color: #4d3b59; text-align: center; line-height: 1.2; }
+.guide-tile.on { box-shadow: inset 0 0 0 2px #e23e68; background: #fff5f7; }
+.guide-tile.on span { color: #a1264d; }
+
+/* The maker: a stitched swatch of fabric with the plush sitting on it. */
+.maker { display: grid; gap: 12px; }
+.maker-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 16px 12px 12px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 27, 51, 0.08);
+}
+.maker-stage::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 16px;
+  border: 1.5px dashed rgba(42, 27, 51, 0.2);
+  pointer-events: none;
+}
+.maker-plush { position: relative; display: grid; place-items: center; width: 190px; height: 176px; }
+.maker-plush .guide-face { width: 150px; height: 150px; overflow: visible; }
+.maker-plush.fresh .guide-face { animation: maker-pop 0.42s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.maker-who { margin: 0; text-align: center; font-size: 1.02rem; color: #4d3b59; position: relative; }
+.maker-who strong { font-family: Newsreader, Georgia, serif; font-size: 1.45rem; font-weight: 560; color: #2a1b33; letter-spacing: -0.02em; }
+.maker-stage .texty { position: relative; }
+.maker-rolls { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.maker-rolls .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; }
+.maker-moods { display: grid; gap: 8px; }
+.maker-moods .choice { padding: 12px 14px; }
+
+@keyframes maker-pop {
+  0% { transform: translateY(14px) scale(0.6) rotate(-8deg); opacity: 0; }
+  60% { transform: translateY(-4px) scale(1.06) rotate(3deg); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maker-plush, .maker-plush * { animation: none !important; }
+}

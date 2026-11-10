@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { clientDate, firstName, identityLine, prettyDate, sideWord } from "../format.ts";
 import { GuideFace } from "../guides.tsx";
+import { LeadActions } from "../LeadActions.tsx";
+import { ProgressCard } from "../progress/ProgressCard.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
 import { SipButtons } from "../Sips.tsx";
 import type { Routine } from "../types.ts";
 import { Avatar, Meter, Shell } from "../ui.tsx";
+import { WeeklyCard } from "../WeeklyCard.tsx";
 
 function dailyLine(routine: Routine, mine: boolean) {
   if (routine.status === "open" && routine.target > 0) {
@@ -20,12 +23,15 @@ function dailyLine(routine: Routine, mine: boolean) {
 export function Home() {
   const { data, request } = useSession();
   const bundle = data!;
-  const { me, partner, stats } = bundle;
-  const [line, setLine] = useState(bundle.guide.text);
+  const { me, partner } = bundle;
+  const [said, setSaid] = useState<{ after: string; text: string; key: string } | null>(null);
   const [tick, setTick] = useState(0);
+  // A tapped reply stays until the stuffie has news of its own, which arrives as a new greeting.
+  const tapped = said && said.after === bundle.guide.text ? said : null;
+  const line = tapped?.text || bundle.guide.text;
+  const guideClock = bundle.guide.tz;
   const adventure = bundle.tasks.find((task) => task.templateId === "daily-adventure" && task.status === "open");
   const open = bundle.tasks.filter((task) => task.status === "open" && task.id !== adventure?.id && task.repeat !== "daily").slice(0, 3);
-  const waiting = bundle.tasks.filter((task) => task.status === "done" && !task.acknowledgedAt);
   const notes = bundle.checkins.slice(0, 2);
   const unseen = bundle.checkins.some((note) => !note.seenBy.includes(me.id));
 
@@ -34,20 +40,27 @@ export function Home() {
     void request("/api/checkins/see", { method: "POST" }).catch(() => undefined);
   }, [unseen, request]);
 
+  // The stuffie can only say good morning once it knows what time it is here.
+  useEffect(() => {
+    const tz = new Date().getTimezoneOffset();
+    if (guideClock === tz) return;
+    void request("/api/guide/ask", { method: "POST", body: { topic: "home", tz } }).catch(() => undefined);
+  }, [guideClock, request]);
+
   async function nudge() {
     try {
-      const next = tick + 1;
-      setTick(next);
-      const payload = await request("/api/guide/nudge", { method: "POST", body: { event: "nudge", tick: next } });
-      const text = (payload as { line?: { text?: string } }).line?.text;
-      if (text) setLine(text);
+      setTick(tick + 1);
+      const payload = (await request("/api/guide/ask", {
+        method: "POST",
+        body: { topic: "nudge", tick, last: line, lastKey: tapped?.key || bundle.guide.key || "", tz: new Date().getTimezoneOffset() },
+      })) as unknown as { line?: { text?: string; key?: string } };
+      const text = payload.line?.text;
+      if (text) setSaid({ after: bundle.guide.text, text, key: payload.line?.key || "" });
     } catch {
       /* The toast shows the problem. */
     }
   }
 
-  const level = stats.level;
-  const follower = me.slashSide === "following" ? me : partner;
   const theirs = partner ? firstName(partner.displayName) : "";
   const listTitle = me.slashSide === "leading" ? theirs ? `${theirs}’s tasks` : "Tasks" : "Your tasks";
   const emptyLine = me.slashSide === "leading"
@@ -70,31 +83,18 @@ export function Home() {
         <button className="guide-bubble" type="button" onClick={() => void nudge()}>
           <GuideFace id={me.guideId || "lumen"} className="guide-face float" />
           <span>
-            <strong>{bundle.meta.guides.find((guide) => guide.id === me.guideId)?.name || "Your stuffie"}</strong>
+            <strong>{bundle.guide.name || bundle.meta.guides.find((guide) => guide.id === me.guideId)?.name || "Your stuffie"}</strong>
             <em>{line}</em>
           </span>
         </button>
 
-        <section className="level-card">
-          <div className="row spread">
-            <div>
-              <p className="eyebrow">{follower ? `${firstName(follower.displayName)}’s level` : "Level"}</p>
-              <h2>{level.name}</h2>
-            </div>
-            <div className="streak">
-              <strong>{stats.streak}</strong>
-              <span>day streak</span>
-            </div>
-          </div>
-          <Meter value={level.progress} />
-          <p className="muted">
-            {stats.points} points
-            {level.next ? ` · ${level.next} at ${level.nextMin}` : " · as high as it goes"}
-            {me.slashSide === "leading" ? ` · ${stats.carePoints} care points` : ""}
-          </p>
-        </section>
+        <LeadActions />
 
-        {!partner ? (
+        <ProgressCard />
+
+        <WeeklyCard />
+
+        {!partner && me.slashSide !== "leading" ? (
           <section className="card">
             <h2>Invite your partner</h2>
             <p>Send a link by email or text. They sign up, confirm they’re 18 or older, and the code pairs you up.</p>
@@ -152,11 +152,6 @@ export function Home() {
         <section>
           <div className="row spread">
             <h2>{listTitle}</h2>
-            {me.slashSide === "leading" ? (
-              <button className="texty" type="button" onClick={() => go("/assign")}>
-                Give a task
-              </button>
-            ) : null}
           </div>
           {open.length === 0 ? <p className="muted">{emptyLine}</p> : null}
           <div className="stack">
@@ -169,17 +164,6 @@ export function Home() {
             ))}
           </div>
         </section>
-
-        {me.slashSide === "leading" && waiting.length > 0 ? (
-          <section className="card">
-            <h2>Waiting on your well done</h2>
-            {waiting.map((task) => (
-              <button key={task.id} className="texty" type="button" onClick={() => go(`/tasks/${task.id}`)}>
-                {task.title}
-              </button>
-            ))}
-          </section>
-        ) : null}
 
         {notes.length > 0 ? (
           <section>

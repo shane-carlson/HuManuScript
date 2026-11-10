@@ -15,10 +15,13 @@ import {
   LEAD_TOKEN,
   coachingFor,
   drawAdventureTasks,
-  guideSpeech,
-  levelFor,
   templateById,
 } from "./catalog.mjs";
+import { guideAnswer, guideBundle } from "./guideTalk.mjs";
+import { beginProgress, finishProgress, followingDay, progressCheer, progressView } from "./progress.mjs";
+import { weeklyCheer, weeklyRoute, weeklyView } from "./weekly.mjs";
+import { DEMO_LOOKS, cleanAvatar } from "./looks.mjs";
+import { cleanStuffie, guidesFor } from "./stuffie.mjs";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEMO_PASSWORD = "together";
@@ -83,6 +86,7 @@ export function emptyDb() {
     goals: [],
     rewards: [],
     checkins: [],
+    weeklies: [],
   };
 }
 
@@ -142,6 +146,7 @@ export function createSlashApp(options = {}) {
       const parsed = store.read();
       if (!parsed || !Array.isArray(parsed.users)) return seedDemo ? seed(emptyDb()) : emptyDb();
       if (!Array.isArray(parsed.routines)) parsed.routines = [];
+      if (!Array.isArray(parsed.weeklies)) parsed.weeklies = [];
       // Task text saved before the leading partner's role title was used in it.
       for (const item of [...(parsed.tasks || []), ...parsed.routines]) {
         if (typeof item.summary === "string") item.summary = item.summary.replaceAll("D‑type", LEAD_TOKEN);
@@ -175,7 +180,7 @@ export function createSlashApp(options = {}) {
       goals: ["connection", "structure", "accountability"],
       supplies: [],
       guideId: "lumen",
-      avatar: { hue: 350, mark: "moon" },
+      avatar: { hue: 350, mark: "moon", look: { ...DEMO_LOOKS.rowan } },
       experienceLevel: "",
       onboardingComplete: true,
       points: 0,
@@ -198,7 +203,7 @@ export function createSlashApp(options = {}) {
       goals: ["connection", "structure", "accountability", "self-care"],
       supplies: ["face mask", "bubble bath", "journal", "cozy playlist", "nail polish"],
       guideId: "pip",
-      avatar: { hue: 262, mark: "star" },
+      avatar: { hue: 262, mark: "star", look: { ...DEMO_LOOKS.avery } },
       experienceLevel: "some",
       onboardingComplete: true,
       points: 65,
@@ -474,7 +479,7 @@ export function createSlashApp(options = {}) {
   function meta(viewer) {
     const leading = viewer?.slashSide === "leading";
     return {
-      guides: GUIDES,
+      guides: guidesFor(viewer),
       goals: GOAL_OPTIONS,
       pronouns: PRONOUN_PRESETS,
       roles: ROLE_SUGGESTIONS,
@@ -630,26 +635,11 @@ export function createSlashApp(options = {}) {
     };
   }
 
-  function guideContext(user) {
-    const partner = partnerOf(user);
-    const follower = followingUser();
-    return {
-      name: user.displayName.split(" ")[0],
-      partner: partner ? partner.displayName.split(" ")[0] : "your partner",
-      role: user.roleTitle || "partner",
-      side: user.slashSide,
-      partnerRole: partner?.roleTitle || "partner",
-      streak: follower?.streak || user.streak || 0,
-      points: follower?.points || user.points || 0,
-      tick: Date.now() % 3,
-    };
-  }
-
   function bundle(user, extra = {}) {
     const partner = partnerOf(user);
     const follower = followingUser();
     const scoreUser = follower || user;
-    const level = levelFor(scoreUser.points || 0);
+    const { progress, shelf } = progressView(db, user, { today: user.lastSeenDay, now: nowIso() });
     const tasks = db.tasks
       .map((item) => presentTask(item, user))
       .sort((a, b) => {
@@ -668,18 +658,22 @@ export function createSlashApp(options = {}) {
       goals: db.goals,
       rewards: db.rewards,
       checkins: db.checkins.slice().reverse(),
+      weekly: weeklyView(db, user, { clientDate: user.lastSeenDay }),
       invites: db.invites.filter((invite) => invite.status === "open"),
       stats: {
         points: scoreUser.points || 0,
         carePoints: db.users.find((item) => item.slashSide === "leading")?.carePoints || 0,
-        streak: scoreUser.streak || 0,
-        level,
+        streak: progress.streak.days,
+        level: progress.level,
+        embers: progress.embers,
         openCount: tasks.filter((item) => item.status === "open").length,
         doneCount: tasks.filter((item) => item.status === "done").length,
       },
-      guide: guideSpeech(user.guideId || "lumen", "home", { ...guideContext(user), tick: 0 }),
+      progress,
+      shelf,
       meta: meta(user),
       ...extra,
+      ...guideBundle(db, user, extra, { today: user.lastSeenDay }),
     };
   }
 
@@ -693,11 +687,14 @@ export function createSlashApp(options = {}) {
   function presentCheer(user) {
     const waiting = user.cheers || [];
     if (!waiting.length) return null;
+    const progressNews = progressCheer(waiting, user, userById);
+    if (progressNews) return progressNews;
     const group = waiting.filter((item) => item.kind === waiting[0].kind);
     const from = (userById(waiting[0].from)?.displayName || "Your partner").split(" ")[0];
     const names = group.map((item) => `“${item.what}”`);
     const listed = names.length > 2 ? `${names.slice(0, 2).join(", ")}, and ${names.length - 2} more` : names.join(" and ");
     const ids = group.map((item) => item.id);
+    if (waiting[0].kind === "weekly") return weeklyCheer(ids, from);
     if (waiting[0].kind === "reward") {
       return { ids, kind: "reward", from, title: group.length === 1 ? group[0].what : "Rewards granted", detail: group.length === 1 ? `${from} said yes. Enjoy it.` : `${from} said yes to ${listed}.` };
     }
@@ -718,8 +715,10 @@ export function createSlashApp(options = {}) {
     return token;
   }
 
-  function requireUser(token) {
-    const user = userFromToken(token);
+  // A hosted household has no sessions of its own: the hub has already checked
+  // who is asking with Firebase, and names them. Nothing else may pass `actor`.
+  function requireUser(token, actor) {
+    const user = hosted ? userById(actor?.userId) : userFromToken(token);
     if (!user) fail(401, "You’ve been signed out. Sign back in.");
     return user;
   }
@@ -755,22 +754,25 @@ export function createSlashApp(options = {}) {
     }
   }
 
-  function applyStreak(user, clientDate) {
-    const today = /^\d{4}-\d{2}-\d{2}$/.test(clientDate) ? clientDate : new Date().toISOString().slice(0, 10);
-    const prev = user.lastActiveDate || "";
-    if (prev === today) return { streak: user.streak || 0, extended: false, today };
-    const prevDate = prev ? new Date(`${prev}T00:00:00Z`) : null;
-    const todayDate = new Date(`${today}T00:00:00Z`);
-    const gap = prevDate ? Math.round((todayDate - prevDate) / 86400000) : 99;
-    user.streak = gap === 1 ? (user.streak || 0) + 1 : 1;
-    user.lastActiveDate = today;
-    return { streak: user.streak, extended: true, milestone: [3, 7, 14, 30].includes(user.streak), today };
+  /**
+   * Streaks, bonuses, levels and trophies are worked out in progress.mjs. Anything
+   * that can move them sits between these two: `progressStart` before the change,
+   * `progressEnd` after it, which hands back the celebration to show.
+   */
+  function progressStart(user, clientDate) {
+    return beginProgress(db, { today: followingDay(db, user, { today: validDay(clientDate), now: nowIso() }), now: nowIso() });
   }
 
-  function createUser({ email, password, displayName }) {
+  function progressEnd(user, mark, celebration = null) {
+    const news = finishProgress(db, mark, { actor: user, celebration });
+    for (const item of news.cheers) queueCheer(userById(item.to), item.cheer);
+    return news.celebration;
+  }
+
+  function createUser({ email, password, displayName, signedIn = false }) {
     const key = String(email || "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) fail(400, "That doesn’t look like an email address.");
-    if (String(password || "").length < 6) fail(400, "Passwords need at least 6 characters.");
+    if (!signedIn && String(password || "").length < 6) fail(400, "Passwords need at least 6 characters.");
     const name = cleanText(displayName, 40);
     if (name.length < 1) fail(400, "Add the name you want your partner to see.");
     if (userByEmail(key)) fail(409, "That email’s already signed up here. Try signing in.");
@@ -782,7 +784,8 @@ export function createSlashApp(options = {}) {
     const user = {
       id: nid(),
       email: key,
-      ...hashPassword(password),
+      // Someone Firebase signed in keeps their password there, not here.
+      ...(signedIn ? {} : hashPassword(password)),
       displayName: name,
       adultConfirmed: true,
       demo: false,
@@ -807,7 +810,7 @@ export function createSlashApp(options = {}) {
     return user;
   }
 
-  async function dispatch({ method, url, token, body, clientDate }) {
+  async function dispatch({ method, url, token, body, clientDate, actor }) {
     const parsed = new URL(url, "http://127.0.0.1");
     const parts = parsed.pathname.split("/").filter(Boolean);
     const route = `${method.toUpperCase()} /${parts.join("/")}`;
@@ -839,20 +842,27 @@ export function createSlashApp(options = {}) {
 
     if (route === "POST /api/auth/register") {
       if (body?.adultConfirmed !== true) fail(400, "SlashConnect is 18 and over. Tick the box to confirm.");
-      const user = createUser(body || {});
+      if (hosted && !actor?.email) fail(401, "You’ve been signed out. Sign back in.");
+      const user = createUser(hosted
+        ? { email: actor.email, displayName: body?.displayName, signedIn: true }
+        : { email: body?.email, password: body?.password, displayName: body?.displayName });
       try {
         if (body?.inviteCode) acceptInvite(user, body.inviteCode);
       } catch (error) {
         db.users = db.users.filter((item) => item.id !== user.id);
         throw error;
       }
+      if (hosted) {
+        save();
+        return { status: 201, body: bundle(user) };
+      }
       const sessionToken = issueSession(user);
       return { status: 201, body: { token: sessionToken, ...bundle(user) } };
     }
 
     if (route === "POST /api/auth/login") {
-      const user = userByEmail(body?.email);
-      if (!user || !passwordOk(user, body?.password || "")) fail(401, "That email and password don’t match.");
+      const user = hosted ? null : userByEmail(body?.email);
+      if (!user?.passwordHash || !passwordOk(user, body?.password || "")) fail(401, "That email and password don’t match.");
       const sessionToken = issueSession(user);
       return { status: 200, body: { token: sessionToken, ...bundle(user) } };
     }
@@ -881,7 +891,7 @@ export function createSlashApp(options = {}) {
       };
     }
 
-    const user = requireUser(token);
+    const user = requireUser(token, actor);
     const today = validDay(clientDate) || validDay(body?.clientDate);
     if (today && rollDaily(user, today)) save();
 
@@ -933,7 +943,7 @@ export function createSlashApp(options = {}) {
       else if (parts[3] === "log") celebration = logAmount(user, taskItem, body || {});
       else if (parts[3] === "unlog") unlogAmount(user, taskItem);
       else if (parts[3] === "skip") skipTask(user, taskItem, body || {});
-      else if (parts[3] === "acknowledge") acknowledgeTask(user, taskItem);
+      else if (parts[3] === "acknowledge") celebration = acknowledgeTask(user, taskItem);
       else if (parts[3] === "remove") removeTask(user, taskItem);
       else if (parts[3] === "stop") stopRoutine(user, taskItem);
       else fail(404, "Unknown task action.");
@@ -1033,10 +1043,21 @@ export function createSlashApp(options = {}) {
       return { status: 200, body: bundle(user) };
     }
 
-    if (route === "POST /api/guide/nudge") {
-      const event = ["home", "done", "streak", "ground", "nudge", "assign"].includes(body?.event) ? body.event : "nudge";
-      const line = guideSpeech(user.guideId || "lumen", event, { ...guideContext(user), tick: Number(body?.tick) || Date.now() });
-      return { status: 200, body: { line } };
+    if (parts[0] === "api" && parts[1] === "weekly") {
+      const mark = method.toUpperCase() === "POST" && !parts[2] ? progressStart(user, today) : null;
+      const done = weeklyRoute(db, user, { method, parts, body, clientDate: today }, { queueCheer });
+      if (mark && done.extra.celebration) done.extra.celebration = progressEnd(user, mark, done.extra.celebration);
+      if (done.save) save();
+      return { status: done.status, body: bundle(user, done.extra) };
+    }
+
+    if (route === "POST /api/guide/nudge" || route === "POST /api/guide/ask") {
+      const answer = guideAnswer(db, user, body, { today: today || user.lastSeenDay });
+      if (answer.clock != null && answer.clock !== user.guideClock) {
+        user.guideClock = answer.clock;
+        save();
+      }
+      return { status: 200, body: { line: answer.line } };
     }
 
     fail(404, "That path is not part of SlashConnect.");
@@ -1068,14 +1089,18 @@ export function createSlashApp(options = {}) {
     if (Array.isArray(body.supplies)) {
       user.supplies = [...new Set(body.supplies.map((item) => cleanText(item, 40)).filter(Boolean))].slice(0, 24);
     }
-    if (typeof body.guideId === "string" && GUIDES.some((guide) => guide.id === body.guideId)) user.guideId = body.guideId;
-    if (body.avatar && typeof body.avatar === "object") {
-      const hue = Math.max(0, Math.min(360, Number(body.avatar.hue) || 0));
-      const mark = cleanText(body.avatar.mark, 16) || "heart";
-      user.avatar = { hue, mark };
+    if (body.stuffie !== undefined) {
+      const made = cleanStuffie(body.stuffie);
+      if (!made) fail(400, "Your stuffie needs a name before it can move in.");
+      user.stuffie = made;
     }
+    if (body.guideId === "custom") {
+      if (!user.stuffie) fail(400, "Make your stuffie first, then pick it.");
+      user.guideId = "custom";
+    } else if (typeof body.guideId === "string" && GUIDES.some((guide) => guide.id === body.guideId)) user.guideId = body.guideId;
+    if (body.avatar && typeof body.avatar === "object") user.avatar = cleanAvatar(body.avatar, user.avatar);
     if (["new", "some", "experienced", ""].includes(body.experienceLevel)) user.experienceLevel = body.experienceLevel;
-    const ready = user.pronouns && user.slashSide && user.roleTitle && user.goals.length > 0 && user.guideId;
+    const ready = user.pronouns && user.slashSide && user.roleTitle && user.goals.length > 0 && user.guideId && (user.guideId !== "custom" || user.stuffie);
     if (body.onboardingComplete === true) {
       if (!ready) fail(400, "Almost. You still need pronouns, a side, a title, a goal, and a stuffie.");
       user.onboardingComplete = true;
@@ -1208,23 +1233,16 @@ export function createSlashApp(options = {}) {
       return { taskId: created.id, templateId: template.id, title: template.title, category: template.category };
     });
     const titles = locked.map((item) => item.title).join(" + ");
+    const mark = progressStart(user, day);
     taskItem.adventure = { stage: "locked", day, categories, locked };
     taskItem.status = "done";
     taskItem.completedAt = nowIso();
     taskItem.completionDate = day;
     taskItem.completion = { note: `Locked in: ${titles}`, bonuses: [], photos: [], checklist: [], choice: "" };
-    const before = levelFor(user.points || 0);
     user.points = (user.points || 0) + (taskItem.points || 0);
-    const after = levelFor(user.points);
-    applyStreak(user, day);
     const adventureTemplate = templateById("daily-adventure");
     if (adventureTemplate) bumpGoals(adventureTemplate);
-    return {
-      kind: after.name !== before.name ? "level" : "task",
-      title: "Locked in",
-      detail: after.name !== before.name ? `${titles}. That also got you to ${after.name}!` : titles,
-      points: taskItem.points || 0,
-    };
+    return progressEnd(user, mark, { kind: "task", title: "Locked in", detail: titles, points: taskItem.points || 0 });
   }
 
   function assignTask(user, body) {
@@ -1382,14 +1400,12 @@ export function createSlashApp(options = {}) {
     const earned =
       (taskItem.points || 0) +
       (taskItem.bonuses || []).filter((bonus) => bonuses.includes(bonus.id)).reduce((sum, bonus) => sum + bonus.points, 0);
-    const before = levelFor(user.points || 0);
+    const mark = progressStart(user, body.clientDate);
     user.points = (user.points || 0) + earned;
-    const after = levelFor(user.points);
-    const streak = applyStreak(user, body.clientDate);
     taskItem.status = "done";
     taskItem.completedAt = nowIso();
-    taskItem.completionDate = streak.today;
-    if (taskItem.routineId) taskItem.day = streak.today;
+    taskItem.completionDate = mark.today;
+    if (taskItem.routineId) taskItem.day = mark.today;
     taskItem.completion = {
       note: written,
       bonuses,
@@ -1398,15 +1414,7 @@ export function createSlashApp(options = {}) {
       choice,
     };
     if (template) bumpGoals({ ...template, category: taskItem.category });
-    const celebration = {
-      kind: after.name !== before.name ? "level" : streak.milestone ? "streak" : "task",
-      title: after.name !== before.name ? after.name : streak.milestone ? `${streak.streak} days in a row` : "Task done",
-      detail: after.name !== before.name
-        ? `${user.displayName.split(" ")[0]} made it to ${after.name}.`
-        : `+${earned} points`,
-      points: earned,
-    };
-    return celebration;
+    return progressEnd(user, mark, { kind: "task", title: "Task done", detail: `+${earned} points`, points: earned });
   }
 
   function skipTask(user, taskItem, body) {
@@ -1420,10 +1428,12 @@ export function createSlashApp(options = {}) {
   function acknowledgeTask(user, taskItem) {
     if (user.slashSide !== "leading") fail(403, "The well done comes from the leading partner.");
     if (taskItem.status !== "done") fail(409, "It isn’t done yet.");
-    if (taskItem.acknowledgedAt) return;
+    if (taskItem.acknowledgedAt) return null;
+    const mark = progressStart(user);
     taskItem.acknowledgedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 6;
     queueCheer(userById(taskItem.assignedTo), { kind: "praise", what: taskItem.title, from: user.id });
+    return progressEnd(user, mark);
   }
 
   function removeTask(user, taskItem) {
@@ -1470,13 +1480,14 @@ export function createSlashApp(options = {}) {
     if (!follower) fail(409, "Pair up before granting rewards.");
     if ((follower.points || 0) < reward.cost) fail(409, "Not enough points yet.");
     if (reward.agreedBy.length < 2 && db.pair) fail(409, "You both need to say yes first.");
+    const mark = progressStart(user);
     follower.points -= reward.cost;
     reward.status = "granted";
     reward.grantedBy = user.id;
     reward.grantedAt = nowIso();
     user.carePoints = (user.carePoints || 0) + 8;
     queueCheer(follower, { kind: "reward", what: reward.title, from: user.id });
-    return { kind: "reward", title: reward.title, detail: `${reward.cost} points well spent.`, points: reward.cost };
+    return progressEnd(user, mark, { kind: "reward", title: reward.title, detail: `${reward.cost} points well spent.`, points: reward.cost });
   }
 
   function withdrawReward(user, reward) {

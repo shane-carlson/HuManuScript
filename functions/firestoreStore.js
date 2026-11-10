@@ -7,7 +7,7 @@ const MAX_RECORD_BYTES = 1_000_000;
  * Keeps each record as one document with its value as JSON text, so the
  * household is saved exactly as the single-computer build writes it to disk.
  * Record keys are document paths: households/<id>, households/<id>/photos/<id>,
- * emails/<hash> and invites/<code>.
+ * accounts/<uid> and invites/<code>.
  */
 export function firestoreStore(db) {
   return {

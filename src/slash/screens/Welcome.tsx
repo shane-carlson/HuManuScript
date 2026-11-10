@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { remoteServer, serverUrl } from "../api.ts";
+import { ApiError, serverUrl } from "../api.ts";
+import { firebaseConfigured } from "../firebase.ts";
 import { Mark } from "../guides.tsx";
 import { go } from "../route.ts";
 import { useSession } from "../session.tsx";
@@ -19,39 +20,23 @@ const DEMO = {
 } as const;
 
 export function Welcome() {
-  const { loginDemo, request, setError } = useSession();
+  const { loginDemo, request, error, setError, signUp, signIn, forgotPassword, server, starting } = useSession();
   const [adult, setAdult] = useState(false);
-  const [mode, setMode] = useState<"home" | "register" | "login">("home");
+  const [mode, setMode] = useState<"home" | "register" | "login" | "forgot">("home");
+  const [sentTo, setSentTo] = useState("");
   const [pending, setPending] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [invite, setInvite] = useState(() => inviteFromLocation());
   const [preview, setPreview] = useState("");
   const [form, setForm] = useState({ name: "", email: "", password: "", code: invite, tester: "" });
-  // A hosted server has no demo pair, and may ask new people for a tester code.
-  const [server, setServer] = useState<{ hosted: boolean; testerCode: boolean } | null>(null);
+  // A hosted server has no demo pair, signs people in with Firebase, and may ask new people for a tester code.
+  const hosted = server?.hosted === true;
+  const unconnected = hosted && !firebaseConfigured && !server.authEmulator;
 
+  // The forms are taller than a phone, and what went wrong is said at the top.
   useEffect(() => {
-    let cancel = false;
-    let again = 0;
-    const ask = () => {
-      fetch(serverUrl("/api/health"))
-        .then((response) => response.json())
-        .then((body: { hosted?: boolean; testerCode?: boolean }) => {
-          if (!cancel) setServer({ hosted: remoteServer || body.hosted === true, testerCode: body.testerCode === true });
-        })
-        .catch(() => {
-          if (cancel) return;
-          // The phone apps have no demo pair to fall back on, so they keep asking.
-          setServer({ hosted: remoteServer, testerCode: false });
-          if (remoteServer) again = window.setTimeout(ask, 4000);
-        });
-    };
-    ask();
-    return () => {
-      cancel = true;
-      window.clearTimeout(again);
-    };
-  }, []);
+    if (error) document.querySelector(".slash .toast")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [error]);
 
   useEffect(() => {
     if (!invite) return;
@@ -93,16 +78,12 @@ export function Welcome() {
     }
     setPending(true);
     try {
-      await request("/api/auth/register", {
-        method: "POST",
-        body: {
-          displayName: form.name,
-          email: form.email,
-          password: form.password,
-          adultConfirmed: true,
-          inviteCode: form.code || undefined,
-          testerCode: form.tester || undefined,
-        },
+      await signUp({
+        displayName: form.name,
+        email: form.email,
+        password: form.password,
+        inviteCode: form.code || undefined,
+        testerCode: form.tester || undefined,
       });
       sessionStorage.removeItem("slash.invite");
       go("/setup");
@@ -121,10 +102,7 @@ export function Welcome() {
     }
     setPending(true);
     try {
-      const payload = await request("/api/auth/login", {
-        method: "POST",
-        body: { email: form.email, password: form.password },
-      });
+      const payload = await signIn({ email: form.email, password: form.password });
       if (form.code && !payload.pair) {
         try {
           await request("/api/invites/accept", { method: "POST", body: { code: form.code } });
@@ -133,6 +111,21 @@ export function Welcome() {
         }
       }
       go(payload.me.onboardingComplete ? "/home" : "/setup");
+    } catch (caught) {
+      // They made a sign-in but never got as far as a name. The sign-up form finishes it.
+      if (caught instanceof ApiError && caught.code === "no-profile") setMode("register");
+      /* otherwise shown in the toast */
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function sendReset(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    try {
+      await forgotPassword(form.email);
+      setSentTo(form.email.trim());
     } catch {
       /* shown in the toast */
     } finally {
@@ -162,17 +155,29 @@ export function Welcome() {
         <h1>SlashConnect</h1>
         <p className="lead">A private little corner for your dynamic. Tasks, praise, rewards, and check-ins for when you’re miles apart.</p>
         {preview ? <p className="invite-banner">{preview}</p> : null}
-        <label className="adult">
-          <input type="checkbox" checked={adult} onChange={(event) => setAdult(event.target.checked)} />
-          <span>I’m 18 or older. Everyone here is an adult, and role names like Little are adult roles.</span>
-        </label>
+        {mode === "forgot" ? null : (
+          <label className="adult">
+            <input type="checkbox" checked={adult} onChange={(event) => setAdult(event.target.checked)} />
+            <span>I’m 18 or older. Everyone here is an adult, and role names like Little are adult roles.</span>
+          </label>
+        )}
 
         {mode === "home" ? (
           <div className="stack">
-            <button className="primary" type="button" onClick={() => setMode("register")}>
+            {unconnected ? (
+              <div className="card warn-card">
+                <p>
+                  <strong>Not connected yet.</strong> This copy of SlashConnect hasn’t been linked to its Firebase project, so signing up and signing in are switched off.
+                </p>
+                <p className="fine">
+                  Setting it up? Run <code>npm run firebase:register</code>, then build and deploy again.
+                </p>
+              </div>
+            ) : null}
+            <button className="primary" type="button" disabled={starting || unconnected} onClick={() => setMode("register")}>
               Sign up
             </button>
-            <button className="ghost" type="button" onClick={() => setMode("login")}>
+            <button className="ghost" type="button" disabled={starting || unconnected} onClick={() => setMode("login")}>
               Sign in
             </button>
             {server && !server.hosted ? (
@@ -258,7 +263,48 @@ export function Welcome() {
             <button className="primary" type="submit" disabled={pending}>
               {pending ? "Signing in…" : "Sign in"}
             </button>
+            {hosted ? (
+              <button
+                className="texty"
+                type="button"
+                onClick={() => {
+                  setSentTo("");
+                  setMode("forgot");
+                }}
+              >
+                Forgot your password?
+              </button>
+            ) : null}
             <button className="texty" type="button" onClick={() => setMode("home")}>
+              Back
+            </button>
+          </form>
+        ) : null}
+
+        {mode === "forgot" && sentTo ? (
+          <div className="stack">
+            <div className="card">
+              <p>
+                <strong>On its way.</strong> If {sentTo} has a place here, an email with a link to set a new password will land in a minute or two.
+              </p>
+              <p className="fine">Nothing yet? Peek in spam, and check the address is the one you signed up with.</p>
+            </div>
+            <button className="primary" type="button" onClick={() => setMode("login")}>
+              Back to sign in
+            </button>
+          </div>
+        ) : null}
+
+        {mode === "forgot" && !sentTo ? (
+          <form className="stack" onSubmit={(event) => void sendReset(event)}>
+            <p className="fine">It happens. Pop in the email you signed up with and we’ll send a link to set a new password.</p>
+            <Field label="Email">
+              <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} autoComplete="email" required />
+            </Field>
+            <button className="primary" type="submit" disabled={pending}>
+              {pending ? "Sending…" : "Email me a link"}
+            </button>
+            <button className="texty" type="button" onClick={() => setMode("login")}>
               Back
             </button>
           </form>
