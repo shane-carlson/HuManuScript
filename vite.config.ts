@@ -40,7 +40,8 @@ function slashApiPlugin(): Plugin {
   const app = () => {
     if (!slash) {
       slash = createSlashApp({
-        dataFile: path.resolve(process.cwd(), 'data', 'slashconnect.json'),
+        // SLASH_DATA_FILE lets a second dev server keep its own household.
+        dataFile: process.env.SLASH_DATA_FILE || path.resolve(process.cwd(), 'data', 'slashconnect.json'),
         seedDemo: true,
       });
     }
