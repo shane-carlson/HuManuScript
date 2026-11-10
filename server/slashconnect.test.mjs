@@ -11,6 +11,11 @@ function tempApp(seedDemo) {
   return createSlashApp({ dataFile: path.join(dir, "db.json"), seedDemo });
 }
 
+// The demo pair is seeded on the real calendar, so the tests count days from today.
+function day(offset) {
+  return new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+}
+
 async function call(app, method, url, { token, body, clientDate } = {}) {
   try {
     return await app.dispatch({ method, url, token, body: body || {}, clientDate });
@@ -184,19 +189,19 @@ test("today's adventure stays sealed until the categories lock the tasks in", as
 
   const tooMany = await call(app, "POST", "/api/tasks/task-adventure/lock", {
     token: avery.body.token,
-    body: { categories: ["self-care", "fun", "spicy", "grounding"], clientDate: "2026-11-09" },
+    body: { categories: ["self-care", "fun", "spicy", "grounding"], clientDate: day(0) },
   });
   assert.equal(tooMany.status, 400);
 
   const leader = await call(app, "POST", "/api/tasks/task-adventure/lock", {
     token: rowan.body.token,
-    body: { categories: ["fun"], clientDate: "2026-11-09" },
+    body: { categories: ["fun"], clientDate: day(0) },
   });
   assert.equal(leader.status, 403);
 
   const locked = await call(app, "POST", "/api/tasks/task-adventure/lock", {
     token: avery.body.token,
-    body: { categories: ["fun", "grounding"], clientDate: "2026-11-09" },
+    body: { categories: ["fun", "grounding"], clientDate: day(0) },
   });
   assert.equal(locked.status, 200, locked.body.error);
   assert.equal(locked.body.celebration.title, "Locked in");
@@ -214,12 +219,12 @@ test("today's adventure stays sealed until the categories lock the tasks in", as
   }
   const again = await call(app, "POST", "/api/tasks/task-adventure/lock", {
     token: avery.body.token,
-    body: { categories: ["self-care"], clientDate: "2026-11-09" },
+    body: { categories: ["self-care"], clientDate: day(0) },
   });
   assert.equal(again.status, 409);
   const restart = await call(app, "POST", "/api/adventure/start", {
     token: avery.body.token,
-    body: { clientDate: "2026-11-09" },
+    body: { clientDate: day(0) },
   });
   assert.equal(restart.status, 409);
 });
@@ -242,58 +247,58 @@ test("a daily task comes back each day of the following partner and a one-time t
 
   const given = await call(app, "POST", "/api/tasks", {
     token: rowan,
-    body: { templateId: "meds", title: "Take your vitamins", note: "With breakfast.", repeat: "daily", dueDate: "2026-12-25" },
+    body: { templateId: "meds", title: "Take your vitamins", note: "With breakfast.", repeat: "daily", dueDate: day(46) },
   });
   assert.equal(given.status, 201, given.body.error);
   assert.equal(given.body.task.repeat, "daily");
   assert.equal(given.body.task.dueDate, "");
   assert.equal(given.body.routines.length, routinesBefore + 1);
 
-  const monday = await asAvery("2026-11-09");
+  const monday = await asAvery(day(0));
   assert.equal(vitamins(monday.body).length, 1);
   const first = vitamins(monday.body)[0];
   assert.equal(first.status, "open");
   assert.equal(first.note, "With breakfast.");
 
-  const done = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  const done = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: day(0) } });
   assert.equal(done.status, 200, done.body.error);
   assert.equal(vitamins(done.body).length, 1);
-  assert.equal(vitamins((await asAvery("2026-11-09")).body).length, 1);
+  assert.equal(vitamins((await asAvery(day(0))).body).length, 1);
 
   // Rowan is a day ahead. Her clock does not hand Avery tomorrow's task early.
-  const ahead = await call(app, "GET", "/api/session", { token: rowan, clientDate: "2026-11-10" });
+  const ahead = await call(app, "GET", "/api/session", { token: rowan, clientDate: day(1) });
   assert.equal(vitamins(ahead.body).filter((task) => task.status === "open").length, 0);
   assert.equal(ahead.body.routines.find((item) => item.title === "Take your vitamins").status, "done");
 
-  const tuesday = await asAvery("2026-11-10");
+  const tuesday = await asAvery(day(1));
   assert.equal(vitamins(tuesday.body).length, 2);
   const second = vitamins(tuesday.body).find((task) => task.status === "open");
-  assert.equal(second.day, "2026-11-10");
+  assert.equal(second.day, day(1));
   assert.notEqual(second.id, first.id);
 
   // Left undone, it carries over as the same task. It does not pile up.
-  const thursday = await asAvery("2026-11-12");
+  const thursday = await asAvery(day(3));
   assert.equal(vitamins(thursday.body).length, 2);
   assert.equal(vitamins(thursday.body).find((task) => task.status === "open").id, second.id);
 
-  const passed = await call(app, "POST", `/api/tasks/${second.id}/skip`, { token: avery, body: {}, clientDate: "2026-11-12" });
+  const passed = await call(app, "POST", `/api/tasks/${second.id}/skip`, { token: avery, body: {}, clientDate: day(3) });
   assert.equal(vitamins(passed.body).find((task) => task.id === second.id).status, "skipped");
-  assert.equal(vitamins((await asAvery("2026-11-12")).body).length, 2);
-  const friday = await asAvery("2026-11-13");
+  assert.equal(vitamins((await asAvery(day(3))).body).length, 2);
+  const friday = await asAvery(day(4));
   const third = vitamins(friday.body).find((task) => task.status === "open");
   assert.ok(third);
 
-  const notHers = await call(app, "POST", `/api/tasks/${third.id}/stop`, { token: avery, clientDate: "2026-11-13" });
+  const notHers = await call(app, "POST", `/api/tasks/${third.id}/stop`, { token: avery, clientDate: day(4) });
   assert.equal(notHers.status, 403);
   const stopped = await call(app, "POST", `/api/tasks/${third.id}/stop`, { token: rowan });
   assert.equal(stopped.status, 200, stopped.body.error);
   assert.equal(stopped.body.routines.some((item) => item.title === "Take your vitamins"), false);
-  const later = await asAvery("2026-11-20");
+  const later = await asAvery(day(11));
   assert.equal(vitamins(later.body).length, 2);
   assert.equal(vitamins(later.body).every((task) => task.status !== "open" && task.routineActive === false), true);
 
   const reloaded = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
-  const after = await call(reloaded, "GET", "/api/session", { token: avery, clientDate: "2026-11-21" });
+  const after = await call(reloaded, "GET", "/api/session", { token: avery, clientDate: day(12) });
   assert.equal(vitamins(after.body).length, 2);
   assert.ok(after.body.routines.some((item) => item.title === "Drink your water"));
 });
@@ -314,7 +319,7 @@ test("the leading partner can write a task of their own", async () => {
   assert.equal(own.body.task.category, "fun");
   assert.equal(own.body.task.summary, "");
   assert.equal(own.body.task.consent, false);
-  const sent = await call(app, "POST", `/api/tasks/${own.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  const sent = await call(app, "POST", `/api/tasks/${own.body.task.id}/complete`, { token: avery, body: { clientDate: day(0) } });
   assert.equal(sent.status, 200, sent.body.error);
 
   const spicy = await call(app, "POST", "/api/tasks", {
@@ -322,9 +327,9 @@ test("the leading partner can write a task of their own", async () => {
     body: { templateId: "own-task", title: "Wear the red set on our call", category: "spicy" },
   });
   assert.equal(spicy.body.task.consent, true);
-  const unsaid = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  const unsaid = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: day(0) } });
   assert.equal(unsaid.status, 400);
-  const said = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09", consent: true } });
+  const said = await call(app, "POST", `/api/tasks/${spicy.body.task.id}/complete`, { token: avery, body: { clientDate: day(0), consent: true } });
   assert.equal(said.status, 200, said.body.error);
 });
 
@@ -344,9 +349,9 @@ test("a well done waits for the following partner until their app has shown it",
   const session = (token) => call(app, "GET", "/api/session", { token });
 
   assert.equal((await session(avery)).body.cheer, null);
-  const water = await call(app, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 48, clientDate: "2026-11-09" } });
+  const water = await call(app, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 48, clientDate: day(0) } });
   assert.equal(water.body.celebration.kind, "task");
-  await call(app, "POST", "/api/tasks/task-meds/complete", { token: avery, body: { clientDate: "2026-11-09" } });
+  await call(app, "POST", "/api/tasks/task-meds/complete", { token: avery, body: { clientDate: day(0) } });
 
   const selfPraise = await call(app, "POST", "/api/tasks/task-water/acknowledge", { token: avery });
   assert.equal(selfPraise.status, 403);
@@ -439,10 +444,10 @@ test("task text saved with the old wording picks up the role title", async () =>
   fs.writeFileSync(app.dataFile, JSON.stringify(saved));
 
   const reopened = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
-  const bundle = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const bundle = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: day(0) })).body;
   assert.equal(bundle.tasks.find((task) => task.id === "task-water").summary, "Drink the amount your Domme set for you.");
-  await call(reopened, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 64, clientDate: "2026-11-09" } });
-  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  await call(reopened, "POST", "/api/tasks/task-water/log", { token: avery, body: { amount: 64, clientDate: day(0) } });
+  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: day(1) })).body;
   const fresh = next.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
   assert.equal(fresh.summary, "Drink the amount your Domme set for you.");
 });
@@ -455,20 +460,20 @@ test("water ticked off before drinks were logged stays a plain finished task", a
   delete old.progress;
   delete old.target;
   old.status = "done";
-  old.day = "2026-11-09";
+  old.day = day(0);
   old.completedAt = "2026-11-09T18:00:00.000Z";
   old.completion = { note: "", bonuses: [], photos: [], checklist: [], choice: "" };
   delete saved.routines.find((item) => item.id === "routine-water").target;
   fs.writeFileSync(app.dataFile, JSON.stringify(saved));
 
   const reopened = createSlashApp({ dataFile: app.dataFile, seedDemo: false });
-  const today = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const today = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: day(0) })).body;
   assert.equal(today.tasks.find((task) => task.id === "task-water").progress, null);
   const row = today.routines.find((item) => item.title === "Drink your water");
   assert.equal(row.status, "done");
   assert.equal(row.target, 0);
 
-  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const next = (await call(reopened, "GET", "/api/session", { token: avery, clientDate: day(1) })).body;
   const fresh = next.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
   assert.equal(fresh.target, 64);
   assert.deepEqual(fresh.progress, { amount: 0, entries: [] });
@@ -482,7 +487,7 @@ test("water is a daily amount in ounces that the following partner logs as they 
   const row = (bundle) => bundle.routines.find((item) => item.title === "Drink your water");
   const log = (id, amount, day, token = avery) => call(app, "POST", `/api/tasks/${id}/log`, { token, body: { amount, clientDate: day }, clientDate: day });
 
-  const start = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const start = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(0) })).body;
   const first = water(start)[0];
   assert.equal(first.completionKind, "amount");
   assert.equal(first.unit, "oz");
@@ -491,12 +496,12 @@ test("water is a daily amount in ounces that the following partner logs as they 
   assert.deepEqual(first.amountSteps, [8, 12, 16]);
   assert.deepEqual([row(start).amount, row(start).target, row(start).unit], [16, 64, "oz"]);
 
-  assert.equal((await log(first.id, 8, "2026-11-09", rowan)).status, 403);
-  assert.equal((await log(first.id, 0, "2026-11-09")).status, 400);
-  assert.equal((await log(first.id, 500, "2026-11-09")).status, 400);
-  assert.equal((await log("task-meds", 8, "2026-11-09")).status, 400);
+  assert.equal((await log(first.id, 8, day(0), rowan)).status, 403);
+  assert.equal((await log(first.id, 0, day(0))).status, 400);
+  assert.equal((await log(first.id, 500, day(0))).status, 400);
+  assert.equal((await log("task-meds", 8, day(0))).status, 400);
 
-  const sip = await log(first.id, 12, "2026-11-09");
+  const sip = await log(first.id, 12, day(0));
   assert.equal(sip.status, 200, sip.body.error);
   assert.equal(sip.body.celebration, undefined);
   assert.equal(water(sip.body)[0].progress.amount, 28);
@@ -507,36 +512,36 @@ test("water is a daily amount in ounces that the following partner logs as they 
   const watching = (await call(app, "GET", "/api/session", { token: rowan })).body;
   assert.equal(row(watching).amount, 28);
 
-  const early = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" } });
+  const early = await call(app, "POST", `/api/tasks/${first.id}/complete`, { token: avery, body: { clientDate: day(0) } });
   assert.equal(early.status, 400);
   assert.match(early.body.error, /28 of 64 oz/);
 
-  const oops = await log(first.id, 30, "2026-11-09");
+  const oops = await log(first.id, 30, day(0));
   assert.equal(water(oops.body)[0].progress.amount, 58);
   const undone = await call(app, "POST", `/api/tasks/${first.id}/unlog`, { token: avery });
   assert.equal(water(undone.body)[0].progress.amount, 28);
   assert.equal(water(undone.body)[0].progress.entries.length, 2);
 
   // A day that ends part way stays on the record, and the next day starts at zero.
-  const tuesday = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const tuesday = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(1) })).body;
   const kept = water(tuesday).find((task) => task.id === first.id);
   assert.equal(kept.status, "skipped");
   assert.equal(kept.completion.note, "Got to 28 of 64 oz.");
   const second = water(tuesday).find((task) => task.status === "open");
   assert.equal(second.progress.amount, 0);
-  assert.equal(second.day, "2026-11-10");
+  assert.equal(second.day, day(1));
   assert.equal(row(tuesday).amount, 0);
 
   const before = tuesday.stats.points;
-  await log(second.id, 40, "2026-11-10");
-  const reached = await log(second.id, 24, "2026-11-10");
+  await log(second.id, 40, day(1));
+  const reached = await log(second.id, 24, day(1));
   assert.equal(reached.status, 200, reached.body.error);
   assert.ok(reached.body.celebration);
   assert.equal(reached.body.stats.points, before + 5);
   const done = water(reached.body).find((task) => task.id === second.id);
   assert.equal(done.status, "done");
   assert.equal(done.completion.note, "64 oz. The amount was 64.");
-  assert.equal((await log(second.id, 8, "2026-11-10")).status, 409);
+  assert.equal((await log(second.id, 8, day(1))).status, 409);
   assert.equal(row(reached.body).status, "done");
 });
 
@@ -553,11 +558,11 @@ test("the leading partner sets the daily ounces", async () => {
   assert.equal(given.body.task.target, 80);
   assert.equal(given.body.task.progress.amount, 0);
 
-  const mine = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
+  const mine = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(0) })).body;
   const open = mine.tasks.find((task) => task.title === "Drink your water" && task.status === "open");
   assert.equal(open.target, 80);
-  await call(app, "POST", `/api/tasks/${open.id}/log`, { token: avery, body: { amount: 80, clientDate: "2026-11-09" } });
-  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  await call(app, "POST", `/api/tasks/${open.id}/log`, { token: avery, body: { amount: 80, clientDate: day(0) } });
+  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(1) })).body;
   assert.equal(next.tasks.find((task) => task.title === "Drink your water" && task.status === "open").target, 80);
 
   const plain = await call(app, "POST", "/api/tasks", { token: rowan, body: { templateId: "water" } });
@@ -569,7 +574,7 @@ test("the leading partner can change a task before giving it", async () => {
   const app = tempApp(true);
   const avery = (await call(app, "POST", "/api/demo/login", { body: { who: "following" } })).body.token;
   const rowan = (await call(app, "POST", "/api/demo/login", { body: { who: "leading" } })).body.token;
-  const give = (body) => call(app, "POST", "/api/tasks", { token: rowan, body: { clientDate: "2026-11-09", ...body } });
+  const give = (body) => call(app, "POST", "/api/tasks", { token: rowan, body: { clientDate: day(0), ...body } });
 
   const asItComes = (await give({ templateId: "meds", repeat: "daily" })).body.task;
   const stock = (await call(app, "GET", "/api/session", { token: rowan })).body.meta.templates.find((item) => item.id === "meds");
@@ -593,15 +598,15 @@ test("the leading partner can change a task before giving it", async () => {
   assert.equal(given.body.task.points, 14);
   assert.equal(given.body.task.repeat, "daily");
 
-  const before = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-09" })).body;
-  const done = await call(app, "POST", `/api/tasks/${given.body.task.id}/complete`, { token: avery, body: { clientDate: "2026-11-09" }, clientDate: "2026-11-09" });
+  const before = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(0) })).body;
+  const done = await call(app, "POST", `/api/tasks/${given.body.task.id}/complete`, { token: avery, body: { clientDate: day(0) }, clientDate: day(0) });
   assert.equal(done.status, 200, done.body.error);
   assert.equal(done.body.stats.points - before.stats.points, 14);
 
   await call(app, "PATCH", "/api/profile", { token: rowan, body: { roleTitle: "Mistress" } });
-  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: "2026-11-10" })).body;
+  const next = (await call(app, "GET", "/api/session", { token: avery, clientDate: day(1) })).body;
   const fresh = next.tasks.find((task) => task.title === "Eat lunch away from your desk" && task.status === "open");
-  assert.equal(fresh.day, "2026-11-10");
+  assert.equal(fresh.day, day(1));
   assert.equal(fresh.points, 14);
   assert.equal(fresh.summary, "A real plate, sitting down. Send your Mistress a picture if you feel like it.");
   assert.equal(next.routines.find((item) => item.title === "Eat lunch away from your desk").points, 14);
