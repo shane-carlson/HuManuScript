@@ -81,6 +81,8 @@ If those are unset, the Windows installer is still published, unsigned.
 
 Each pack writes `build/app-version.json` from `package.json` `version` (`0.1.0`) plus `HM_BUILD_NUMBER` (the workflow run number). A numeric run number becomes the marketing version `0.1.<run number>` in the header, the window title, the installer filenames, and `CFBundleShortVersionString` / `CFBundleVersion`. `package.json` stays at `0.1.0`. Local and unsigned packs with no numeric build number stay `0.1.0 (dev)`. An installed copy checks that release when the app opens and about once an hour (`latest-mac.yml` on macOS, `latest.yml` on Windows). When a newer version is published, a prompt under the header asks you to update. After you confirm, it downloads that pack and shows progress. When the download finishes, it asks you to restart, and it does not restart until you confirm. A failed download stays on that line so you can keep writing and try again.
 
+After each pack ships, refresh the HuManuScript page on Ready Writer One (`/sidequests/humanuscript`) and the account landing (`/humanuscript/account`). Take new screenshots of every tab and the full-screen editor, using sample text only, and point every version and download link at that build. Drop-in patches for the Ready Writer One repo live in `deploy/`.
+
 #### Cloud agent: trigger the workflow
 
 Same pattern as Speak Fiction / StoryBind: add a **fine-grained PAT** to your **Cloud Agent environment secrets** as **`GH_TOKEN`** (Actions read/write on this repo). Then:

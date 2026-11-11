@@ -1203,9 +1203,9 @@ index 0000000..89296fa
 +const TOKEN_KEY = 'humanuscript.account.token'
 +const RETURN_URL = 'humanuscript://open'
 +const DOWNLOADS = [
-+  ['Apple silicon', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-arm64.dmg'],
-+  ['Intel Mac', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-x64.dmg'],
-+  ['Windows', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-x64.exe'],
++  ['Apple silicon', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-arm64.dmg'],
++  ['Intel Mac', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-x64.dmg'],
++  ['Windows', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-x64.exe'],
 +] as const
 +
 +type AccountUser = { id: string; email: string; displayName: string }
@@ -1263,7 +1263,7 @@ index 0000000..89296fa
 +            Sign in
 +          </Link>
 +        </div>
-+        <h2>Download HuManuScript 0.1.52</h2>
++        <h2>Download HuManuScript 0.1.54</h2>
 +        <div className="writing-account-actions">
 +          {DOWNLOADS.map(([label, href]) => (
 +            <a className="writing-account-button" key={label} href={href}>
