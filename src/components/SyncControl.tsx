@@ -1,17 +1,12 @@
 import { useEffect, useId, useState } from 'react';
-import { READYWRITER_ACCOUNT_PAGE } from '../core/syncEndpoint.ts';
 import { SYNC_COPY, syncStatusLine, type SyncPhase } from '../core/syncStatus.ts';
-import { validateAccountForm } from '../core/syncClient.ts';
-
-type FormResult = { message: string; pending?: boolean } | null;
 
 export function SyncControl({
   phase,
   email,
   lastSyncAt,
   detail,
-  onCreateAccount,
-  onSignIn,
+  onOpenAccount,
   onSyncNow,
   onSignOut,
 }: {
@@ -19,22 +14,14 @@ export function SyncControl({
   email: string | null;
   lastSyncAt: string | null;
   detail: string;
-  onCreateAccount: (email: string, password: string, displayName: string) => Promise<FormResult>;
-  onSignIn: (email: string, password: string) => Promise<FormResult>;
+  onOpenAccount: (mode: 'sign-in' | 'sign-up' | 'manage') => void;
   onSyncNow: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<'create' | 'sign-in' | null>(null);
-  const [emailDraft, setEmailDraft] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [password, setPassword] = useState('');
-  const [formError, setFormError] = useState('');
-  const [formNotice, setFormNotice] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const titleId = useId();
   const status = syncStatusLine({ phase, email, lastSyncAt });
-  const busy = phase === 'syncing' || submitting;
+  const busy = phase === 'syncing';
 
   useEffect(() => {
     if (!open) return;
@@ -45,41 +32,9 @@ export function SyncControl({
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const showingForm = form != null && phase !== 'success' && phase !== 'syncing';
-
-  const closeForm = () => {
-    setForm(null);
-    setPassword('');
-    setFormError('');
-    setFormNotice('');
-  };
-
-  const submit = async (kind: 'create' | 'sign-in') => {
-    const invalid = validateAccountForm(kind, emailDraft, password, displayName);
-    if (invalid) {
-      setFormNotice('');
-      setFormError(invalid);
-      return;
-    }
-    setSubmitting(true);
-    setFormError('');
-    setFormNotice('');
-    const error = kind === 'create'
-      ? await onCreateAccount(emailDraft, password, displayName)
-      : await onSignIn(emailDraft, password);
-    setSubmitting(false);
-    setPassword('');
-    if (error?.pending) {
-      setForm('sign-in');
-      setFormNotice(error.message);
-      return;
-    }
-    if (error) {
-      setFormError(error.message);
-      return;
-    }
-    setForm(null);
-    setDisplayName('');
+  const openAccount = (mode: 'sign-in' | 'sign-up' | 'manage') => {
+    setOpen(false);
+    onOpenAccount(mode);
   };
 
   return (
@@ -124,10 +79,10 @@ export function SyncControl({
                   <p>{SYNC_COPY.failureKept}</p>
                 </>
               )}
-              {phase !== 'syncing' && phase !== 'success' && phase !== 'failure' && email && !showingForm && (
+              {phase !== 'syncing' && phase !== 'success' && phase !== 'failure' && email && (
                 <p>{status}</p>
               )}
-              {!email && !showingForm && phase !== 'syncing' && (
+              {!email && phase !== 'syncing' && (
                 <>
                   {detail && (
                     <p className="sync-panel__error" role="alert">
@@ -136,99 +91,33 @@ export function SyncControl({
                   )}
                   <p>{SYNC_COPY.signedOut}</p>
                   <p>{SYNC_COPY.notSentToAi}</p>
-                  <p>
-                    <a href={READYWRITER_ACCOUNT_PAGE}>Open your Ready Writer One account</a>
-                  </p>
                 </>
               )}
-              {showingForm && form && (
-                <form
-                  noValidate
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void submit(form);
-                  }}
-                >
-                  <h3>{form === 'create' ? SYNC_COPY.createTitle : SYNC_COPY.signInTitle}</h3>
-                  <p>{form === 'create' ? SYNC_COPY.notSentToAi : SYNC_COPY.signInHelp}</p>
-                  <p>
-                    <a href={READYWRITER_ACCOUNT_PAGE}>readywriter.one/account</a>
-                  </p>
-                  {form === 'create' && (
-                    <label className="field">
-                      Display name
-                      <input
-                        type="text"
-                        autoComplete="nickname"
-                        maxLength={40}
-                        value={displayName}
-                        onChange={(event) => setDisplayName(event.target.value)}
-                      />
-                    </label>
-                  )}
-                  <label className="field">
-                    Email
-                    <input
-                      type="email"
-                      autoComplete="username"
-                      value={emailDraft}
-                      onChange={(event) => setEmailDraft(event.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    Password
-                    <input
-                      type="password"
-                      autoComplete={form === 'create' ? 'new-password' : 'current-password'}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </label>
-                  {form === 'create' && <p className="sync-panel__hint">{SYNC_COPY.passwordHint}</p>}
-                  {formNotice && (
-                    <p className="sync-panel__notice" role="status">
-                      {formNotice}
-                    </p>
-                  )}
-                  {formError && (
-                    <p className="sync-panel__error" role="alert">
-                      {formError}
-                    </p>
-                  )}
-                  <div className="sync-panel__actions">
-                    <button type="submit" className="primary" disabled={busy}>
-                      {form === 'create' ? 'Create account' : 'Sign in'}
+              <div className="sync-panel__actions">
+                {!email && (
+                  <>
+                    <button type="button" className="primary" onClick={() => openAccount('sign-up')} disabled={busy}>
+                      Create account
                     </button>
-                    <button type="button" onClick={closeForm} disabled={busy}>
-                      Back
+                    <button type="button" onClick={() => openAccount('sign-in')} disabled={busy}>
+                      Sign in
                     </button>
-                  </div>
-                </form>
-              )}
-              {!showingForm && (
-                <div className="sync-panel__actions">
-                  {!email && (
-                    <>
-                      <button type="button" className="primary" onClick={() => { setFormError(''); setFormNotice(''); setForm('create'); }} disabled={busy}>
-                        Create account
-                      </button>
-                      <button type="button" onClick={() => { setFormError(''); setFormNotice(''); setForm('sign-in'); }} disabled={busy}>
-                        Sign in
-                      </button>
-                    </>
-                  )}
-                  {email && (
-                    <>
-                      <button type="button" className="primary" onClick={onSyncNow} disabled={busy}>
-                        Sync now
-                      </button>
-                      <button type="button" onClick={onSignOut} disabled={busy}>
-                        Sign out
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
+                  </>
+                )}
+                {email && (
+                  <>
+                    <button type="button" className="primary" onClick={onSyncNow} disabled={busy}>
+                      Sync now
+                    </button>
+                    <button type="button" onClick={() => openAccount('manage')} disabled={busy}>
+                      Account
+                    </button>
+                    <button type="button" onClick={onSignOut} disabled={busy}>
+                      Sign out
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </>
         )}

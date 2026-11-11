@@ -47,6 +47,41 @@ const isDev = process.env.ELECTRON === '1' || !app.isPackaged;
 
 app.setName('HuManuScript');
 
+const gotSingleInstance = app.requestSingleInstanceLock();
+if (!gotSingleInstance) {
+  app.quit();
+}
+
+function focusMainWindow() {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function registerAppProtocol() {
+  try {
+    if (process.defaultApp && process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('humanuscript', process.execPath, [path.resolve(process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient('humanuscript');
+    }
+  } catch {
+    /* The OS may refuse the protocol until the app is installed. */
+  }
+}
+
+registerAppProtocol();
+app.on('second-instance', (_event, argv) => {
+  focusMainWindow();
+  if (argv.some((arg) => typeof arg === 'string' && arg.startsWith('humanuscript://'))) focusMainWindow();
+});
+app.on('open-url', (event) => {
+  event.preventDefault();
+  focusMainWindow();
+});
+
 function readBakedVersion() {
   try {
     const info = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'build', 'app-version.json'), 'utf8'));
@@ -316,6 +351,7 @@ function startAutoUpdate(baked) {
 }
 
 app.whenReady().then(() => {
+  if (!gotSingleInstance) return;
   const ses = session.defaultSession;
   loadCaptureGrantFile();
   // The page asks once per permission span, then reuses the stream. A remembered

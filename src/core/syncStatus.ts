@@ -4,14 +4,14 @@ export type SyncPhase = 'signed-out' | 'signed-in' | 'syncing' | 'success' | 'fa
 
 export const SYNC_COPY = {
   signedOut:
-    'Your books stay on this computer. Sign in with your Ready Writer One account — the same email and password as readywriter.one — only when you want this install to share them. You can create an account here too. Confirm that email, then sign in.',
+    'Your books stay on this computer. Sign in with your HuManuScript account only when you want this install to share them. You can create that account here. SpeakFiction and other writing tools can use the same sign-in later.',
   notSentToAi: 'Books, notes, and certification go only to that account. They are not sent to an AI.',
-  syncing: 'Copying books, notes, and certification with your readywriter.one account.',
+  syncing: 'Copying books, notes, and certification to your HuManuScript account.',
   success: 'This install and your account now have the same books, notes, and certification.',
   failureKept: 'Your books are still on this computer.',
-  createTitle: 'Create a Ready Writer One account',
-  signInTitle: 'Sign in',
-  signInHelp: 'Use the same email and password as your Ready Writer One account.',
+  createTitle: 'Create a HuManuScript account',
+  signInTitle: 'Sign in to HuManuScript',
+  signInHelp: 'Use the email and password for your HuManuScript account.',
   passwordHint: 'At least 12 characters, with uppercase, lowercase, a number, and a symbol.',
   confirmThenSignIn: 'Confirm your email, then sign in.',
 } as const;

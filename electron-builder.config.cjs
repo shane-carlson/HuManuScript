@@ -17,6 +17,7 @@ const dmgTitle = intel ? `HuManuScript ${version} Intel` : `HuManuScript ${versi
 module.exports = {
   appId: 'net.humanuscript.app',
   productName: 'HuManuScript',
+  protocols: [{ name: 'HuManuScript', schemes: ['humanuscript'] }],
   copyright: 'Copyright © HuManuScript',
   asar: true,
   npmRebuild: false,

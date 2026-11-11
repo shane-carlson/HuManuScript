@@ -623,7 +623,7 @@ function sealsFromMap(value: unknown, pointsKey: 'points'): string[] | null {
 
 function decodeWire(snapshot: Record<string, unknown>): { ok: true; snapshot: AccountSnapshot } | { ok: false; message: string } {
   if (snapshot.version !== 1) {
-    return { ok: false, message: 'readywriter.one sent a snapshot this install does not read. Your books were not changed.' };
+    return { ok: false, message: 'The account service sent a snapshot this install does not read. Your books were not changed.' };
   }
   const manuscripts = asRecord(snapshot.manuscripts);
   const notes = asRecord(snapshot.notes);
@@ -734,7 +734,7 @@ export function parseSyncPayload(
 ): { ok: true; snapshot: AccountSnapshot } | { ok: false; message: string } {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, message: 'readywriter.one did not return a sync snapshot. Your books were not changed.' };
+    return { ok: false, message: 'The account service did not return a sync snapshot. Your books were not changed.' };
   }
   const revision =
     (typeof body.revision === 'string' && body.revision ? body.revision : null) ?? revisionFromEtag(etag);
@@ -749,7 +749,7 @@ export function parseSyncPayload(
 
   const wire = 'snapshot' in body ? asRecord(body.snapshot) : body;
   if (!wire) {
-    return { ok: false, message: 'readywriter.one sent a snapshot this install does not read. Your books were not changed.' };
+    return { ok: false, message: 'The account service sent a snapshot this install does not read. Your books were not changed.' };
   }
   const decoded = decodeWire(wire);
   if (!decoded.ok) return decoded;

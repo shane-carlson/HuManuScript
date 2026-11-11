@@ -1,13 +1,14 @@
 /**
- * readywriter.one account client.
- * Manuscript content is sent only to READYWRITER_SYNC_BASE_URL, and only after sign-in.
+ * HuManuScript account client.
+ * Manuscript content is sent only to ACCOUNT_BASE_URL, and only after sign-in.
  * Seal hashes are copied as stored and are never rewritten here.
  */
 
+import { THIS_WRITING_TOOL } from './accountTools.ts';
 import {
-  READYWRITER_SYNC_PATHS,
-  assertReadywriterSyncUrl,
-  readywriterSyncUrl,
+  ACCOUNT_PATHS,
+  assertAccountUrl,
+  accountUrl,
 } from './syncEndpoint.ts';
 import {
   SYNC_SNAPSHOT_BYTE_LIMIT,
@@ -26,7 +27,7 @@ import {
 import type { Library } from './library.ts';
 import { emptyVersionLedger, type VersionLedger } from './versions.ts';
 
-export interface ReadywriterAccount {
+export interface WritingAccount {
   token: string;
   email: string;
   accountId: string;
@@ -34,7 +35,7 @@ export interface ReadywriterAccount {
 }
 
 export type AccountResult =
-  | { ok: true; account: ReadywriterAccount }
+  | { ok: true; account: WritingAccount }
   | { ok: false; pending: true; message: string }
   | { ok: false; pending?: false; message: string };
 
@@ -80,7 +81,7 @@ export function validateAccountForm(
 }
 
 function networkMessage(): string {
-  return 'Could not reach readywriter.one. Check your connection and try again. Your books are still on this computer.';
+  return 'Could not reach the account service. Check your connection and try again. Your books are still on this computer.';
 }
 
 function serverMessage(body: unknown, fallback: string): string {
@@ -113,7 +114,7 @@ async function readJson(response: Response): Promise<unknown | null> {
   }
 }
 
-function accountFromLogin(body: unknown): ReadywriterAccount | null {
+function accountFromLogin(body: unknown): WritingAccount | null {
   if (!body || typeof body !== 'object') return null;
   const record = body as { token?: unknown; user?: unknown };
   const token = typeof record.token === 'string' ? record.token : '';
@@ -123,7 +124,7 @@ function accountFromLogin(body: unknown): ReadywriterAccount | null {
 }
 
 async function postJson(url: string, body: unknown, fetchImpl: FetchImpl, token?: string): Promise<Response> {
-  assertReadywriterSyncUrl(url);
+  assertAccountUrl(url);
   const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   return fetchImpl(url, {
@@ -135,7 +136,7 @@ async function postJson(url: string, body: unknown, fetchImpl: FetchImpl, token?
   });
 }
 
-export async function createReadywriterAccount(
+export async function createWritingAccount(
   email: string,
   password: string,
   displayName: string,
@@ -143,10 +144,14 @@ export async function createReadywriterAccount(
 ): Promise<AccountResult> {
   const invalid = validateAccountForm('create', email, password, displayName);
   if (invalid) return { ok: false, message: invalid };
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.signup);
+  const url = accountUrl(ACCOUNT_PATHS.signup);
   let response: Response;
   try {
-    response = await postJson(url, { email: email.trim(), password, displayName: displayName.trim() }, fetchImpl);
+    response = await postJson(
+      url,
+      { email: email.trim(), password, displayName: displayName.trim(), tool: THIS_WRITING_TOOL },
+      fetchImpl,
+    );
   } catch {
     return { ok: false, message: networkMessage() };
   }
@@ -155,23 +160,25 @@ export async function createReadywriterAccount(
     return { ok: false, pending: true, message: serverMessage(body, CONFIRM_EMAIL) };
   }
   if (!response.ok) return { ok: false, message: serverMessage(body, 'That did not work. Check the details and try again.') };
+  const account = accountFromLogin(body);
+  if (account) return { ok: true, account };
   if (needsConfirmation(body)) {
     return { ok: false, pending: true, message: CONFIRM_EMAIL };
   }
-  return { ok: false, pending: true, message: CONFIRM_EMAIL };
+  return { ok: false, message: 'The account service did not return a sign-in token. Your books were not changed.' };
 }
 
-export async function signInReadywriterAccount(
+export async function signInWritingAccount(
   email: string,
   password: string,
   fetchImpl: FetchImpl = fetch,
 ): Promise<AccountResult> {
   const invalid = validateAccountForm('sign-in', email, password);
   if (invalid) return { ok: false, message: invalid };
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.login);
+  const url = accountUrl(ACCOUNT_PATHS.login);
   let response: Response;
   try {
-    response = await postJson(url, { email: email.trim(), password }, fetchImpl);
+    response = await postJson(url, { email: email.trim(), password, tool: THIS_WRITING_TOOL }, fetchImpl);
   } catch {
     return { ok: false, message: networkMessage() };
   }
@@ -182,7 +189,7 @@ export async function signInReadywriterAccount(
   if (!response.ok) return { ok: false, message: serverMessage(body, 'Email or password is incorrect.') };
   const account = accountFromLogin(body);
   if (!account) {
-    return { ok: false, message: 'readywriter.one did not return a sign-in token. Your books were not changed.' };
+    return { ok: false, message: 'The account service did not return a sign-in token. Your books were not changed.' };
   }
   return { ok: true, account };
 }
@@ -199,12 +206,12 @@ function needsConfirmation(body: unknown): boolean {
   return false;
 }
 
-export async function readReadywriterAccount(
+export async function readWritingAccount(
   token: string,
   fetchImpl: FetchImpl = fetch,
-): Promise<{ ok: true; account: Omit<ReadywriterAccount, 'token'> } | { ok: false; unauthorized: boolean; message: string }> {
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.me);
-  assertReadywriterSyncUrl(url);
+): Promise<{ ok: true; account: Omit<WritingAccount, 'token'> } | { ok: false; unauthorized: boolean; message: string }> {
+  const url = accountUrl(ACCOUNT_PATHS.me);
+  assertAccountUrl(url);
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -222,13 +229,103 @@ export async function readReadywriterAccount(
   }
   if (!response.ok) return { ok: false, unauthorized: false, message: serverMessage(body, FAILURE) };
   const user = readUser(body && typeof body === 'object' && 'user' in body ? (body as { user?: unknown }).user : body);
-  if (!user) return { ok: false, unauthorized: false, message: 'readywriter.one did not return this account. Your books were not changed.' };
+  if (!user) return { ok: false, unauthorized: false, message: 'The account service did not return this account. Your books were not changed.' };
   return { ok: true, account: { email: user.email, accountId: user.id, displayName: user.displayName } };
 }
 
-export async function signOutReadywriterAccount(token: string, fetchImpl: FetchImpl = fetch): Promise<void> {
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.logout);
-  assertReadywriterSyncUrl(url);
+export async function updateWritingAccount(
+  token: string,
+  displayName: string,
+  fetchImpl: FetchImpl = fetch,
+): Promise<{ ok: true; account: Omit<WritingAccount, 'token'> } | { ok: false; message: string }> {
+  const invalid = validateAccountForm('create', 'ada@example.com', 'Harbor-Key-1!', displayName);
+  if (invalid && invalid.toLowerCase().includes('name')) return { ok: false, message: invalid };
+  const url = accountUrl(ACCOUNT_PATHS.profile);
+  assertAccountUrl(url);
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'PATCH',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ displayName: displayName.trim() }),
+    });
+  } catch {
+    return { ok: false, message: networkMessage() };
+  }
+  const body = await readJson(response);
+  if (!response.ok) return { ok: false, message: serverMessage(body, 'The display name was not saved.') };
+  const user = readUser(body && typeof body === 'object' && 'user' in body ? (body as { user?: unknown }).user : body);
+  if (!user) return { ok: false, message: 'The account service did not return this account. Your books were not changed.' };
+  return { ok: true, account: { email: user.email, accountId: user.id, displayName: user.displayName } };
+}
+
+export async function changeWritingPassword(
+  token: string,
+  currentPassword: string,
+  password: string,
+  fetchImpl: FetchImpl = fetch,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const invalid = validateAccountForm('create', 'ada@example.com', password, 'Ada');
+  if (invalid && !invalid.toLowerCase().includes('name') && !invalid.toLowerCase().includes('email')) {
+    return { ok: false, message: invalid };
+  }
+  if (!currentPassword) return { ok: false, message: 'Enter the current password.' };
+  const url = accountUrl(ACCOUNT_PATHS.password);
+  assertAccountUrl(url);
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'POST',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ currentPassword, password }),
+    });
+  } catch {
+    return { ok: false, message: networkMessage() };
+  }
+  const body = await readJson(response);
+  if (!response.ok) return { ok: false, message: serverMessage(body, 'The password was not changed.') };
+  return { ok: true };
+}
+
+export interface AccountToolLine {
+  id: string;
+  name: string;
+  sync: boolean;
+  connected: boolean;
+}
+
+export async function readWritingTools(
+  token: string,
+  fetchImpl: FetchImpl = fetch,
+): Promise<{ ok: true; tools: AccountToolLine[] } | { ok: false; message: string }> {
+  const url = accountUrl(ACCOUNT_PATHS.tools);
+  assertAccountUrl(url);
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'GET',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    return { ok: false, message: networkMessage() };
+  }
+  const body = await readJson(response);
+  if (!response.ok) return { ok: false, message: serverMessage(body, 'The writing tools could not be loaded.') };
+  const tools = body && typeof body === 'object' && Array.isArray((body as { tools?: unknown }).tools)
+    ? (body as { tools: AccountToolLine[] }).tools
+    : [];
+  return { ok: true, tools };
+}
+
+export async function signOutWritingAccount(token: string, fetchImpl: FetchImpl = fetch): Promise<void> {
+  const url = accountUrl(ACCOUNT_PATHS.logout);
+  assertAccountUrl(url);
   try {
     await fetchImpl(url, {
       method: 'POST',
@@ -252,8 +349,8 @@ async function pullSnapshot(
   token: string,
   fetchImpl: FetchImpl,
 ): Promise<{ ok: true; snapshot: AccountSnapshot } | { ok: false; message: string }> {
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.snapshot);
-  assertReadywriterSyncUrl(url);
+  const url = accountUrl(ACCOUNT_PATHS.snapshot);
+  assertAccountUrl(url);
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -282,8 +379,8 @@ async function pushSnapshot(
   | { ok: true; revision: string | null; syncedAt: string }
   | { ok: false; message: string; conflict?: boolean; snapshot?: AccountSnapshot }
 > {
-  const url = readywriterSyncUrl(READYWRITER_SYNC_PATHS.snapshot);
-  assertReadywriterSyncUrl(url);
+  const url = accountUrl(ACCOUNT_PATHS.snapshot);
+  assertAccountUrl(url);
   const json = encodeSyncBody(merged, remote.raw);
   const bytes = new TextEncoder().encode(json).length;
   if (bytes > SYNC_SNAPSHOT_BYTE_LIMIT) return { ok: false, message: TOO_LARGE };
@@ -327,7 +424,7 @@ async function pushSnapshot(
       if (!sameSealSet(sent, got)) {
         return {
           ok: false,
-          message: 'readywriter.one changed a certification seal. This install kept your books and did not replace them.',
+          message: 'The account service changed a certification seal. This install kept your books and did not replace them.',
         };
       }
     }

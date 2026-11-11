@@ -4,15 +4,14 @@ import { emptyDocument } from './document.ts';
 import type { Library } from './library.ts';
 import { emptyVersionLedger } from './versions.ts';
 import {
-  assertReadywriterSyncUrl,
-  READYWRITER_ACCOUNT_PAGE,
-  READYWRITER_SYNC_BASE_URL,
-  READYWRITER_SYNC_PATHS,
+  ACCOUNT_BASE_URL,
+  ACCOUNT_PATHS,
+  assertAccountUrl,
 } from './syncEndpoint.ts';
 import {
-  createReadywriterAccount,
-  signInReadywriterAccount,
-  signOutReadywriterAccount,
+  createWritingAccount,
+  signInWritingAccount,
+  signOutWritingAccount,
   syncWithAccount,
   validateAccountForm,
 } from './syncClient.ts';
@@ -95,22 +94,23 @@ function wireOf(library: Library, times: Record<string, string>, now: string): R
   return JSON.parse(encodeSyncBody(merged, null)) as Record<string, unknown>;
 }
 
-test('the sync host and paths stay on the live contract', () => {
-  assert.equal(READYWRITER_SYNC_BASE_URL, 'https://www.readywriter.one');
-  assert.equal(READYWRITER_ACCOUNT_PAGE, 'https://www.readywriter.one/account');
-  assert.equal(READYWRITER_SYNC_PATHS.signup, '/api/account/signup');
-  assert.equal(READYWRITER_SYNC_PATHS.login, '/api/account/login');
-  assert.equal(READYWRITER_SYNC_PATHS.logout, '/api/account/logout');
-  assert.equal(READYWRITER_SYNC_PATHS.me, '/api/account/me');
-  assert.equal(READYWRITER_SYNC_PATHS.snapshot, '/api/humanuscript/sync');
+test('the sync host and paths stay on the account service', () => {
+  assert.equal(ACCOUNT_BASE_URL, 'http://127.0.0.1:8787');
+  assert.equal(ACCOUNT_BASE_URL.includes('readywriter.one'), false);
+  assert.equal(ACCOUNT_PATHS.signup, '/api/account/signup');
+  assert.equal(ACCOUNT_PATHS.login, '/api/account/login');
+  assert.equal(ACCOUNT_PATHS.logout, '/api/account/logout');
+  assert.equal(ACCOUNT_PATHS.me, '/api/account/me');
+  assert.equal(ACCOUNT_PATHS.snapshot, '/api/sync/humanuscript');
   assert.equal(SYNC_SNAPSHOT_BYTE_LIMIT, 4_400_000);
-  assert.throws(() => assertReadywriterSyncUrl('https://api.openai.com/v1/chat'), /readywriter\.one/);
-  assert.throws(() => assertReadywriterSyncUrl('https://www.readywriter.one/api/sync'), /not a sync path/);
+  assert.throws(() => assertAccountUrl('https://api.openai.com/v1/chat'), /account service/);
+  assert.throws(() => assertAccountUrl('https://www.readywriter.one/api/account/login'), /account service/);
+  assert.throws(() => assertAccountUrl('http://127.0.0.1:8787/api/sync'), /not an account path/);
 });
 
 test('status copy covers signed out, syncing, success, and failure', () => {
   assert.match(SYNC_COPY.signedOut, /stay on this computer/i);
-  assert.match(SYNC_COPY.signedOut, /same email and password/i);
+  assert.match(SYNC_COPY.signedOut, /HuManuScript account/i);
   assert.match(SYNC_COPY.notSentToAi, /not sent to an AI/i);
   assert.match(SYNC_COPY.syncing, /notes, and certification/i);
   assert.match(SYNC_COPY.success, /same books, notes, and certification/i);
@@ -138,7 +138,7 @@ test('account forms reject a bad email, a missing name, and a short password bef
   assert.match(validateAccountForm('sign-in', 'ada@example.com', ''), /password/i);
   assert.equal(validateAccountForm('sign-in', 'ada@example.com', 'x'), null);
   let called = false;
-  const result = await createReadywriterAccount('nope', PASSWORD, 'Ada', async () => {
+  const result = await createWritingAccount('nope', PASSWORD, 'Ada', async () => {
     called = true;
     return new Response('{}', { status: 500 });
   });
@@ -147,10 +147,11 @@ test('account forms reject a bad email, a missing name, and a short password bef
 });
 
 test('creating an account waits for email confirmation and does not start a session', async () => {
-  const created = await createReadywriterAccount('ada@example.com', PASSWORD, 'Ada', async (_url, init) => {
-    const body = JSON.parse(String(init?.body)) as { email?: string; password?: string; displayName?: string };
+  const created = await createWritingAccount('ada@example.com', PASSWORD, 'Ada', async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { email?: string; password?: string; displayName?: string; tool?: string };
     assert.equal(body.email, 'ada@example.com');
     assert.equal(body.displayName, 'Ada');
+    assert.equal(body.tool, 'humanuscript');
     assert.equal(JSON.stringify(body).includes('harbor'), false);
     return Response.json({
       needsVerification: true,
@@ -165,7 +166,7 @@ test('creating an account waits for email confirmation and does not start a sess
   assert.match(created.message, /confirm your email/i);
 });
 
-test('sign-in and sync talk only to readywriter.one and a second install receives the seal', async () => {
+test('sign-in and sync talk only to the account service and a second install receives the seal', async () => {
   const calls: { url: string; method: string; body: string | null; auth: string | null; match: string | null }[] = [];
   let stored: Record<string, unknown> | null = null;
   const fetchImpl = async (url: string, init?: RequestInit) => {
@@ -177,7 +178,7 @@ test('sign-in and sync talk only to readywriter.one and a second install receive
       auth: headers.get('Authorization'),
       match: headers.get('If-Match'),
     });
-    assert.equal(new URL(url).origin, 'https://www.readywriter.one');
+    assert.equal(new URL(url).origin, 'http://127.0.0.1:8787');
     const path = new URL(url).pathname;
     if (path === '/api/account/login' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as { email?: string; password?: string };
@@ -189,11 +190,11 @@ test('sign-in and sync talk only to readywriter.one and a second install receive
         user: { id: 'acct-1', email: 'ada@example.com', displayName: 'Ada' },
       });
     }
-    if (path === '/api/humanuscript/sync' && (init?.method ?? 'GET') === 'GET') {
+    if (path === '/api/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
       if (!stored) return Response.json({ snapshot: null });
       return Response.json({ snapshot: stored, revision: 'rev-1', updatedAt: '2026-10-29T16:05:00.000Z' });
     }
-    if (path === '/api/humanuscript/sync' && init?.method === 'PUT') {
+    if (path === '/api/sync/humanuscript' && init?.method === 'PUT') {
       assert.equal(headers.get('Authorization'), 'Bearer token-1');
       assert.equal(headers.get('If-Match'), null);
       const body = JSON.parse(String(init.body)) as {
@@ -214,7 +215,7 @@ test('sign-in and sync talk only to readywriter.one and a second install receive
     return new Response('missing', { status: 500 });
   };
 
-  const signedIn = await signInReadywriterAccount('ada@example.com', PASSWORD, fetchImpl);
+  const signedIn = await signInWritingAccount('ada@example.com', PASSWORD, fetchImpl);
   assert.equal(signedIn.ok, true);
   if (!signedIn.ok) return;
   assert.equal(signedIn.account.token, 'token-1');
@@ -252,7 +253,7 @@ test('sign-in and sync talk only to readywriter.one and a second install receive
   assert.equal(second.library.books[0]?.document.blocks[0]?.text, 'The tide wrote nothing back.');
 
   const hosts = new Set(calls.map((call) => new URL(call.url).origin));
-  assert.deepEqual([...hosts], ['https://www.readywriter.one']);
+  assert.deepEqual([...hosts], ['http://127.0.0.1:8787']);
   const puts = calls.filter((call) => call.method === 'PUT');
   assert.equal(puts.length, 1);
   assert.equal(puts[0]!.match, null);
@@ -267,10 +268,10 @@ test('a later push sends If-Match and one 409 retries with the included snapshot
   const fetchImpl = async (url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     const path = new URL(url).pathname;
-    if (path === '/api/humanuscript/sync' && (init?.method ?? 'GET') === 'GET') {
+    if (path === '/api/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
       return Response.json({ snapshot: remoteWire, revision: 'rev-a', updatedAt: '2026-10-01T00:00:00.000Z' });
     }
-    if (path === '/api/humanuscript/sync' && init?.method === 'PUT') {
+    if (path === '/api/sync/humanuscript' && init?.method === 'PUT') {
       matches.push(headers.get('If-Match'));
       if (!conflicted) {
         conflicted = true;
@@ -364,7 +365,7 @@ test('a snapshot that is too large stays on this computer', async () => {
 });
 
 test('a missing account response does not start a session', async () => {
-  const result = await createReadywriterAccount(
+  const result = await createWritingAccount(
     'ada@example.com',
     PASSWORD,
     'Ada',
@@ -377,7 +378,7 @@ test('a missing account response does not start a session', async () => {
 });
 
 test('the wrong password stays on the sign-in form', async () => {
-  const result = await signInReadywriterAccount(
+  const result = await signInWritingAccount(
     'ada@example.com',
     'wrong-password',
     async () => Response.json({ error: 'Email or password is incorrect.' }, { status: 401 }),
@@ -388,7 +389,7 @@ test('the wrong password stays on the sign-in form', async () => {
 });
 
 test('an unconfirmed email does not sign in', async () => {
-  const result = await signInReadywriterAccount(
+  const result = await signInWritingAccount(
     'ada@example.com',
     PASSWORD,
     async () =>
@@ -409,13 +410,13 @@ test('an unconfirmed email does not sign in', async () => {
 
 test('signing out tells the account and does not delete the snapshot', async () => {
   const methods: string[] = [];
-  await signOutReadywriterAccount('token-1', async (url, init) => {
+  await signOutWritingAccount('token-1', async (url, init) => {
     methods.push(`${init?.method ?? 'GET'} ${new URL(url).pathname}`);
     assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer token-1');
     return Response.json({ ok: true });
   });
   assert.deepEqual(methods, ['POST /api/account/logout']);
-  await signOutReadywriterAccount('token-1', async () => {
+  await signOutWritingAccount('token-1', async () => {
     throw new Error('offline');
   });
 });
