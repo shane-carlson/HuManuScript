@@ -1,4 +1,5 @@
 import { certificationSummary, manuscriptStats, type ManuscriptDocument } from '../core/document.ts';
+import { StreakRail } from './StreakRail.tsx';
 import { WordGoal } from './WordGoal.tsx';
 
 export function ManuscriptStatsBar({
@@ -20,6 +21,7 @@ export function ManuscriptStatsBar({
   const seals = certificationSummary(doc);
   return (
     <section className={`manuscript-stats-bar${compact ? ' is-compact' : ''}`} aria-label="Manuscript statistics">
+      <StreakRail compact={compact} />
       <dl className="stats stats--bar stats--bar-one-row">
         <div>
           <dt>Words</dt>

@@ -77,7 +77,13 @@ import {
   saveRailCollapsed,
   type EditorViewMode,
 } from '../storage.ts';
-import { applyWritingAids, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
+import { recordWordsAdded } from '../core/writingHabitStore.ts';
+import { applyWritingAids, manuscriptWordTotal, readWritingAids, type WritingAids } from '../core/wordGoal.ts';
+
+function noteWriting(before: ManuscriptDocument, after: ManuscriptDocument): void {
+  const delta = manuscriptWordTotal(after) - manuscriptWordTotal(before);
+  if (delta > 0) recordWordsAdded(delta);
+}
 import { typewriterScrollDelta } from '../core/typewriter.ts';
 import { isProseBlock, type BlockType, type InlineMarkKind } from '../core/types.ts';
 import { CertificationMark } from './CertificationMark.tsx';
@@ -283,6 +289,7 @@ export function Editor({
   };
 
   const publish = (next: ManuscriptDocument) => {
+    noteWriting(docRef.current, next);
     docRef.current = next;
     aidsRef.current = readWritingAids(next);
     onChange(next);
@@ -402,6 +409,7 @@ export function Editor({
         const next = await recipe(docRef.current);
         if (next === docRef.current) return;
         const withAids = applyWritingAids(next, aidsRef.current);
+        noteWriting(snapshot, withAids);
         docRef.current = withAids;
         aidsRef.current = readWritingAids(withAids);
         setUndo((stack) => [...stack, snapshot].slice(-40));
