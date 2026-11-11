@@ -2,9 +2,9 @@ import { WRITING_ACCOUNT_API, WRITING_ACCOUNT_PAGES } from './paths.mjs';
 import { APP_RETURN_URL, WRITING_TOOLS } from './tools.mjs';
 
 const DOWNLOADS = [
-  ['Apple silicon', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-arm64.dmg'],
-  ['Intel Mac', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-x64.dmg'],
-  ['Windows', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.54/HuManuScript-0.1.54-x64.exe'],
+  ['Apple silicon', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.55/HuManuScript-0.1.55-arm64.dmg'],
+  ['Intel Mac', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.55/HuManuScript-0.1.55-x64.dmg'],
+  ['Windows', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.55/HuManuScript-0.1.55-x64.exe'],
 ];
 
 export function accountPage(pathname, searchParams) {
@@ -34,7 +34,7 @@ function landing(fromApp) {
         <a class="button primary" href="${WRITING_ACCOUNT_PAGES.signUp}${fromApp ? '?from=app' : ''}">Create account</a>
         <a class="button" href="${WRITING_ACCOUNT_PAGES.signIn}${fromApp ? '?from=app' : ''}">Sign in</a>
       </div>
-      <h2>Download HuManuScript 0.1.54</h2>
+      <h2>Download HuManuScript 0.1.55</h2>
       <div class="actions">${downloads}</div>
     </main>`;
 }
