@@ -21,7 +21,16 @@ export function ManuscriptStatsBar({
   const seals = certificationSummary(doc);
   return (
     <section className={`manuscript-stats-bar${compact ? ' is-compact' : ''}`} aria-label="Manuscript statistics">
-      <StreakRail compact={compact} />
+      <div className="manuscript-stats-bar__top">
+        <StreakRail compact={compact} />
+        <WordGoal
+          bookId={bookId}
+          doc={doc}
+          activeBlockId={activeBlockId}
+          saveError={saveError}
+          onChange={onChange}
+        />
+      </div>
       <dl className="stats stats--bar stats--bar-one-row">
         <div>
           <dt>Words</dt>
@@ -40,13 +49,6 @@ export function ManuscriptStatsBar({
           <dd data-stat="chapters">{stats.chapters}</dd>
         </div>
       </dl>
-      <WordGoal
-        bookId={bookId}
-        doc={doc}
-        activeBlockId={activeBlockId}
-        saveError={saveError}
-        onChange={onChange}
-      />
     </section>
   );
 }
