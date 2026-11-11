@@ -444,7 +444,7 @@ export default function App() {
     if (token) void signOutReadywriterAccount(token);
   }, [rememberSession]);
 
-  const focusActive = manuscriptFocus && tab === 'manuscript';
+  const focusActive = manuscriptFocus && (tab === 'manuscript' || tab === 'streaks');
 
   return (
     <div className={`app${focusActive ? ' is-manuscript-focus' : ''}`}>

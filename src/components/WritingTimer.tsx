@@ -21,6 +21,12 @@ import {
   type WritingTimer,
 } from '../core/writingTimer.ts';
 import { sessionWordsWritten, type SessionGoal } from '../core/wordGoal.ts';
+import { recordSitting, stashOpenSitting, takeOpenSitting, type OpenSitting } from '../core/writingHabitStore.ts';
+
+function wordsThisSitting(doc: ManuscriptDocument, baseline: number | null, accumulated: number): number {
+  if (baseline == null) return accumulated;
+  return accumulated + Math.max(0, manuscriptStats(doc.blocks).words - baseline);
+}
 
 export function WritingTimer({
   bookId,
@@ -35,11 +41,15 @@ export function WritingTimer({
   noteRoot: HTMLElement | null;
 }) {
   const capture = useSessionCapture();
-  const [mode, setMode] = useState<TimerMode>('up');
+  const savedRef = useRef<OpenSitting | null | undefined>(undefined);
+  if (savedRef.current === undefined) savedRef.current = takeOpenSitting();
+  const restored = savedRef.current;
+  const [mode, setMode] = useState<TimerMode>(() => restored?.timer.mode ?? 'up');
   const [minutes, setMinutes] = useState('25');
-  const [timer, setTimer] = useState<WritingTimer>(() => idleWritingTimer('up'));
+  const [timer, setTimer] = useState<WritingTimer>(() => restored?.timer ?? idleWritingTimer('up'));
   const [now, setNow] = useState(() => Date.now());
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [sittingWords, setSittingWords] = useState<number | null>(null);
   const [error, setError] = useState('');
   const timerRef = useRef(timer);
   timerRef.current = timer;
@@ -47,15 +57,32 @@ export function WritingTimer({
   const goalRef = useRef(sessionGoal);
   docRef.current = doc;
   goalRef.current = sessionGoal;
+  const baselineRef = useRef<number | null>(restored ? manuscriptStats(doc.blocks).words : null);
+  const accumulatedRef = useRef(restored?.words ?? 0);
+  const recordedRef = useRef(false);
+  const finishRef = useRef<(next: WritingTimer) => void>(() => {});
+  finishRef.current = (next) => {
+    if (next.phase !== 'ended' || recordedRef.current) return;
+    recordedRef.current = true;
+    const words = wordsThisSitting(docRef.current, baselineRef.current, accumulatedRef.current);
+    baselineRef.current = null;
+    recordSitting({ elapsedMs: next.elapsedMs, words });
+    setSittingWords(words);
+  };
 
   useEffect(() => {
-    const idle = idleWritingTimer('up');
-    timerRef.current = idle;
-    setMode('up');
-    setTimer(idle);
-    setSummary(null);
-    setError('');
-  }, [bookId]);
+    return () => {
+      const current = timerRef.current;
+      if (current.phase !== 'running' && current.phase !== 'paused') {
+        stashOpenSitting(null);
+        return;
+      }
+      stashOpenSitting({
+        timer: current,
+        words: wordsThisSitting(docRef.current, baselineRef.current, accumulatedRef.current),
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (timer.phase !== 'running') return;
@@ -66,7 +93,10 @@ export function WritingTimer({
       if (next !== current) {
         timerRef.current = next;
         setTimer(next);
-        if (next.phase === 'ended') setSummary(summarize(next, docRef.current, goalRef.current, bookId));
+        if (next.phase === 'ended') {
+          finishRef.current(next);
+          setSummary(summarize(next, docRef.current, goalRef.current, bookId));
+        }
       }
       setNow(tick);
     }, 200);
@@ -102,6 +132,10 @@ export function WritingTimer({
         base = idleWritingTimer('up', base.durationMs);
       }
       setSummary(null);
+      setSittingWords(null);
+      recordedRef.current = false;
+      baselineRef.current = manuscriptStats(docRef.current.blocks).words;
+      accumulatedRef.current = 0;
     }
     setError('');
     const next = startTimer({ ...base, mode }, tick);
@@ -127,7 +161,10 @@ export function WritingTimer({
     timerRef.current = next;
     setTimer(next);
     setNow(tick);
-    if (next.phase === 'ended') setSummary(summarize(next, doc, sessionGoal, bookId));
+    if (next.phase === 'ended') {
+      finishRef.current(next);
+      setSummary(summarize(next, doc, sessionGoal, bookId));
+    }
   };
 
   return (
@@ -217,12 +254,12 @@ export function WritingTimer({
           End
         </button>
       </div>
-      {noteRoot ? createPortal(timerNotes(error, summary), noteRoot) : null}
+      {noteRoot ? createPortal(timerNotes(error, summary, sittingWords), noteRoot) : null}
     </div>
   );
 }
 
-function timerNotes(error: string, summary: SessionSummary | null): ReactNode {
+function timerNotes(error: string, summary: SessionSummary | null, sittingWords: number | null): ReactNode {
   if (!error && !summary) return null;
   return (
     <>
@@ -250,6 +287,10 @@ function timerNotes(error: string, summary: SessionSummary | null): ReactNode {
             <div>
               <dt>Uncertified</dt>
               <dd data-stat="uncertified">{summary.uncertified.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>This sitting</dt>
+              <dd data-stat="sitting-words">{sittingWords == null ? '—' : `${sittingWords.toLocaleString()} words`}</dd>
             </div>
             <div>
               <dt>Session goal</dt>

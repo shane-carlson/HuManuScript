@@ -24,7 +24,7 @@ export const NOTES_COLLAPSED_KEY = 'humanuscript.notesCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
 export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview' | 'publication';
-export type WorkspaceTab = 'manuscript' | 'export' | 'history';
+export type WorkspaceTab = 'manuscript' | 'export' | 'history' | 'streaks';
 
 /** Names shown on the view pill and in the label beside it. */
 const EDITOR_VIEW_LABELS: Record<EditorViewMode, string> = {
@@ -64,7 +64,7 @@ export function saveEditorView(mode: EditorViewMode): void {
 export function loadWorkspaceTab(): WorkspaceTab {
   try {
     const value = sessionStorage.getItem('humanuscript.workspaceTab');
-    if (value === 'export' || value === 'history') return value;
+    if (value === 'export' || value === 'history' || value === 'streaks') return value;
     return 'manuscript';
   } catch {
     return 'manuscript';
