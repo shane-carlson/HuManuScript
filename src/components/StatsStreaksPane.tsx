@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { Library } from '../core/library.ts';
 import { libraryWritingStats, type BookStatLine, type WritingCount } from '../core/libraryStats.ts';
 import { formatClock } from '../core/writingTimer.ts';
 import {
   BADGES,
+  BADGE_GROUPS,
   REST_BANK_MAX,
   REST_EVERY_WRITING_DAYS,
   currentStreak,
@@ -13,7 +14,7 @@ import {
   type WritingHabit,
 } from '../core/writingHabit.ts';
 import { spendRestDay } from '../core/writingHabitStore.ts';
-import { BadgeMedal } from './BadgeMedal.tsx';
+import { BadgeMedal, badgeTone } from './BadgeMedal.tsx';
 import { StreakRail } from './StreakRail.tsx';
 import { useWritingHabit } from './useWritingHabit.ts';
 
@@ -169,25 +170,44 @@ export function StatsStreaksPane({ library }: { library: Library }) {
         ) : null}
       </section>
 
-      <section className="stats-streaks__badges-section" aria-label="Badges">
+      <section className="stats-streaks__badges-section" aria-label="Achievements">
         <div className="stats-streaks__section-head">
-          <h3>Badges</h3>
+          <h3>Achievements</h3>
           <p>{earned.size} of {BADGES.length}</p>
         </div>
-        <ul className="stats-streaks__badges">
-          {BADGES.map((badge) => {
-            const on = earned.get(badge.id);
-            return (
-              <li key={badge.id} className={on ? 'is-earned' : 'is-ahead'} data-badge={badge.id}>
-                <BadgeMedal id={badge.id} earned={Boolean(on)} />
-                <div className="badge-copy">
-                  <strong>{badge.name}</strong>
-                  <span>{on ? `Earned ${on}` : badge.requirement}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <p className="stats-streaks__badge-lead">
+          Shields for a day at the desk, and for staying with the work across weeks, months, and years.
+        </p>
+        {BADGE_GROUPS.map((group) => (
+          <div key={group.id} className="stats-streaks__badge-group">
+            <h4>{group.title}</h4>
+            <ul className="stats-streaks__badges">
+              {BADGES.filter((badge) => badge.group === group.id).map((badge) => {
+                const on = earned.get(badge.id);
+                const tone = badgeTone(badge.id);
+                return (
+                  <li
+                    key={badge.id}
+                    className={on ? 'is-earned' : 'is-ahead'}
+                    data-badge={badge.id}
+                    style={{
+                      '--shield-rim': tone.rim,
+                      '--shield-a': tone.a,
+                      '--shield-b': tone.b,
+                      '--shield-ink': tone.ink,
+                    } as CSSProperties}
+                  >
+                    <BadgeMedal id={badge.id} earned={Boolean(on)} />
+                    <div className="badge-copy">
+                      <strong>{badge.name}</strong>
+                      <span>{on ? `Earned ${on}` : badge.requirement}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </section>
 
       <section className="stats-streaks__rest" aria-label="Rest days">

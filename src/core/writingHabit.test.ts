@@ -160,3 +160,116 @@ test('a stored habit drops broken records and keeps the rest', () => {
   assert.equal(habit.restBank, 2);
   assert.equal(habitFromStored(null).days.length, 0);
 });
+
+function writeSpan(start: string, count: number, words = 40) {
+  let habit = emptyHabit();
+  const date = day(start);
+  for (let index = 0; index < count; index += 1) {
+    const cursor = new Date(date);
+    cursor.setDate(date.getDate() + index);
+    habit = addWords(habit, words, cursor);
+  }
+  return habit;
+}
+
+test('shields mark a return visit, a page, and a second sitting', () => {
+  let habit = addWords(emptyHabit(), 250, day('2026-11-01'));
+  assert.equal(habit.badges.some((badge) => badge.id === 'page-day'), true);
+  assert.equal(habit.badges.some((badge) => badge.id === 'thousand-day'), false);
+  habit = addWords(habit, 20, day('2026-11-09'));
+  assert.equal(habit.badges.some((badge) => badge.id === 'came-back'), true);
+  habit = addSitting(habit, { elapsedMs: MIN_SESSION_MS, words: 10, now: day('2026-11-09') });
+  habit = addSitting(habit, { elapsedMs: MIN_SESSION_MS, words: 10, now: day('2026-11-09') });
+  assert.equal(habit.badges.some((badge) => badge.id === 'back-again'), true);
+});
+
+test('week and month shields open on schedule, and a gap still counts the days', () => {
+  const week = writeSpan('2026-11-01', 7);
+  const weekIds = week.badges.map((badge) => badge.id);
+  assert.ok(weekIds.includes('streak-3'));
+  assert.ok(weekIds.includes('streak-7'));
+  assert.ok(weekIds.includes('week-filled'));
+  assert.equal(weekIds.includes('streak-14'), false);
+
+  let gapped = writeSpan('2026-01-01', 29);
+  gapped = addWords(gapped, 20, day('2026-02-07'));
+  const gappedIds = gapped.badges.map((badge) => badge.id);
+  assert.ok(gappedIds.includes('writing-days-30'));
+  assert.ok(gappedIds.includes('streak-28'));
+  assert.equal(gappedIds.includes('streak-30'), false);
+  assert.ok(gappedIds.includes('came-back'));
+});
+
+test('months and years count the calendar, not only an unbroken streak', () => {
+  let habit = emptyHabit();
+  for (const iso of ['2024-01-04', '2024-06-02', '2025-03-09', '2026-11-01', '2027-02-02']) {
+    habit = addWords(habit, 30, day(iso));
+  }
+  assert.equal(habit.badges.some((badge) => badge.id === 'season'), true);
+  assert.equal(habit.badges.some((badge) => badge.id === 'five-years'), false);
+  habit = addWords(habit, 30, day('2028-04-04'));
+  assert.equal(habit.badges.some((badge) => badge.id === 'five-years'), true);
+  assert.equal(habit.badges.some((badge) => badge.id === 'streak-365'), false);
+
+  let year = emptyHabit();
+  for (let month = 1; month <= 12; month += 1) {
+    year = addWords(year, 15, day(`2024-${String(month).padStart(2, '0')}-03`));
+  }
+  assert.equal(year.badges.some((badge) => badge.id === 'year-round'), true);
+  assert.equal(year.badges.some((badge) => badge.id === 'writing-days-365'), false);
+
+  const novel = addWords(emptyHabit(), 50_000, day('2026-11-01'));
+  assert.equal(novel.badges.some((badge) => badge.id === 'words-50k'), true);
+  assert.equal(novel.badges.some((badge) => badge.id === 'words-10k'), true);
+  assert.equal(novel.badges.some((badge) => badge.id === 'words-100k'), false);
+});
+
+test('a saved habit gains shields the days already earned', () => {
+  const habit = habitFromStored({
+    version: 1,
+    days: [
+      {
+        date: '2026-11-01',
+        wordsAdded: 250,
+        sessionMs: 0,
+        sessions: 0,
+        longestSessionMs: 0,
+        bestSessionWords: 0,
+        rest: false,
+      },
+    ],
+    badges: [],
+    writingDaysTowardRest: 1,
+    restBank: 0,
+  });
+  assert.equal(habit.badges.some((badge) => badge.id === 'page-day'), true);
+  assert.equal(habit.badges.find((badge) => badge.id === 'page-day')!.earnedOn, '2026-11-01');
+  const later = habitFromStored({
+    version: 1,
+    days: [
+      {
+        date: '2026-11-01',
+        wordsAdded: 40,
+        sessionMs: 0,
+        sessions: 0,
+        longestSessionMs: 0,
+        bestSessionWords: 0,
+        rest: false,
+      },
+      {
+        date: '2026-11-02',
+        wordsAdded: 1000,
+        sessionMs: 0,
+        sessions: 0,
+        longestSessionMs: 0,
+        bestSessionWords: 0,
+        rest: false,
+      },
+    ],
+    badges: [],
+    writingDaysTowardRest: 2,
+    restBank: 0,
+  });
+  assert.equal(later.badges.find((badge) => badge.id === 'first-words')!.earnedOn, '2026-11-01');
+  assert.equal(later.badges.find((badge) => badge.id === 'thousand-day')!.earnedOn, '2026-11-02');
+});

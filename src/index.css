@@ -924,6 +924,20 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   font-family: var(--serif);
   font-size: 1.35rem;
 }
+.stats-streaks__badge-lead {
+  margin: 0 0 16px;
+  max-width: 42rem;
+  color: var(--text-dim);
+}
+.stats-streaks__badge-group + .stats-streaks__badge-group { margin-top: 18px; }
+.stats-streaks__badge-group h4 {
+  margin: 0 0 8px;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 .stats-streaks__badges {
   list-style: none;
   margin: 0;
@@ -939,15 +953,16 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   min-height: 108px;
   padding: 10px 14px 10px 8px;
   border-radius: 16px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--shield-b) 35%, var(--border));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--shield-a) 28%, var(--bg)) 0%, var(--bg) 58%);
 }
 .stats-streaks__badges li.is-earned {
   background:
-    radial-gradient(140px 90px at 12% 0%, color-mix(in srgb, var(--accent) 32%, transparent), transparent 72%),
+    radial-gradient(160px 100px at 8% 0%, color-mix(in srgb, var(--shield-a) 78%, transparent), transparent 72%),
     var(--bg-elev);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--shield-b) 72%, var(--border));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--shield-b) 22%, transparent);
 }
 .badge-copy {
   display: flex;
@@ -967,49 +982,40 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   line-height: 1.35;
 }
 .stats-streaks__badges li.is-earned .badge-copy span {
-  color: var(--accent);
+  color: var(--shield-rim);
   letter-spacing: 0.01em;
 }
+html[data-mode='dark'] .stats-streaks__badges li.is-earned .badge-copy span {
+  color: var(--shield-a);
+}
 .badge-medal {
-  width: 76px;
-  height: 92px;
+  width: 72px;
+  height: 88px;
   flex: none;
-  color: var(--text-dim);
+  color: var(--shield-ink);
 }
 .badge-medal.is-earned {
-  filter: drop-shadow(0 7px 8px color-mix(in srgb, var(--accent) 32%, transparent));
+  filter: drop-shadow(0 8px 8px color-mix(in srgb, var(--shield-b) 48%, transparent));
 }
 .badge-medal__svg { display: block; width: 100%; height: 100%; }
-.badge-medal__ribbon { fill: color-mix(in srgb, var(--text-faint) 42%, var(--bg-elev-2)); }
-.badge-medal.is-earned .badge-medal__ribbon { fill: #9a3030; }
-html[data-mode='dark'] .badge-medal.is-earned .badge-medal__ribbon { fill: #c45a52; }
-.badge-medal__disc {
-  fill: color-mix(in srgb, var(--bg-elev-2) 78%, var(--text-faint));
-  stroke: var(--border-strong);
-  stroke-width: 1.4;
-}
-.badge-medal.is-earned .badge-medal__disc {
-  fill: color-mix(in srgb, var(--accent) 78%, #fff6df);
-  stroke: color-mix(in srgb, var(--accent) 42%, #3d2a08);
-}
-html[data-mode='dark'] .badge-medal.is-earned .badge-medal__disc {
-  fill: color-mix(in srgb, var(--accent) 86%, #6b4d1c);
-  stroke: color-mix(in srgb, var(--accent) 70%, #fff);
-}
-.badge-medal__face { fill: color-mix(in srgb, var(--bg) 55%, transparent); }
-.badge-medal.is-earned .badge-medal__face { fill: color-mix(in srgb, #fff 26%, transparent); }
-.badge-medal__ring {
+.badge-medal__enamel-a { stop-color: var(--shield-a); }
+.badge-medal__enamel-b { stop-color: var(--shield-b); }
+.badge-medal:not(.is-earned) .badge-medal__plate { opacity: 0.72; }
+.badge-medal__edge {
   fill: none;
-  stroke: color-mix(in srgb, var(--text) 18%, transparent);
+  stroke: var(--shield-rim);
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+}
+.badge-medal.is-earned .badge-medal__edge { stroke-width: 3; }
+.badge-medal__inset {
+  fill: color-mix(in srgb, #fff 18%, transparent);
+  stroke: color-mix(in srgb, #fff 62%, var(--shield-a));
   stroke-width: 1.15;
 }
-.badge-medal.is-earned .badge-medal__ring {
-  stroke: color-mix(in srgb, #fff 62%, var(--accent));
-}
-.badge-medal.is-earned { color: #2a1c08; }
 .badge-medal__cut {
   fill: none;
-  stroke: color-mix(in srgb, var(--bg) 72%, transparent);
+  stroke: color-mix(in srgb, var(--bg) 70%, transparent);
   stroke-width: 1.3;
   stroke-linecap: round;
 }
@@ -1021,9 +1027,9 @@ html[data-mode='dark'] .badge-medal.is-earned .badge-medal__disc {
   stroke: #fff;
   stroke-width: 2.2;
   stroke-linecap: round;
-  opacity: 0;
+  opacity: 0.28;
 }
-.badge-medal.is-earned .badge-medal__shine { opacity: 0.7; }
+.badge-medal.is-earned .badge-medal__shine { opacity: 0.85; }
 @media (max-width: 1100px) {
   .stats-streaks__bests { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .stats-streaks__badges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
