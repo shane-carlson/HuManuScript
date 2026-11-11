@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   bookDisplayTitle,
   createBook,
@@ -6,9 +7,17 @@ import {
   type Book,
   type Library,
 } from '../core/library.ts';
-import type { WorkspaceTab } from '../storage.ts';
+import { isWorkspaceTab, reorderWorkspaceTabs, type WorkspaceTab } from '../core/workspaceTabs.ts';
+import { loadWorkspaceTabOrder, saveWorkspaceTabOrder } from '../storage.ts';
 import type { useLicense } from '../hooks/useLicense.ts';
 import { LicenseBanner } from './LicenseBanner.tsx';
+
+const TAB_ITEMS: readonly { id: WorkspaceTab; label: string; icon: string }[] = [
+  { id: 'manuscript', label: 'Manuscript', icon: '✍️' },
+  { id: 'streaks', label: 'Stats & Streaks', icon: '✶' },
+  { id: 'export', label: 'Export', icon: '🔗' },
+  { id: 'history', label: 'Version history', icon: '🕘' },
+];
 
 export function WorkspaceSidebar({
   library,
@@ -29,11 +38,22 @@ export function WorkspaceSidebar({
   newId: () => string;
   license: ReturnType<typeof useLicense>;
 }) {
+  const [order, setOrder] = useState<WorkspaceTab[]>(() => loadWorkspaceTabOrder());
+  const [dragId, setDragId] = useState<WorkspaceTab | null>(null);
+  const [overId, setOverId] = useState<WorkspaceTab | null>(null);
   const active = library.books.find((b) => b.id === library.activeBookId) ?? library.books[0];
 
   if (!active) return null;
 
   const groups = groupLibraryBooks(library.books, library.series);
+
+  const moveTab = (from: WorkspaceTab, to: WorkspaceTab) => {
+    setOrder((current) => {
+      const next = reorderWorkspaceTabs(current, from, to);
+      saveWorkspaceTabOrder(next);
+      return next;
+    });
+  };
 
   const selectBook = (bookId: string) => {
     if (bookId === library.activeBookId) return;
@@ -53,42 +73,58 @@ export function WorkspaceSidebar({
         {collapsed ? '›' : '‹'}
       </button>
       <nav className="workspace-nav" aria-label="Workspace">
-        <button
-          type="button"
-          className={`workspace-nav__item${tab === 'manuscript' ? ' is-active' : ''}`}
-          onClick={() => onTabChange('manuscript')}
-          data-tooltip="Manuscript"
-        >
-          <span className="ico" aria-hidden="true">✍️</span>
-          <span className="workspace-nav__label">Manuscript</span>
-        </button>
-        <button
-          type="button"
-          className={`workspace-nav__item${tab === 'export' ? ' is-active' : ''}`}
-          onClick={() => onTabChange('export')}
-          data-tooltip="Export"
-        >
-          <span className="ico" aria-hidden="true">🔗</span>
-          <span className="workspace-nav__label">Export</span>
-        </button>
-        <button
-          type="button"
-          className={`workspace-nav__item${tab === 'history' ? ' is-active' : ''}`}
-          onClick={() => onTabChange('history')}
-          data-tooltip="Version history"
-        >
-          <span className="ico" aria-hidden="true">🕘</span>
-          <span className="workspace-nav__label">Version history</span>
-        </button>
-        <button
-          type="button"
-          className={`workspace-nav__item${tab === 'streaks' ? ' is-active' : ''}`}
-          onClick={() => onTabChange('streaks')}
-          data-tooltip="Stats & Streaks"
-        >
-          <span className="ico" aria-hidden="true">✶</span>
-          <span className="workspace-nav__label">Stats &amp; Streaks</span>
-        </button>
+        {order.map((id) => {
+          const item = TAB_ITEMS.find((entry) => entry.id === id);
+          if (!item) return null;
+          const dragging = dragId === id;
+          const dropTarget = overId === id && dragId != null && dragId !== id;
+          return (
+            <button
+              key={id}
+              type="button"
+              draggable
+              className={`workspace-nav__item${tab === id ? ' is-active' : ''}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
+              onClick={() => onTabChange(id)}
+              data-tooltip={item.label}
+              aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', id);
+                setDragId(id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setOverId(null);
+              }}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes('text/plain')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                if (overId !== id) setOverId(id);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const from = event.dataTransfer.getData('text/plain');
+                if (isWorkspaceTab(from)) moveTab(from, id);
+                setDragId(null);
+                setOverId(null);
+              }}
+              onKeyDown={(event) => {
+                if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+                event.preventDefault();
+                const index = order.indexOf(id);
+                const nextIndex = event.key === 'ArrowUp' ? index - 1 : index + 1;
+                const neighbor = order[nextIndex];
+                if (!neighbor) return;
+                moveTab(id, neighbor);
+              }}
+            >
+              <span className="workspace-nav__grip" aria-hidden="true" />
+              <span className="ico" aria-hidden="true">{item.icon}</span>
+              <span className="workspace-nav__label">{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       <div className="workspace-sidebar__body">
