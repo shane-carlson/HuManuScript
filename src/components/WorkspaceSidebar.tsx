@@ -9,7 +9,6 @@ import {
 import type { WorkspaceTab } from '../storage.ts';
 import type { useLicense } from '../hooks/useLicense.ts';
 import { LicenseBanner } from './LicenseBanner.tsx';
-import { StatsStreaksPane } from './StatsStreaksPane.tsx';
 
 export function WorkspaceSidebar({
   library,
@@ -85,15 +84,14 @@ export function WorkspaceSidebar({
           type="button"
           className={`workspace-nav__item${tab === 'streaks' ? ' is-active' : ''}`}
           onClick={() => onTabChange('streaks')}
-          data-tooltip="Stats and streaks"
+          data-tooltip="Stats & Streaks"
         >
           <span className="ico" aria-hidden="true">✶</span>
-          <span className="workspace-nav__label">Stats and streaks</span>
+          <span className="workspace-nav__label">Stats &amp; Streaks</span>
         </button>
       </nav>
 
       <div className="workspace-sidebar__body">
-      {tab === 'streaks' ? <StatsStreaksPane /> : (
       <section className="workspace-books">
         <div className="workspace-books__head">
           <h3>Books</h3>
@@ -140,7 +138,6 @@ export function WorkspaceSidebar({
           ))}
         </div>
       </section>
-      )}
       </div>
       <LicenseBanner license={license} />
     </aside>
