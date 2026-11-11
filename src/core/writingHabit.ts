@@ -13,34 +13,53 @@ export const MIN_SESSION_MS = 60_000;
 const HOUR_MS = 60 * MIN_SESSION_MS;
 const MAX_DAYS = 4000;
 
-export type BadgeId =
-  | 'first-words'
-  | 'first-sitting'
-  | 'steady-five-hundred'
-  | 'deep-hour'
-  | 'thousand-day'
-  | 'streak-3'
-  | 'streak-7'
-  | 'streak-30'
-  | 'chain-kept';
+export type BadgeGroup = 'today' | 'weeks' | 'months' | 'years';
+
+export const BADGE_GROUPS: readonly { id: BadgeGroup; title: string }[] = [
+  { id: 'today', title: 'Today' },
+  { id: 'weeks', title: 'Weeks' },
+  { id: 'months', title: 'Months' },
+  { id: 'years', title: 'Years' },
+];
 
 export interface BadgeCopy {
-  id: BadgeId;
+  id: string;
   name: string;
   requirement: string;
+  group: BadgeGroup;
 }
 
-export const BADGES: readonly BadgeCopy[] = [
-  { id: 'first-words', name: 'First words', requirement: 'Add words to a manuscript.' },
-  { id: 'first-sitting', name: 'First sitting', requirement: 'End a timed sitting of at least one minute.' },
-  { id: 'steady-five-hundred', name: 'Steady sitting', requirement: 'Write 500 words in one timed sitting.' },
-  { id: 'deep-hour', name: 'Deep hour', requirement: 'Keep one sitting going for 60 minutes.' },
-  { id: 'thousand-day', name: 'Long day', requirement: 'Add 1,000 words in a single day.' },
-  { id: 'streak-3', name: 'Three days', requirement: 'Write three days in a row.' },
-  { id: 'streak-7', name: 'Seven days', requirement: 'Write seven days in a row.' },
-  { id: 'streak-30', name: 'Thirty days', requirement: 'Write thirty days in a row.' },
-  { id: 'chain-kept', name: 'Chain kept', requirement: 'Spend a rest day and keep the streak.' },
-];
+export const BADGES = [
+  { id: 'first-words', name: 'First words', requirement: 'Add words to a manuscript.', group: 'today' },
+  { id: 'first-sitting', name: 'First sitting', requirement: 'End a timed sitting of at least one minute.', group: 'today' },
+  { id: 'back-again', name: 'Back again', requirement: 'Come back for a second sitting in the same day.', group: 'today' },
+  { id: 'page-day', name: 'A page', requirement: 'Add 250 words in a single day.', group: 'today' },
+  { id: 'steady-five-hundred', name: 'Steady sitting', requirement: 'Write 500 words in one timed sitting.', group: 'today' },
+  { id: 'deep-hour', name: 'Deep hour', requirement: 'Keep one sitting going for 60 minutes.', group: 'today' },
+  { id: 'thousand-day', name: 'Long day', requirement: 'Add 1,000 words in a single day.', group: 'today' },
+  { id: 'came-back', name: 'Came back', requirement: 'Write again after at least a week away.', group: 'today' },
+  { id: 'chain-kept', name: 'Chain kept', requirement: 'Spend a rest day and keep the streak.', group: 'today' },
+  { id: 'streak-3', name: 'Three days', requirement: 'Write three days in a row.', group: 'weeks' },
+  { id: 'streak-7', name: 'One week', requirement: 'Write seven days in a row.', group: 'weeks' },
+  { id: 'week-filled', name: 'A full week', requirement: 'Write on five days inside one week.', group: 'weeks' },
+  { id: 'streak-14', name: 'Two weeks', requirement: 'Write fourteen days in a row.', group: 'weeks' },
+  { id: 'streak-28', name: 'Four weeks', requirement: 'Write twenty-eight days in a row.', group: 'weeks' },
+  { id: 'streak-30', name: 'Thirty days', requirement: 'Write thirty days in a row.', group: 'months' },
+  { id: 'writing-days-30', name: 'A month of days', requirement: 'Write on 30 days, with gaps allowed.', group: 'months' },
+  { id: 'streak-60', name: 'Two months', requirement: 'Write sixty days in a row.', group: 'months' },
+  { id: 'season', name: 'A season', requirement: 'Write in three different months.', group: 'months' },
+  { id: 'words-10k', name: 'Ten thousand', requirement: 'Add 10,000 words in all.', group: 'months' },
+  { id: 'streak-100', name: 'A hundred days', requirement: 'Write 100 days in a row.', group: 'months' },
+  { id: 'writing-days-100', name: 'A hundred sittings', requirement: 'Write on 100 days, with gaps allowed.', group: 'years' },
+  { id: 'words-50k', name: 'Novel length', requirement: 'Add 50,000 words in all.', group: 'years' },
+  { id: 'words-100k', name: 'A long book', requirement: 'Add 100,000 words in all.', group: 'years' },
+  { id: 'year-round', name: 'The whole year', requirement: 'Write in twelve different months.', group: 'years' },
+  { id: 'streak-365', name: 'A year unbroken', requirement: 'Write 365 days in a row.', group: 'years' },
+  { id: 'writing-days-365', name: 'A year of pages', requirement: 'Write on 365 days, with gaps allowed.', group: 'years' },
+  { id: 'five-years', name: 'Five years', requirement: 'Write in five different calendar years.', group: 'years' },
+] as const satisfies readonly BadgeCopy[];
+
+export type BadgeId = (typeof BADGES)[number]['id'];
 
 export interface HabitDay {
   date: string;
@@ -255,23 +274,76 @@ function noteWritingDay(habit: WritingHabit, before: HabitDay | undefined, after
 
 const BADGE_IDS = new Set<string>(BADGES.map((badge) => badge.id));
 
+function daysBetween(earlier: string, later: string): number {
+  const [year, month, day] = earlier.split('-').map(Number);
+  const [laterYear, laterMonth, laterDay] = later.split('-').map(Number);
+  const start = Date.UTC(year || 1970, (month || 1) - 1, day || 1);
+  const end = Date.UTC(laterYear || 1970, (laterMonth || 1) - 1, laterDay || 1);
+  return Math.round((end - start) / 86_400_000);
+}
+
+function cameBack(days: HabitDay[]): boolean {
+  const writing = sortedDays(days).filter(isWritingDay);
+  for (let index = 1; index < writing.length; index += 1) {
+    if (daysBetween(writing[index - 1]!.date, writing[index]!.date) >= 8) return true;
+  }
+  return false;
+}
+
+function hasFullWeek(days: HabitDay[]): boolean {
+  const writing = days.filter(isWritingDay).map((day) => day.date);
+  if (writing.length < 5) return false;
+  const have = new Set(writing);
+  for (const start of writing) {
+    let count = 0;
+    for (let offset = 0; offset < 7; offset += 1) {
+      if (have.has(shiftDateKey(start, offset))) count += 1;
+    }
+    if (count >= 5) return true;
+  }
+  return false;
+}
+
 function awardBadges(habit: WritingHabit, earnedOn: string): WritingHabit {
   const have = new Set(habit.badges.map((badge) => badge.id));
+  const writing = habit.days.filter(isWritingDay);
+  const words = habit.days.reduce((sum, day) => sum + day.wordsAdded, 0);
   const longest = longestStreak(habit);
-  const wanted: BadgeId[] = [];
-  if (habit.days.some((day) => day.wordsAdded > 0)) wanted.push('first-words');
-  if (habit.days.some((day) => day.sessions > 0)) wanted.push('first-sitting');
-  if (habit.days.some((day) => day.bestSessionWords >= 500)) wanted.push('steady-five-hundred');
-  if (habit.days.some((day) => day.longestSessionMs >= HOUR_MS)) wanted.push('deep-hour');
-  if (habit.days.some((day) => day.wordsAdded >= 1000)) wanted.push('thousand-day');
-  if (longest >= 3) wanted.push('streak-3');
-  if (longest >= 7) wanted.push('streak-7');
-  if (longest >= 30) wanted.push('streak-30');
-  if (habit.days.some((day) => day.rest)) wanted.push('chain-kept');
+  const months = new Set(writing.map((day) => day.date.slice(0, 7))).size;
+  const years = new Set(writing.map((day) => day.date.slice(0, 4))).size;
+  const hits: Record<BadgeId, boolean> = {
+    'first-words': habit.days.some((day) => day.wordsAdded > 0),
+    'first-sitting': habit.days.some((day) => day.sessions > 0),
+    'back-again': habit.days.some((day) => day.sessions >= 2),
+    'page-day': habit.days.some((day) => day.wordsAdded >= 250),
+    'steady-five-hundred': habit.days.some((day) => day.bestSessionWords >= 500),
+    'deep-hour': habit.days.some((day) => day.longestSessionMs >= HOUR_MS),
+    'thousand-day': habit.days.some((day) => day.wordsAdded >= 1000),
+    'came-back': cameBack(habit.days),
+    'chain-kept': habit.days.some((day) => day.rest),
+    'streak-3': longest >= 3,
+    'streak-7': longest >= 7,
+    'week-filled': hasFullWeek(habit.days),
+    'streak-14': longest >= 14,
+    'streak-28': longest >= 28,
+    'streak-30': longest >= 30,
+    'writing-days-30': writing.length >= 30,
+    'streak-60': longest >= 60,
+    season: months >= 3,
+    'words-10k': words >= 10_000,
+    'streak-100': longest >= 100,
+    'writing-days-100': writing.length >= 100,
+    'words-50k': words >= 50_000,
+    'words-100k': words >= 100_000,
+    'year-round': months >= 12,
+    'streak-365': longest >= 365,
+    'writing-days-365': writing.length >= 365,
+    'five-years': years >= 5,
+  };
   const badges = [...habit.badges];
-  for (const id of wanted) {
-    if (have.has(id)) continue;
-    badges.push({ id, earnedOn });
+  for (const badge of BADGES) {
+    if (have.has(badge.id) || !hits[badge.id]) continue;
+    badges.push({ id: badge.id, earnedOn });
   }
   return badges.length === habit.badges.length ? habit : { ...habit, badges };
 }
@@ -382,11 +454,19 @@ export function habitFromStored(value: unknown): WritingHabit {
   }
   const toward = stored.writingDaysTowardRest;
   const bank = stored.restBank;
-  return {
+  const habit: WritingHabit = {
     version: HABIT_VERSION,
     days: sortedDays([...seen.values()]).slice(-MAX_DAYS),
     badges,
     writingDaysTowardRest: typeof toward === 'number' && whole(toward) ? Math.min(REST_EVERY_WRITING_DAYS, toward) : 0,
     restBank: typeof bank === 'number' && whole(bank) ? Math.min(REST_BANK_MAX, bank) : 0,
   };
+  if (habit.days.length === 0) return habit;
+  const filled = awardBadges(habit, habit.days[habit.days.length - 1]!.date);
+  if (filled.badges.length === habit.badges.length) return habit;
+  let replay: WritingHabit = { ...habit, days: [] };
+  for (const day of habit.days) {
+    replay = awardBadges({ ...replay, days: [...replay.days, day] }, day.date);
+  }
+  return { ...habit, badges: replay.badges };
 }
