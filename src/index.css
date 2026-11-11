@@ -385,8 +385,12 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .stats dd {
   font-size: 1rem;
 }
+.app.is-manuscript-focus .manuscript-stats-bar.is-compact .manuscript-stats-bar__top {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal {
-  margin-top: 4px;
+  margin-top: 0;
 }
 .app.is-manuscript-focus .manuscript-stats-bar.is-compact .word-goal__status {
   font-size: 0.72rem;
@@ -579,8 +583,73 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   padding: 4px 8px;
   border-radius: 0;
 }
+.manuscript-stats-bar__top {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid var(--border);
+  container-type: inline-size;
+}
+.manuscript-stats-bar__top .streak-rail {
+  flex: 0 0 auto;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+.manuscript-stats-bar__top .streak-rail__count { min-width: 0; gap: 4px; }
+.manuscript-stats-bar__top .streak-rail__number { font-size: 1.45rem; }
+.manuscript-stats-bar__top .streak-rail__week {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.manuscript-stats-bar__top .streak-rail__week li { max-width: 1.05rem; gap: 2px; }
+.manuscript-stats-bar__top .streak-rail__today {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+.manuscript-stats-bar__top .streak-rail__today span:last-child { font-size: 0.72rem; }
+.manuscript-stats-bar__top .word-goal {
+  flex: 1 1 0;
+  margin: 0;
+  min-width: 0;
+}
+.manuscript-stats-bar__top .word-goal__line,
+.manuscript-stats-bar__top .word-goal__main {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+  overflow: hidden;
+}
+.manuscript-stats-bar__top .session-capture-controls__label { letter-spacing: 0.04em; }
+.manuscript-stats-bar__top .word-goal__scope { gap: 4px; }
+.manuscript-stats-bar__top .word-goal__scope button,
+.manuscript-stats-bar__top .word-goal__form button,
+.manuscript-stats-bar__top .writing-timer__mode button,
+.manuscript-stats-bar__top .writing-timer__controls button,
+.manuscript-stats-bar__top .session-options__trigger {
+  padding: 1px 5px;
+  font-size: 0.68rem;
+}
+.manuscript-stats-bar__top .word-goal__form { gap: 3px; }
+.manuscript-stats-bar__top .word-goal__form input { width: 5.7rem; height: 24px; padding: 1px 6px; }
+.manuscript-stats-bar__top .word-goal__progress { flex: 0 1 5.5rem; min-width: 3.2rem; gap: 4px; }
+.manuscript-stats-bar__top .word-goal__progress p { font-size: 0.72rem; }
+.manuscript-stats-bar__top .word-goal__meter { min-width: 1.6rem; height: 6px; }
+.manuscript-stats-bar__top .writing-timer { gap: 4px; }
+.manuscript-stats-bar__top .writing-timer__mode { gap: 4px; }
+.manuscript-stats-bar__top .writing-timer__clock { min-width: 2.4rem; font-size: 0.78rem; }
+@container (max-width: 1080px) {
+  .manuscript-stats-bar__top .word-goal { zoom: 0.8; }
+}
+.manuscript-stats-bar__top .writing-timer__minutes input { width: 2.8rem; height: 24px; padding: 1px 4px; }
 .manuscript-stats-bar .word-goal {
-  margin-top: 4px;
+  margin-top: 0;
 }
 .manuscript-stats-bar .word-goal__status { font-size: 0.74rem; }
 .manuscript-stats-bar .word-goal__progress p { font-size: 0.76rem; }
@@ -592,7 +661,8 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .app.is-manuscript-focus .manuscript-stats-bar .stats dd { font-size: 0.88rem; }
 .app.is-manuscript-focus .stats--bar.stats--bar-one-row { gap: 4px; }
 .app.is-manuscript-focus .stats--bar.stats--bar-one-row > div { padding: 1px 6px; }
-.app.is-manuscript-focus .manuscript-stats-bar .word-goal { margin-top: 2px; }
+.app.is-manuscript-focus .manuscript-stats-bar .word-goal { margin-top: 0; }
+.app.is-manuscript-focus .manuscript-stats-bar__top { margin-bottom: 4px; padding-bottom: 4px; }
 .app.is-manuscript-focus .manuscript-stats-bar .word-goal__line,
 .app.is-manuscript-focus .manuscript-stats-bar .word-goal__main { gap: 4px; }
 .app.is-manuscript-focus .manuscript-stats-bar .word-goal__form input { height: 22px; }
