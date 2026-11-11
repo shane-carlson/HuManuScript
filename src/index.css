@@ -1678,6 +1678,40 @@ html[data-mode='dark'] .badge-medal.is-earned .badge-medal__disc {
   min-height: 0;
   overflow: auto;
 }
+.account-page { max-width: 40rem; }
+.account-page__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.account-page__brand {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.3rem;
+}
+.account-page__back { font: inherit; }
+.account-page__head h2 { margin: 0; font-size: 1.8rem; }
+.account-page__head p { margin: 6px 0 0; color: var(--text-dim); max-width: 52ch; }
+.account-page__form { display: grid; gap: 8px; margin: 16px 0; }
+.account-page__form button { justify-self: start; }
+.account-page__hint, .account-page__form > p { margin: 0; color: var(--text-dim); }
+.account-page__notice { color: var(--good); }
+.account-page__error { color: #8a2a1a; }
+.account-page__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.account-page__tools { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.account-page__tools li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev-2);
+}
+.account-page__tools span { color: var(--text-dim); font-size: 0.9rem; }
+.account-page__manage h3 { margin: 18px 0 8px; }
 .export-pane__head,
 .version-history-pane__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .export-pane__head h2,

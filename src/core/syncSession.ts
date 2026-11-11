@@ -1,5 +1,5 @@
 /**
- * This install’s readywriter.one session and the clock used to merge snapshots.
+ * This install’s HuManuScript account session and the clock used to merge snapshots.
  * The session stores the bearer token, not manuscripts.
  */
 

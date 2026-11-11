@@ -1,0 +1,1514 @@
+diff --git a/api/_lib/writingAccounts.ts b/api/_lib/writingAccounts.ts
+new file mode 100644
+index 0000000..5e05865
+--- /dev/null
++++ b/api/_lib/writingAccounts.ts
+@@ -0,0 +1,338 @@
++import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
++import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
++import { dirname, join } from 'node:path'
++
++/**
++ * HuManuScript writing accounts. This store is not the Ready Writer One
++ * account vault and it is not /api/humanuscript/sync.
++ *
++ * Pages: /humanuscript/account and the sign-in, sign-up, and manage paths under it.
++ * API:   /api/writing-accounts/*
++ */
++
++export const WRITING_ACCOUNT_PAGES = {
++  home: '/humanuscript/account',
++  signIn: '/humanuscript/account/sign-in',
++  signUp: '/humanuscript/account/sign-up',
++  manage: '/humanuscript/account/manage',
++} as const
++
++export const WRITING_TOOLS = [
++  { id: 'humanuscript', name: 'HuManuScript', sync: true },
++  { id: 'speakfiction', name: 'SpeakFiction', sync: false },
++] as const
++
++export const SNAPSHOT_BYTE_LIMIT = 4_400_000
++
++const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
++
++export class WritingStorageUnavailable extends Error {
++  constructor() {
++    super('Writing account storage is not configured.')
++    this.name = 'WritingStorageUnavailable'
++  }
++}
++
++export type PublicUser = {
++  id: string
++  email: string
++  displayName: string
++  tools: string[]
++}
++
++export type ToolLine = {
++  id: string
++  name: string
++  sync: boolean
++  connected: boolean
++}
++
++type StoredUser = PublicUser & {
++  passwordHash: string
++  passwordSalt: string
++}
++
++type StoredSession = {
++  userId: string
++  emailHash: string
++}
++
++type StoredSnapshot = {
++  revision: string
++  updatedAt: string
++  body: Record<string, unknown>
++}
++
++export type WritingStore = {
++  createUser(input: { email: string; password: string; displayName: string; tool: string | null }): Promise<
++    { ok: true; user: PublicUser; token: string } | { ok: false; status: number; message: string }
++  >
++  login(input: { email: string; password: string; tool: string | null }): Promise<
++    { ok: true; user: PublicUser; token: string } | { ok: false; status: number; message: string }
++  >
++  userForToken(token: string): Promise<PublicUser | null>
++  logout(token: string): Promise<void>
++  updateProfile(token: string, displayName: string): Promise<
++    { ok: true; user: PublicUser } | { ok: false; status: number; message: string }
++  >
++  changePassword(token: string, currentPassword: string, nextPassword: string): Promise<
++    { ok: true } | { ok: false; status: number; message: string }
++  >
++  connectTool(token: string, toolId: string): Promise<
++    { ok: true; tools: ToolLine[] } | { ok: false; status: number; message: string }
++  >
++  toolsFor(token: string): Promise<{ ok: true; tools: ToolLine[] } | { ok: false; status: number; message: string }>
++  readSnapshot(token: string, toolId: string): Promise<
++    { ok: true; snapshot: StoredSnapshot | null } | { ok: false; status: number; message: string }
++  >
++  writeSnapshot(
++    token: string,
++    toolId: string,
++    body: Record<string, unknown>,
++    ifMatch: string | null,
++  ): Promise<
++    | { ok: true; snapshot: StoredSnapshot }
++    | { ok: false; status: number; message?: string; snapshot?: StoredSnapshot | null }
++  >
++}
++
++type RecordIO = {
++  read(path: string): Promise<string | null>
++  writeNew(path: string, text: string): Promise<boolean>
++  write(path: string, text: string): Promise<void>
++  remove(path: string): Promise<void>
++}
++
++export function fileWritingStore(root: string): WritingStore {
++  return storeFromIo({
++    async read(path) {
++      try {
++        return readFileSync(join(root, path), 'utf8')
++      } catch (error) {
++        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
++        throw error
++      }
++    },
++    async writeNew(path, text) {
++      const full = join(root, path)
++      mkdirSync(dirname(full), { recursive: true })
++      try {
++        writeFileSync(full, text, { flag: 'wx' })
++        return true
++      } catch (error) {
++        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
++        throw error
++      }
++    },
++    async write(path, text) {
++      const full = join(root, path)
++      mkdirSync(dirname(full), { recursive: true })
++      writeFileSync(full, text)
++    },
++    async remove(path) {
++      try {
++        unlinkSync(join(root, path))
++      } catch (error) {
++        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
++        throw error
++      }
++    },
++  })
++}
++
++export function storeFromIo(io: RecordIO): WritingStore {
++  return {
++    async createUser(input) {
++      const email = input.email.trim().toLowerCase()
++      const emailHash = hashEmail(email)
++      const existing = await readJson<StoredUser>(io, userPath(emailHash))
++      if (existing) return { ok: false, status: 409, message: 'An account with that email already exists.' }
++      const salt = randomBytes(16).toString('base64url')
++      const user: StoredUser = {
++        id: newAccountId(),
++        email,
++        displayName: input.displayName.trim(),
++        passwordHash: hashPassword(input.password, salt),
++        passwordSalt: salt,
++        tools: input.tool ? [input.tool] : [],
++      }
++      const created = await io.writeNew(userPath(emailHash), JSON.stringify(user))
++      if (!created) return { ok: false, status: 409, message: 'An account with that email already exists.' }
++      const token = await openSession(io, user.id, emailHash)
++      return { ok: true, user: publicUser(user), token }
++    },
++    async login(input) {
++      const email = input.email.trim().toLowerCase()
++      const emailHash = hashEmail(email)
++      const user = await readJson<StoredUser>(io, userPath(emailHash))
++      if (!user || !passwordMatches(input.password, user)) {
++        return { ok: false, status: 401, message: 'Email or password is incorrect.' }
++      }
++      if (input.tool && !user.tools.includes(input.tool)) {
++        user.tools.push(input.tool)
++        await io.write(userPath(emailHash), JSON.stringify(user))
++      }
++      const token = await openSession(io, user.id, emailHash)
++      return { ok: true, user: publicUser(user), token }
++    },
++    async userForToken(token) {
++      const session = await readJson<StoredSession>(io, sessionPath(hashToken(token)))
++      if (!session) return null
++      const user = await readJson<StoredUser>(io, userPath(session.emailHash))
++      return user && user.id === session.userId ? publicUser(user) : null
++    },
++    async logout(token) {
++      await io.remove(sessionPath(hashToken(token)))
++    },
++    async updateProfile(token, displayName) {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again.' }
++      found.user.displayName = displayName.trim()
++      await io.write(userPath(found.session.emailHash), JSON.stringify(found.user))
++      return { ok: true, user: publicUser(found.user) }
++    },
++    async changePassword(token, currentPassword, nextPassword) {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again.' }
++      if (!passwordMatches(currentPassword, found.user)) {
++        return { ok: false, status: 401, message: 'The current password is incorrect.' }
++      }
++      found.user.passwordSalt = randomBytes(16).toString('base64url')
++      found.user.passwordHash = hashPassword(nextPassword, found.user.passwordSalt)
++      await io.write(userPath(found.session.emailHash), JSON.stringify(found.user))
++      return { ok: true }
++    },
++    async connectTool(token, toolId) {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again.' }
++      const tool = WRITING_TOOLS.find((item) => item.id === toolId)
++      if (!tool) return { ok: false, status: 400, message: 'That writing tool is not part of this account yet.' }
++      if (!found.user.tools.includes(tool.id)) found.user.tools.push(tool.id)
++      await io.write(userPath(found.session.emailHash), JSON.stringify(found.user))
++      return { ok: true, tools: toolCatalog(found.user) }
++    },
++    toolsFor: async (token) => {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again.' }
++      return { ok: true, tools: toolCatalog(found.user) }
++    },
++    async readSnapshot(token, toolId) {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again to sync. Your books are still on this computer.' }
++      const tool = WRITING_TOOLS.find((item) => item.id === toolId)
++      if (!tool?.sync) return { ok: false, status: 404, message: 'That writing tool does not sync from HuManuScript.' }
++      return { ok: true, snapshot: await readJson<StoredSnapshot>(io, snapshotPath(toolId, found.user.id)) }
++    },
++    async writeSnapshot(token, toolId, body, ifMatch) {
++      const found = await privateUser(io, token)
++      if (!found) return { ok: false, status: 401, message: 'Sign in again to sync. Your books are still on this computer.' }
++      const tool = WRITING_TOOLS.find((item) => item.id === toolId)
++      if (!tool?.sync) return { ok: false, status: 404, message: 'That writing tool does not sync from HuManuScript.' }
++      if (Buffer.byteLength(JSON.stringify(body)) > SNAPSHOT_BYTE_LIMIT) {
++        return { ok: false, status: 413, message: 'This library is too large to sync.' }
++      }
++      const current = await readJson<StoredSnapshot>(io, snapshotPath(toolId, found.user.id))
++      const expected = unquote(ifMatch)
++      if (current && expected !== current.revision) return { ok: false, status: 409, snapshot: current }
++      if (!current && expected) return { ok: false, status: 409, snapshot: null }
++      const saved: StoredSnapshot = {
++        revision: randomBytes(8).toString('hex'),
++        updatedAt: new Date().toISOString(),
++        body,
++      }
++      await io.write(snapshotPath(toolId, found.user.id), JSON.stringify(saved))
++      return { ok: true, snapshot: saved }
++    },
++  }
++}
++
++export function defaultWritingRoot(): string {
++  return process.env.WRITING_ACCOUNTS_DIR?.trim() || join(process.cwd(), 'data/writing-accounts')
++}
++
++function userPath(emailHash: string): string {
++  return `writing-accounts/users/${emailHash}.json`
++}
++
++function sessionPath(tokenHash: string): string {
++  return `writing-accounts/sessions/${tokenHash}.json`
++}
++
++function snapshotPath(toolId: string, accountId: string): string {
++  if (!ACCOUNT_ID.test(accountId)) throw new Error('Invalid account id.')
++  if (!/^[a-z0-9-]+$/.test(toolId)) throw new Error('Invalid writing tool.')
++  return `writing-accounts/sync/${toolId}/${accountId.toLowerCase()}.json`
++}
++
++async function openSession(io: RecordIO, userId: string, emailHash: string): Promise<string> {
++  const token = randomBytes(32).toString('base64url')
++  const record: StoredSession = { userId, emailHash }
++  await io.write(sessionPath(hashToken(token)), JSON.stringify(record))
++  return token
++}
++
++async function privateUser(io: RecordIO, token: string): Promise<{ user: StoredUser; session: StoredSession } | null> {
++  const session = await readJson<StoredSession>(io, sessionPath(hashToken(token)))
++  if (!session) return null
++  const user = await readJson<StoredUser>(io, userPath(session.emailHash))
++  if (!user || user.id !== session.userId) return null
++  return { user, session }
++}
++
++async function readJson<T>(io: RecordIO, path: string): Promise<T | null> {
++  const text = await io.read(path)
++  if (!text) return null
++  try {
++    return JSON.parse(text) as T
++  } catch {
++    return null
++  }
++}
++
++function publicUser(user: StoredUser): PublicUser {
++  return { id: user.id, email: user.email, displayName: user.displayName, tools: [...user.tools] }
++}
++
++function toolCatalog(user: StoredUser): ToolLine[] {
++  return WRITING_TOOLS.map((tool) => ({
++    id: tool.id,
++    name: tool.name,
++    sync: tool.sync,
++    connected: user.tools.includes(tool.id),
++  }))
++}
++
++function hashEmail(email: string): string {
++  return createHash('sha256').update(email).digest('hex')
++}
++
++function hashToken(token: string): string {
++  return createHash('sha256').update(token).digest('base64url')
++}
++
++function hashPassword(password: string, salt: string): string {
++  return scryptSync(password, salt, 32).toString('base64url')
++}
++
++function passwordMatches(password: string, user: StoredUser): boolean {
++  const next = Buffer.from(hashPassword(password, user.passwordSalt))
++  const saved = Buffer.from(user.passwordHash)
++  return next.length === saved.length && timingSafeEqual(next, saved)
++}
++
++function newAccountId(): string {
++  const bytes = randomBytes(16)
++  bytes[6] = (bytes[6]! & 0x0f) | 0x40
++  bytes[8] = (bytes[8]! & 0x3f) | 0x80
++  const hex = bytes.toString('hex')
++  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
++}
++
++function unquote(value: string | null): string | null {
++  if (!value) return null
++  let text = value.trim()
++  if (!text) return null
++  if (text.startsWith('W/')) text = text.slice(2).trim()
++  if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1)
++  return text || null
++}
+diff --git a/api/_lib/writingAccountsBlob.ts b/api/_lib/writingAccountsBlob.ts
+new file mode 100644
+index 0000000..6de261f
+--- /dev/null
++++ b/api/_lib/writingAccountsBlob.ts
+@@ -0,0 +1,53 @@
++import { BlobNotFoundError, del, get, put } from '@vercel/blob'
++import { storeFromIo, type WritingStore } from './writingAccounts.js'
++
++export function blobWritingStore(): WritingStore {
++  return storeFromIo({
++    async read(path) {
++      try {
++        const blob = await get(path, { access: 'private' })
++        if (!blob || blob.statusCode !== 200 || !blob.stream) return null
++        return await new Response(blob.stream).text()
++      } catch (error) {
++        if (error instanceof BlobNotFoundError) return null
++        throw error
++      }
++    },
++    async writeNew(path, text) {
++      try {
++        await put(path, text, {
++          access: 'private',
++          addRandomSuffix: false,
++          allowOverwrite: false,
++          contentType: 'application/json',
++        })
++        return true
++      } catch (error) {
++        if (alreadyExists(error)) return false
++        throw error
++      }
++    },
++    async write(path, text) {
++      await put(path, text, {
++        access: 'private',
++        addRandomSuffix: false,
++        allowOverwrite: true,
++        contentType: 'application/json',
++      })
++    },
++    async remove(path) {
++      try {
++        await del(path)
++      } catch (error) {
++        if (error instanceof BlobNotFoundError) return
++        throw error
++      }
++    },
++  })
++}
++
++function alreadyExists(error: unknown): boolean {
++  const name = error instanceof Error ? error.name : ''
++  const message = error instanceof Error ? error.message : ''
++  return /already exists/i.test(message) || /AlreadyExists/.test(name)
++}
+diff --git a/api/_lib/writingAccountsHttp.ts b/api/_lib/writingAccountsHttp.ts
+new file mode 100644
+index 0000000..7d81cbe
+--- /dev/null
++++ b/api/_lib/writingAccountsHttp.ts
+@@ -0,0 +1,264 @@
++import { SNAPSHOT_BYTE_LIMIT, defaultWritingRoot, fileWritingStore, type WritingStore } from './writingAccounts.js'
++
++const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
++
++type AccountRequest = {
++  method: string
++  url: string
++  headers: { get(name: string): string | null }
++  json(): Promise<unknown>
++}
++
++export async function handleWritingAccount(
++  request: AccountRequest,
++  action: string,
++  store: WritingStore = defaultStore(),
++): Promise<Response> {
++  if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }))
++  try {
++    const response = await route(request, action, store)
++    return cors(response)
++  } catch (error) {
++    const message = error instanceof Error ? error.message : 'Writing accounts are unavailable.'
++    return cors(json({ message }, 500))
++  }
++}
++
++function defaultStore(): WritingStore {
++  if (process.env.BLOB_READ_WRITE_TOKEN?.trim() || process.env.BLOB_STORE_ID?.trim()) {
++    throw new Error('Use the blob store when a Vercel Blob token is set.')
++  }
++  if (process.env.VERCEL) {
++    throw new Error('Writing accounts need a Vercel Blob store.')
++  }
++  return fileWritingStore(defaultWritingRoot())
++}
++
++export async function writingStoreForRequest(): Promise<WritingStore> {
++  const hasBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim() || process.env.BLOB_STORE_ID?.trim())
++  if (hasBlob) {
++    const { blobWritingStore } = await import('./writingAccountsBlob.js')
++    return blobWritingStore()
++  }
++  if (process.env.VERCEL) {
++    return {
++      async createUser() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async login() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async userForToken() {
++        return null
++      },
++      async logout() {},
++      async updateProfile() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async changePassword() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async connectTool() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async toolsFor() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async readSnapshot() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++      async writeSnapshot() {
++        return { ok: false, status: 503, message: 'Writing accounts need a Vercel Blob store.' }
++      },
++    }
++  }
++  return fileWritingStore(defaultWritingRoot())
++}
++
++async function route(request: AccountRequest, action: string, store: WritingStore): Promise<Response> {
++  const syncTool = /^sync\/([a-z0-9-]+)$/.exec(action)?.[1] ?? null
++  if (request.method === 'POST' && action === 'signup') return signup(request, store)
++  if (request.method === 'POST' && action === 'login') return login(request, store)
++  if (request.method === 'POST' && action === 'logout') return logout(request, store)
++  if (request.method === 'GET' && action === 'me') return me(request, store)
++  if (request.method === 'PATCH' && action === 'profile') return profile(request, store)
++  if (request.method === 'POST' && action === 'password') return password(request, store)
++  if (request.method === 'GET' && action === 'tools') return tools(request, store)
++  if (syncTool && request.method === 'GET') return readSync(request, store, syncTool)
++  if (syncTool && request.method === 'PUT') return writeSync(request, store, syncTool)
++  return json({ message: 'Not found.' }, 404)
++}
++
++async function signup(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const fields = await accountFields(request, true)
++  if (!fields.ok) return json({ message: fields.message }, fields.status)
++  const created = await store.createUser(fields)
++  if (!created.ok) return json({ message: created.message }, created.status)
++  return json({ token: created.token, tokenType: 'Bearer', user: created.user }, 201)
++}
++
++async function login(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const fields = await accountFields(request, false)
++  if (!fields.ok) return json({ message: fields.message }, fields.status)
++  const signedIn = await store.login({ email: fields.email, password: fields.password, tool: fields.tool })
++  if (!signedIn.ok) return json({ message: signedIn.message }, signedIn.status)
++  return json({ token: signedIn.token, tokenType: 'Bearer', user: signedIn.user })
++}
++
++async function logout(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const token = bearer(request)
++  if (token) await store.logout(token)
++  return json({ ok: true })
++}
++
++async function me(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const user = await store.userForToken(bearer(request) ?? '')
++  if (!user) return json({ message: 'Sign in again.' }, 401)
++  return json({ user })
++}
++
++async function profile(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const token = bearer(request)
++  if (!token) return json({ message: 'Sign in again.' }, 401)
++  const body = await readJson(request)
++  const displayName = text(body, 'displayName')
++  const invalid = validateName(displayName)
++  if (invalid) return json({ message: invalid }, 400)
++  const updated = await store.updateProfile(token, displayName)
++  if (!updated.ok) return json({ message: updated.message }, updated.status)
++  return json({ user: updated.user })
++}
++
++async function password(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const token = bearer(request)
++  if (!token) return json({ message: 'Sign in again.' }, 401)
++  const body = await readJson(request)
++  const currentPassword = text(body, 'currentPassword')
++  const nextPassword = text(body, 'password')
++  const invalid = validatePassword(nextPassword)
++  if (invalid) return json({ message: invalid }, 400)
++  const changed = await store.changePassword(token, currentPassword, nextPassword)
++  if (!changed.ok) return json({ message: changed.message }, changed.status)
++  return json({ ok: true })
++}
++
++async function tools(request: AccountRequest, store: WritingStore): Promise<Response> {
++  const listed = await store.toolsFor(bearer(request) ?? '')
++  if (!listed.ok) return json({ message: listed.message }, listed.status)
++  return json({ tools: listed.tools })
++}
++
++async function readSync(request: AccountRequest, store: WritingStore, toolId: string): Promise<Response> {
++  const read = await store.readSnapshot(bearer(request) ?? '', toolId)
++  if (!read.ok) return json({ message: read.message }, read.status)
++  if (!read.snapshot) return json({ snapshot: null })
++  return snapshotResponse(read.snapshot, 200)
++}
++
++async function writeSync(request: AccountRequest, store: WritingStore, toolId: string): Promise<Response> {
++  const body = await readJson(request)
++  const snapshot = body.snapshot
++  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
++    return json({ message: 'The sync body needs a snapshot object.' }, 400)
++  }
++  const written = await store.writeSnapshot(
++    bearer(request) ?? '',
++    toolId,
++    snapshot as Record<string, unknown>,
++    request.headers.get('if-match'),
++  )
++  if (!written.ok && written.status === 409) {
++    if (!written.snapshot) return json({ snapshot: null }, 409)
++    return snapshotResponse(written.snapshot, 409)
++  }
++  if (!written.ok) return json({ message: written.message ?? 'Sync failed.' }, written.status)
++  return snapshotResponse(written.snapshot, 200)
++}
++
++async function accountFields(
++  request: AccountRequest,
++  creating: boolean,
++): Promise<
++  | { ok: true; email: string; password: string; displayName: string; tool: string | null }
++  | { ok: false; status: number; message: string }
++> {
++  const body = await readJson(request)
++  const email = text(body, 'email').toLowerCase()
++  const password = text(body, 'password')
++  const displayName = text(body, 'displayName')
++  const tool = text(body, 'tool') || null
++  if (!EMAIL.test(email)) return { ok: false, status: 400, message: 'Enter a valid email.' }
++  if (creating) {
++    const invalidName = validateName(displayName)
++    if (invalidName) return { ok: false, status: 400, message: invalidName }
++  }
++  const invalidPassword = validatePassword(password)
++  if (invalidPassword) return { ok: false, status: 400, message: invalidPassword }
++  if (tool && !/^[a-z0-9-]+$/.test(tool)) return { ok: false, status: 400, message: 'Unknown writing tool.' }
++  return { ok: true, email, password, displayName, tool }
++}
++
++function validateName(displayName: string): string | null {
++  if (!displayName) return 'Enter the name readers will see.'
++  if (displayName.length > 40) return 'Keep the name to 40 characters.'
++  return null
++}
++
++function validatePassword(password: string): string | null {
++  if (password.length < 12) return 'Use at least 12 characters.'
++  if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
++    return 'Use upper and lower case, a number, and a symbol.'
++  }
++  return null
++}
++
++function snapshotResponse(
++  snapshot: { revision: string; updatedAt: string; body: Record<string, unknown> },
++  status: number,
++): Response {
++  const response = json(
++    { snapshot: snapshot.body, revision: snapshot.revision, updatedAt: snapshot.updatedAt },
++    status,
++  )
++  response.headers.set('ETag', `"${snapshot.revision}"`)
++  return response
++}
++
++async function readJson(request: AccountRequest): Promise<Record<string, unknown>> {
++  try {
++    const body = await request.json()
++    if (body && typeof body === 'object' && !Array.isArray(body)) return body as Record<string, unknown>
++  } catch {
++    return {}
++  }
++  return {}
++}
++
++function text(body: Record<string, unknown>, key: string): string {
++  const value = body[key]
++  return typeof value === 'string' ? value.trim() : ''
++}
++
++function bearer(request: AccountRequest): string | null {
++  const header = request.headers.get('authorization') ?? ''
++  const match = /^Bearer\s+(\S+)$/i.exec(header)
++  return match?.[1] ?? null
++}
++
++function json(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { 'Content-Type': 'application/json; charset=utf-8' },
++  })
++}
++
++function cors(response: Response): Response {
++  const headers = new Headers(response.headers)
++  headers.set('Access-Control-Allow-Origin', '*')
++  headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-Match')
++  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
++  headers.set('Access-Control-Expose-Headers', 'ETag')
++  return new Response(response.body, { status: response.status, headers })
++}
++
++export { SNAPSHOT_BYTE_LIMIT }
+diff --git a/api/writing-accounts/login.ts b/api/writing-accounts/login.ts
+new file mode 100644
+index 0000000..e430508
+--- /dev/null
++++ b/api/writing-accounts/login.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'login')
++}
++
++export function POST(request: Request): Promise<Response> {
++  return respond(request, 'login')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/logout.ts b/api/writing-accounts/logout.ts
+new file mode 100644
+index 0000000..b1e3249
+--- /dev/null
++++ b/api/writing-accounts/logout.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'logout')
++}
++
++export function POST(request: Request): Promise<Response> {
++  return respond(request, 'logout')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/me.ts b/api/writing-accounts/me.ts
+new file mode 100644
+index 0000000..bcc9bd7
+--- /dev/null
++++ b/api/writing-accounts/me.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'me')
++}
++
++export function GET(request: Request): Promise<Response> {
++  return respond(request, 'me')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/password.ts b/api/writing-accounts/password.ts
+new file mode 100644
+index 0000000..133f8bf
+--- /dev/null
++++ b/api/writing-accounts/password.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'password')
++}
++
++export function POST(request: Request): Promise<Response> {
++  return respond(request, 'password')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/profile.ts b/api/writing-accounts/profile.ts
+new file mode 100644
+index 0000000..b012b0c
+--- /dev/null
++++ b/api/writing-accounts/profile.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'profile')
++}
++
++export function PATCH(request: Request): Promise<Response> {
++  return respond(request, 'profile')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/signup.ts b/api/writing-accounts/signup.ts
+new file mode 100644
+index 0000000..208c5fa
+--- /dev/null
++++ b/api/writing-accounts/signup.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'signup')
++}
++
++export function POST(request: Request): Promise<Response> {
++  return respond(request, 'signup')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/sync/[tool].ts b/api/writing-accounts/sync/[tool].ts
+new file mode 100644
+index 0000000..83e78bd
+--- /dev/null
++++ b/api/writing-accounts/sync/[tool].ts
+@@ -0,0 +1,21 @@
++import { handleWritingAccount, writingStoreForRequest } from '../../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request)
++}
++
++export function GET(request: Request): Promise<Response> {
++  return respond(request)
++}
++
++export function PUT(request: Request): Promise<Response> {
++  return respond(request)
++}
++
++function respond(request: Request): Promise<Response> {
++  const match = new URL(request.url).pathname.match(/\/api\/writing-accounts\/sync\/([a-z0-9-]+)$/)
++  const action = match ? `sync/${match[1]}` : 'missing'
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/api/writing-accounts/tools.ts b/api/writing-accounts/tools.ts
+new file mode 100644
+index 0000000..00e497c
+--- /dev/null
++++ b/api/writing-accounts/tools.ts
+@@ -0,0 +1,15 @@
++import { handleWritingAccount, writingStoreForRequest } from '../_lib/writingAccountsHttp.js'
++
++export const maxDuration = 30
++
++export function OPTIONS(request: Request): Promise<Response> {
++  return respond(request, 'tools')
++}
++
++export function GET(request: Request): Promise<Response> {
++  return respond(request, 'tools')
++}
++
++function respond(request: Request, action: string): Promise<Response> {
++  return writingStoreForRequest().then((store) => handleWritingAccount(request, action, store))
++}
+diff --git a/public/robots.txt b/public/robots.txt
+index 2e951af..88af438 100644
+--- a/public/robots.txt
++++ b/public/robots.txt
+@@ -2,5 +2,6 @@ User-agent: *
+ Allow: /
+ Disallow: /admin
+ Disallow: /admin/
++Disallow: /humanuscript/account
+ 
+ Sitemap: https://www.readywriter.one/sitemap.xml
+diff --git a/scripts/check-writing-accounts.mjs b/scripts/check-writing-accounts.mjs
+new file mode 100644
+index 0000000..6a74912
+--- /dev/null
++++ b/scripts/check-writing-accounts.mjs
+@@ -0,0 +1,105 @@
++import assert from 'node:assert/strict'
++import { mkdtemp, rm } from 'node:fs/promises'
++import { register } from 'node:module'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { pathToFileURL } from 'node:url'
++
++register(new URL('./writing-account-resolve.mjs', import.meta.url), pathToFileURL(process.cwd() + '/'))
++
++const { fileWritingStore } = await import('../api/_lib/writingAccounts.ts')
++const { handleWritingAccount } = await import('../api/_lib/writingAccountsHttp.ts')
++
++const root = await mkdtemp(join(tmpdir(), 'writing-accounts-'))
++const store = fileWritingStore(root)
++const password = 'Harbor-Key-1!'
++
++try {
++  const oldAccount = await handleWritingAccount(
++    request('/api/account/signup', 'POST', { email: 'ada@example.com', password, displayName: 'Ada', tool: 'humanuscript' }),
++    'missing',
++    store,
++  )
++  assert.equal(oldAccount.status, 404)
++
++  const created = await json(await handleWritingAccount(
++    request('/api/writing-accounts/signup', 'POST', { email: 'ada@example.com', password, displayName: 'Ada', tool: 'humanuscript' }),
++    'signup',
++    store,
++  ))
++  assert.equal(created.status, 201)
++  assert.equal(created.body.tokenType, 'Bearer')
++  assert.equal(created.body.user.email, 'ada@example.com')
++  const token = created.body.token
++
++  const duplicate = await handleWritingAccount(
++    request('/api/writing-accounts/signup', 'POST', { email: 'ada@example.com', password, displayName: 'Ada', tool: 'humanuscript' }),
++    'signup',
++    store,
++  )
++  assert.equal(duplicate.status, 409)
++
++  const tools = await json(await handleWritingAccount(
++    request('/api/writing-accounts/tools', 'GET', null, token),
++    'tools',
++    store,
++  ))
++  assert.equal(tools.body.tools.find((tool) => tool.id === 'humanuscript').connected, true)
++  assert.equal(tools.body.tools.find((tool) => tool.id === 'speakfiction').sync, false)
++
++  const speak = await handleWritingAccount(
++    request('/api/writing-accounts/sync/speakfiction', 'PUT', { snapshot: { books: [] } }, token),
++    'sync/speakfiction',
++    store,
++  )
++  assert.equal(speak.status, 404)
++
++  const empty = await json(await handleWritingAccount(
++    request('/api/writing-accounts/sync/humanuscript', 'GET', null, token),
++    'sync/humanuscript',
++    store,
++  ))
++  assert.equal(empty.body.snapshot, null)
++
++  const saved = await json(await handleWritingAccount(
++    request('/api/writing-accounts/sync/humanuscript', 'PUT', { snapshot: { books: [{ title: 'Harbor' }] } }, token),
++    'sync/humanuscript',
++    store,
++  ))
++  assert.equal(saved.status, 200)
++  const revision = saved.body.revision
++  assert.ok(revision)
++
++  const conflict = await handleWritingAccount(
++    request('/api/writing-accounts/sync/humanuscript', 'PUT', { snapshot: { books: [] } }, token, '"stale"'),
++    'sync/humanuscript',
++    store,
++  )
++  assert.equal(conflict.status, 409)
++
++  const renamed = await json(await handleWritingAccount(
++    request('/api/writing-accounts/profile', 'PATCH', { displayName: 'Ada Lovelace' }, token),
++    'profile',
++    store,
++  ))
++  assert.equal(renamed.body.user.displayName, 'Ada Lovelace')
++
++  console.log('writing accounts ok')
++} finally {
++  await rm(root, { recursive: true, force: true })
++}
++
++function request(path, method, body, token, ifMatch) {
++  const headers = new Headers()
++  if (token) headers.set('authorization', `Bearer ${token}`)
++  if (ifMatch) headers.set('if-match', ifMatch)
++  return new Request(`https://www.readywriter.one${path}`, {
++    method,
++    headers,
++    body: body == null ? undefined : JSON.stringify(body),
++  })
++}
++
++async function json(response) {
++  return { status: response.status, body: await response.json() }
++}
+diff --git a/scripts/writing-account-resolve.mjs b/scripts/writing-account-resolve.mjs
+new file mode 100644
+index 0000000..688c950
+--- /dev/null
++++ b/scripts/writing-account-resolve.mjs
+@@ -0,0 +1,10 @@
++export async function resolve(specifier, context, nextResolve) {
++  if (
++    specifier.startsWith('./') &&
++    specifier.endsWith('.js') &&
++    context.parentURL?.includes('/api/_lib/')
++  ) {
++    return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
++  }
++  return nextResolve(specifier, context)
++}
+diff --git a/src/App.tsx b/src/App.tsx
+index ae8ae5a..b81f84f 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -28,6 +28,7 @@ import { SpeakFiction } from './pages/SpeakFiction'
+ import { SpeakFictionPrivacy } from './pages/SpeakFictionPrivacy'
+ import { HuManuScript } from './pages/HuManuScript'
+ import { Account } from './pages/Account'
++import { WritingAccount } from './pages/WritingAccount'
+ import { ManuscriptRegistry } from './pages/ManuscriptRegistry'
+ import { Admin } from './pages/Admin'
+ import { AdminLogin } from './pages/AdminLogin'
+@@ -46,15 +47,20 @@ function isAdminPath(pathname: string): boolean {
+   return pathname === '/admin' || pathname.startsWith('/admin/')
+ }
+ 
++function isWritingAccountPath(pathname: string): boolean {
++  return pathname === '/humanuscript/account' || pathname.startsWith('/humanuscript/account/')
++}
++
+ function AppShell() {
+   const { pathname } = useLocation()
+   const adminPath = isAdminPath(pathname)
++  const writingAccountPath = isWritingAccountPath(pathname)
+   const { settings, ready } = useSiteSettings()
+   const { contentStatus } = useContent()
+   const comingSoonEnabled = settings.comingSoonEnabled === true
+ 
+   // Avoid flashing demo seed (or empty lists) before settings and catalog resolve.
+-  if (!adminPath && (!ready || contentStatus === 'loading')) {
++  if (!adminPath && !writingAccountPath && (!ready || contentStatus === 'loading')) {
+     return (
+       <div className="coming-soon-boot" aria-busy="true">
+         <span className="sr-only">Loading</span>
+@@ -79,6 +85,8 @@ function AppShell() {
+         <Route path="/sidequests/speakfiction/privacy" element={<SpeakFictionPrivacy />} />
+         <Route path="/sidequests/humanuscript" element={<HuManuScript />} />
+         <Route path="/account" element={<Account />} />
++        <Route path="/humanuscript/account" element={<WritingAccount />} />
++        <Route path="/humanuscript/account/*" element={<WritingAccount />} />
+         <Route path="/sidequests/certified-manuscript-registry" element={<ManuscriptRegistry />} />
+         <Route path="/sidequests/certified-manuscript-registry/c/:code" element={<ManuscriptRegistry />} />
+         <Route path="*" element={<ComingSoon />} />
+@@ -88,7 +96,7 @@ function AppShell() {
+ 
+   return (
+     <>
+-      {!adminPath && <Nav />}
++      {!adminPath && !writingAccountPath && <Nav />}
+       <Routes>
+         <Route path="/" element={<Home />} />
+         <Route path="/episodes" element={<Episodes />} />
+@@ -110,12 +118,14 @@ function AppShell() {
+         <Route path="/sidequests/speakfiction/privacy" element={<SpeakFictionPrivacy />} />
+         <Route path="/sidequests/humanuscript" element={<HuManuScript />} />
+         <Route path="/account" element={<Account />} />
++        <Route path="/humanuscript/account" element={<WritingAccount />} />
++        <Route path="/humanuscript/account/*" element={<WritingAccount />} />
+         <Route path="/sidequests/certified-manuscript-registry" element={<ManuscriptRegistry />} />
+         <Route path="/sidequests/certified-manuscript-registry/c/:code" element={<ManuscriptRegistry />} />
+         <Route path="/admin/login" element={<AdminLogin />} />
+         <Route path="/admin" element={<Admin />} />
+       </Routes>
+-      {!adminPath && <Footer />}
++      {!adminPath && !writingAccountPath && <Footer />}
+     </>
+   )
+ }
+diff --git a/src/pages/WritingAccount.css b/src/pages/WritingAccount.css
+new file mode 100644
+index 0000000..0daba7a
+--- /dev/null
++++ b/src/pages/WritingAccount.css
+@@ -0,0 +1,132 @@
++.writing-account {
++  min-height: 100vh;
++  box-sizing: border-box;
++  padding: 32px 20px 64px;
++  background: #f4efe6;
++  color: #241c14;
++  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
++}
++
++.writing-account main {
++  max-width: 640px;
++  margin: 0 auto;
++}
++
++.writing-account h1 {
++  font-size: 2rem;
++  line-height: 1.2;
++  margin: 0 0 12px;
++}
++
++.writing-account h2 {
++  font-size: 1.25rem;
++  margin: 28px 0 12px;
++}
++
++.writing-account p {
++  line-height: 1.5;
++}
++
++.writing-account-brand,
++.writing-account-card {
++  max-width: 640px;
++  margin: 0 auto;
++}
++
++.writing-account-brand img {
++  display: block;
++  width: 72px;
++  height: 72px;
++}
++
++.writing-account-mark {
++  margin: 12px 0 0;
++  font-size: 1.5rem;
++  letter-spacing: 0.02em;
++}
++
++.writing-account-tag {
++  margin: 4px 0 24px;
++  color: #6d5844;
++}
++
++.writing-account-back {
++  display: inline-block;
++  margin: 0 0 24px;
++  color: #6d3b16;
++}
++
++.writing-account-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 12px;
++  margin: 16px 0;
++}
++
++.writing-account-button {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-height: 42px;
++  padding: 8px 16px;
++  border: 1px solid #241c14;
++  border-radius: 999px;
++  background: transparent;
++  color: #241c14;
++  font: inherit;
++  text-decoration: none;
++  cursor: pointer;
++}
++
++.writing-account-button.primary {
++  background: #241c14;
++  color: #f4efe6;
++}
++
++.writing-account-button:disabled {
++  opacity: 0.6;
++  cursor: default;
++}
++
++.writing-account form {
++  display: grid;
++  gap: 12px;
++  margin: 20px 0;
++}
++
++.writing-account label {
++  display: grid;
++  gap: 6px;
++}
++
++.writing-account input {
++  min-height: 42px;
++  padding: 8px 12px;
++  border: 1px solid #c8b8a4;
++  border-radius: 8px;
++  background: #fffaf3;
++  color: #241c14;
++  font: inherit;
++}
++
++.writing-account-hint,
++.writing-account-notice {
++  color: #6d5844;
++}
++
++.writing-account-error {
++  color: #8a2a1b;
++}
++
++.writing-account-tools {
++  list-style: none;
++  padding: 0;
++  margin: 0 0 20px;
++}
++
++.writing-account-tools li {
++  display: grid;
++  gap: 4px;
++  padding: 12px 0;
++  border-top: 1px solid #e2d5c4;
++}
+diff --git a/src/pages/WritingAccount.tsx b/src/pages/WritingAccount.tsx
+new file mode 100644
+index 0000000..89296fa
+--- /dev/null
++++ b/src/pages/WritingAccount.tsx
+@@ -0,0 +1,317 @@
++import { useEffect, useState, type FormEvent } from 'react'
++import { Link, useLocation, useSearchParams } from 'react-router-dom'
++import { Seo } from '../components/Seo'
++import './WritingAccount.css'
++
++const TOKEN_KEY = 'humanuscript.account.token'
++const RETURN_URL = 'humanuscript://open'
++const DOWNLOADS = [
++  ['Apple silicon', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-arm64.dmg'],
++  ['Intel Mac', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-x64.dmg'],
++  ['Windows', 'https://github.com/shane-carlson/HuManuScript/releases/download/v0.1.52/HuManuScript-0.1.52-x64.exe'],
++] as const
++
++type AccountUser = { id: string; email: string; displayName: string }
++type ToolLine = { id: string; name: string; sync: boolean; connected: boolean }
++type Screen = 'home' | 'sign-in' | 'sign-up' | 'manage'
++
++export function WritingAccount() {
++  const { pathname } = useLocation()
++  const [params] = useSearchParams()
++  const fromApp = params.get('from') === 'app'
++  const screen = screenFor(pathname)
++  const query = fromApp ? '?from=app' : ''
++
++  return (
++    <div className="writing-account">
++      <Seo
++        title="HuManuScript account"
++        description="Create a HuManuScript account or sign in. The account is for manuscript sync, and later writing tools can share it."
++        path="/humanuscript/account"
++        noIndex
++      />
++      {fromApp ? (
++        <a className="writing-account-back" href={RETURN_URL}>
++          Back to HuManuScript
++        </a>
++      ) : null}
++      {screen === 'home' ? <Landing query={query} /> : null}
++      {screen === 'sign-in' || screen === 'sign-up' ? (
++        <AuthForm kind={screen} fromApp={fromApp} query={query} />
++      ) : null}
++      {screen === 'manage' ? <Manage fromApp={fromApp} query={query} /> : null}
++    </div>
++  )
++}
++
++function Landing({ query }: { query: string }) {
++  return (
++    <>
++      <header className="writing-account-brand">
++        <img src="/icons/humanuscript-logo.png" alt="" width={72} height={72} />
++        <p className="writing-account-mark">HuManuScript</p>
++        <p className="writing-account-tag">Proof of humanity in Prose.</p>
++      </header>
++      <main>
++        <h1>A manuscript editor with a seal on every passage you type.</h1>
++        <p>
++          HuManuScript keeps your books on this computer. An account is only for sync, and it belongs to
++          HuManuScript. SpeakFiction can use the same sign-in later.
++        </p>
++        <div className="writing-account-actions">
++          <Link className="writing-account-button primary" to={`/humanuscript/account/sign-up${query}`}>
++            Create account
++          </Link>
++          <Link className="writing-account-button" to={`/humanuscript/account/sign-in${query}`}>
++            Sign in
++          </Link>
++        </div>
++        <h2>Download HuManuScript 0.1.52</h2>
++        <div className="writing-account-actions">
++          {DOWNLOADS.map(([label, href]) => (
++            <a className="writing-account-button" key={label} href={href}>
++              {label}
++            </a>
++          ))}
++        </div>
++      </main>
++    </>
++  )
++}
++
++function AuthForm({ kind, fromApp, query }: { kind: 'sign-in' | 'sign-up'; fromApp: boolean; query: string }) {
++  const [error, setError] = useState('')
++  const [pending, setPending] = useState(false)
++  const creating = kind === 'sign-up'
++
++  async function onSubmit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault()
++    const data = new FormData(event.currentTarget)
++    const email = String(data.get('email') ?? '')
++    const password = String(data.get('password') ?? '')
++    const displayName = String(data.get('displayName') ?? '')
++    setPending(true)
++    setError('')
++    const result = await send(creating ? '/api/writing-accounts/signup' : '/api/writing-accounts/login', {
++      email,
++      password,
++      displayName,
++      tool: 'humanuscript',
++    })
++    setPending(false)
++    if (!result.ok || typeof result.payload.token !== 'string') {
++      setError(messageOf(result.payload, 'The account service did not accept that.'))
++      return
++    }
++    localStorage.setItem(TOKEN_KEY, result.payload.token)
++    window.location.assign(`/humanuscript/account/manage${query}`)
++  }
++
++  return (
++    <main className="writing-account-card">
++      <p className="writing-account-mark">HuManuScript</p>
++      <h1>{creating ? 'Create a HuManuScript account' : 'Sign in to HuManuScript'}</h1>
++      <p>This account is for HuManuScript. Other writing tools can share it later.</p>
++      <form onSubmit={onSubmit}>
++        {creating ? (
++          <label>
++            Display name
++            <input name="displayName" maxLength={40} required />
++          </label>
++        ) : null}
++        <label>
++          Email
++          <input name="email" type="email" autoComplete="username" required />
++        </label>
++        <label>
++          Password
++          <input
++            name="password"
++            type="password"
++            autoComplete={creating ? 'new-password' : 'current-password'}
++            required
++          />
++        </label>
++        <p className="writing-account-hint">At least 12 characters, with uppercase, lowercase, a number, and a symbol.</p>
++        {error ? <p className="writing-account-error" role="alert">{error}</p> : null}
++        <div className="writing-account-actions">
++          <button className="writing-account-button primary" type="submit" disabled={pending}>
++            {creating ? 'Create account' : 'Sign in'}
++          </button>
++          {fromApp ? (
++            <a className="writing-account-button" href={RETURN_URL}>Back to HuManuScript</a>
++          ) : (
++            <Link className="writing-account-button" to={`/humanuscript/account${query}`}>HuManuScript home</Link>
++          )}
++        </div>
++      </form>
++    </main>
++  )
++}
++
++function Manage({ fromApp, query }: { fromApp: boolean; query: string }) {
++  const [user, setUser] = useState<AccountUser | null>(null)
++  const [tools, setTools] = useState<ToolLine[]>([])
++  const [error, setError] = useState('')
++  const [notice, setNotice] = useState('')
++
++  useEffect(() => {
++    const token = localStorage.getItem(TOKEN_KEY)
++    if (!token) {
++      window.location.replace(`/humanuscript/account/sign-in${query}`)
++      return
++    }
++    let cancelled = false
++    void Promise.all([
++      send('/api/writing-accounts/me', undefined, token, 'GET'),
++      send('/api/writing-accounts/tools', undefined, token, 'GET'),
++    ]).then(([me, listed]) => {
++      if (cancelled) return
++      const nextUser = me.payload.user
++      if (!me.ok || !isUser(nextUser)) {
++        localStorage.removeItem(TOKEN_KEY)
++        window.location.replace(`/humanuscript/account/sign-in${query}`)
++        return
++      }
++      setUser(nextUser)
++      setTools(Array.isArray(listed.payload.tools) ? listed.payload.tools.filter(isTool) : [])
++    })
++    return () => {
++      cancelled = true
++    }
++  }, [query])
++
++  async function saveName(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault()
++    const token = localStorage.getItem(TOKEN_KEY) ?? ''
++    const displayName = String(new FormData(event.currentTarget).get('displayName') ?? '')
++    const result = await send('/api/writing-accounts/profile', { displayName }, token, 'PATCH')
++    if (!result.ok || !isUser(result.payload.user)) {
++      setError(messageOf(result.payload, 'The name was not saved.'))
++      return
++    }
++    setUser(result.payload.user)
++    setError('')
++    setNotice('Name saved.')
++  }
++
++  async function savePassword(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault()
++    const token = localStorage.getItem(TOKEN_KEY) ?? ''
++    const data = new FormData(event.currentTarget)
++    const result = await send('/api/writing-accounts/password', {
++      currentPassword: String(data.get('currentPassword') ?? ''),
++      password: String(data.get('password') ?? ''),
++    }, token)
++    if (!result.ok) {
++      setError(messageOf(result.payload, 'The password was not changed.'))
++      return
++    }
++    event.currentTarget.reset()
++    setError('')
++    setNotice('Password changed.')
++  }
++
++  function signOut() {
++    const token = localStorage.getItem(TOKEN_KEY) ?? ''
++    void send('/api/writing-accounts/logout', {}, token)
++    localStorage.removeItem(TOKEN_KEY)
++    window.location.assign(`/humanuscript/account${query}`)
++  }
++
++  return (
++    <main className="writing-account-card">
++      <p className="writing-account-mark">HuManuScript</p>
++      <h1>{user ? user.displayName : 'Account'}</h1>
++      <p>{user ? user.email : 'Loading the account.'}</p>
++      <p>This is your HuManuScript account. SpeakFiction and other writing tools can use the same sign-in later.</p>
++      {error ? <p className="writing-account-error" role="alert">{error}</p> : null}
++      {notice ? <p className="writing-account-notice">{notice}</p> : null}
++      <form onSubmit={saveName}>
++        <label>
++          Display name
++          <input name="displayName" maxLength={40} defaultValue={user?.displayName ?? ''} key={user?.displayName} required />
++        </label>
++        <button className="writing-account-button primary" type="submit">Save name</button>
++      </form>
++      <form onSubmit={savePassword}>
++        <label>
++          Current password
++          <input name="currentPassword" type="password" autoComplete="current-password" required />
++        </label>
++        <label>
++          New password
++          <input name="password" type="password" autoComplete="new-password" required />
++        </label>
++        <button className="writing-account-button primary" type="submit">Change password</button>
++      </form>
++      <h2>Writing tools</h2>
++      <ul className="writing-account-tools">
++        {tools.map((tool) => (
++          <li key={tool.id}>
++            <strong>{tool.name}</strong>
++            <span>
++              {tool.connected
++                ? tool.sync
++                  ? 'Connected. This app syncs its books here.'
++                  : 'Connected. Sync for this tool comes later.'
++                : 'Available later. It can use this same sign-in.'}
++            </span>
++          </li>
++        ))}
++      </ul>
++      <div className="writing-account-actions">
++        <button className="writing-account-button" type="button" onClick={signOut}>Sign out</button>
++        {fromApp ? (
++          <a className="writing-account-button" href={RETURN_URL}>Back to HuManuScript</a>
++        ) : (
++          <Link className="writing-account-button" to="/humanuscript/account">HuManuScript home</Link>
++        )}
++      </div>
++    </main>
++  )
++}
++
++function screenFor(pathname: string): Screen {
++  if (pathname === '/humanuscript/account/sign-in') return 'sign-in'
++  if (pathname === '/humanuscript/account/sign-up') return 'sign-up'
++  if (pathname === '/humanuscript/account/manage') return 'manage'
++  return 'home'
++}
++
++async function send(
++  path: string,
++  body?: unknown,
++  token?: string,
++  method = 'POST',
++): Promise<{ ok: boolean; payload: Record<string, unknown> }> {
++  const headers: Record<string, string> = {}
++  if (body !== undefined) headers['Content-Type'] = 'application/json'
++  if (token) headers.Authorization = `Bearer ${token}`
++  const response = await fetch(path, {
++    method,
++    headers,
++    body: body === undefined ? undefined : JSON.stringify(body),
++  })
++  const payload = await response.json().catch(() => ({}))
++  return {
++    ok: response.ok,
++    payload: payload && typeof payload === 'object' ? payload as Record<string, unknown> : {},
++  }
++}
++
++function messageOf(payload: Record<string, unknown>, fallback: string): string {
++  return typeof payload.message === 'string' ? payload.message : fallback
++}
++
++function isUser(value: unknown): value is AccountUser {
++  if (!value || typeof value !== 'object') return false
++  const user = value as AccountUser
++  return typeof user.id === 'string' && typeof user.email === 'string' && typeof user.displayName === 'string'
++}
++
++function isTool(value: unknown): value is ToolLine {
++  if (!value || typeof value !== 'object') return false
++  const tool = value as ToolLine
++  return typeof tool.id === 'string' && typeof tool.name === 'string'
++}

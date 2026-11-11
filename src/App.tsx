@@ -28,12 +28,15 @@ import {
 import { formatAppVersion } from './core/appVersion.ts';
 import { LAYOUT_PANE_LIMITS } from './core/layoutSession.ts';
 import { displayTitle, reconcileLoadedDocument } from './core/document.ts';
+import { AccountPage } from './components/AccountPage.tsx';
 import { SyncControl } from './components/SyncControl.tsx';
 import {
-  createReadywriterAccount,
-  signInReadywriterAccount,
-  signOutReadywriterAccount,
+  changeWritingPassword,
+  createWritingAccount,
+  signInWritingAccount,
+  signOutWritingAccount,
   syncWithAccount,
+  updateWritingAccount,
 } from './core/syncClient.ts';
 import {
   clearSyncSession,
@@ -114,6 +117,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [tab, setTab] = useState<WorkspaceTab>(() => loadWorkspaceTab());
+  const [accountMode, setAccountMode] = useState<'sign-in' | 'sign-up' | 'manage' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadSidebarCollapsed());
   const [sidebarWidth, setSidebarWidth] = useState(() => loadSidebarWidth());
   const [manuscriptFocus, setManuscriptFocus] = useState(() => loadManuscriptFocus());
@@ -420,8 +424,8 @@ export default function App() {
     async (kind: 'create' | 'sign-in', email: string, password: string, displayName = '') => {
       const result =
         kind === 'create'
-          ? await createReadywriterAccount(email, password, displayName)
-          : await signInReadywriterAccount(email, password);
+          ? await createWritingAccount(email, password, displayName)
+          : await signInWritingAccount(email, password);
       if (!result.ok) return { message: result.message, pending: result.pending === true };
       rememberSession({
         token: result.account.token,
@@ -442,10 +446,28 @@ export default function App() {
     rememberSession(null);
     setSyncPhase('signed-out');
     setSyncDetail('');
-    if (token) void signOutReadywriterAccount(token);
+    if (token) void signOutWritingAccount(token);
+    setAccountMode(null);
   }, [rememberSession]);
 
-  const focusActive = manuscriptFocus && tab === 'manuscript';
+  const updateAccountName = useCallback(async (displayName: string) => {
+    const current = sessionRef.current;
+    if (!current) return { message: 'Sign in again.' };
+    const result = await updateWritingAccount(current.token, displayName);
+    if (!result.ok) return { message: result.message };
+    rememberSession({ ...current, displayName: result.account.displayName, email: result.account.email });
+    return null;
+  }, [rememberSession]);
+
+  const updateAccountPassword = useCallback(async (currentPassword: string, password: string) => {
+    const current = sessionRef.current;
+    if (!current) return { message: 'Sign in again.' };
+    const result = await changeWritingPassword(current.token, currentPassword, password);
+    if (!result.ok) return { message: result.message };
+    return null;
+  }, []);
+
+  const focusActive = manuscriptFocus && tab === 'manuscript' && accountMode == null;
 
   return (
     <div className={`app${focusActive ? ' is-manuscript-focus' : ''}`}>
@@ -518,8 +540,7 @@ export default function App() {
             email={session?.email ?? null}
             lastSyncAt={session?.lastSyncAt ?? null}
             detail={syncDetail}
-            onCreateAccount={(email, password, displayName) => signInAndSync('create', email, password, displayName)}
-            onSignIn={(email, password) => signInAndSync('sign-in', email, password)}
+            onOpenAccount={setAccountMode}
             onSyncNow={() => void runSync()}
             onSignOut={signOut}
           />
@@ -567,7 +588,10 @@ export default function App() {
             tab={tab}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
-            onTabChange={setTab}
+            onTabChange={(next) => {
+              setAccountMode(null);
+              setTab(next);
+            }}
             onLibraryChange={(next) => void handleLibraryChange(next)}
             newId={ids.current}
             license={license}
@@ -585,7 +609,23 @@ export default function App() {
             />
           )}
           <div className="workspace-main">
-            {tab === 'export' ? (
+            {accountMode ? (
+              <div className="workspace-panel">
+                <AccountPage
+                  mode={accountMode}
+                  email={session?.email ?? null}
+                  displayName={session?.displayName ?? null}
+                  token={session?.token ?? null}
+                  onBack={() => setAccountMode(null)}
+                  onCreateAccount={(email, password, displayName) => signInAndSync('create', email, password, displayName)}
+                  onSignIn={(email, password) => signInAndSync('sign-in', email, password)}
+                  onSignOut={signOut}
+                  onSyncNow={() => void runSync()}
+                  onUpdateName={updateAccountName}
+                  onChangePassword={updateAccountPassword}
+                />
+              </div>
+            ) : tab === 'export' ? (
               <div className="workspace-panel">
                 <ExportPane
                   doc={doc}
