@@ -97,14 +97,16 @@ function wireOf(library: Library, times: Record<string, string>, now: string): R
 test('the sync host and paths stay on the account service', () => {
   assert.equal(ACCOUNT_BASE_URL, 'http://127.0.0.1:8787');
   assert.equal(ACCOUNT_BASE_URL.includes('readywriter.one'), false);
-  assert.equal(ACCOUNT_PATHS.signup, '/api/account/signup');
-  assert.equal(ACCOUNT_PATHS.login, '/api/account/login');
-  assert.equal(ACCOUNT_PATHS.logout, '/api/account/logout');
-  assert.equal(ACCOUNT_PATHS.me, '/api/account/me');
-  assert.equal(ACCOUNT_PATHS.snapshot, '/api/sync/humanuscript');
+  assert.equal(ACCOUNT_PATHS.signup, '/api/writing-accounts/signup');
+  assert.equal(ACCOUNT_PATHS.login, '/api/writing-accounts/login');
+  assert.equal(ACCOUNT_PATHS.logout, '/api/writing-accounts/logout');
+  assert.equal(ACCOUNT_PATHS.me, '/api/writing-accounts/me');
+  assert.equal(ACCOUNT_PATHS.snapshot, '/api/writing-accounts/sync/humanuscript');
+  assert.throws(() => assertAccountUrl('http://127.0.0.1:8787/api/account/login'), /not an account path/);
+  assert.throws(() => assertAccountUrl('http://127.0.0.1:8787/api/humanuscript/sync'), /not an account path/);
   assert.equal(SYNC_SNAPSHOT_BYTE_LIMIT, 4_400_000);
   assert.throws(() => assertAccountUrl('https://api.openai.com/v1/chat'), /account service/);
-  assert.throws(() => assertAccountUrl('https://www.readywriter.one/api/account/login'), /account service/);
+  assert.throws(() => assertAccountUrl('https://www.readywriter.one/api/writing-accounts/login'), /account service/);
   assert.throws(() => assertAccountUrl('http://127.0.0.1:8787/api/sync'), /not an account path/);
 });
 
@@ -180,7 +182,7 @@ test('sign-in and sync talk only to the account service and a second install rec
     });
     assert.equal(new URL(url).origin, 'http://127.0.0.1:8787');
     const path = new URL(url).pathname;
-    if (path === '/api/account/login' && init?.method === 'POST') {
+    if (path === '/api/writing-accounts/login' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as { email?: string; password?: string };
       assert.equal(body.email, 'ada@example.com');
       assert.equal(body.password, PASSWORD);
@@ -190,11 +192,11 @@ test('sign-in and sync talk only to the account service and a second install rec
         user: { id: 'acct-1', email: 'ada@example.com', displayName: 'Ada' },
       });
     }
-    if (path === '/api/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
+    if (path === '/api/writing-accounts/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
       if (!stored) return Response.json({ snapshot: null });
       return Response.json({ snapshot: stored, revision: 'rev-1', updatedAt: '2026-10-29T16:05:00.000Z' });
     }
-    if (path === '/api/sync/humanuscript' && init?.method === 'PUT') {
+    if (path === '/api/writing-accounts/sync/humanuscript' && init?.method === 'PUT') {
       assert.equal(headers.get('Authorization'), 'Bearer token-1');
       assert.equal(headers.get('If-Match'), null);
       const body = JSON.parse(String(init.body)) as {
@@ -268,10 +270,10 @@ test('a later push sends If-Match and one 409 retries with the included snapshot
   const fetchImpl = async (url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     const path = new URL(url).pathname;
-    if (path === '/api/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
+    if (path === '/api/writing-accounts/sync/humanuscript' && (init?.method ?? 'GET') === 'GET') {
       return Response.json({ snapshot: remoteWire, revision: 'rev-a', updatedAt: '2026-10-01T00:00:00.000Z' });
     }
-    if (path === '/api/sync/humanuscript' && init?.method === 'PUT') {
+    if (path === '/api/writing-accounts/sync/humanuscript' && init?.method === 'PUT') {
       matches.push(headers.get('If-Match'));
       if (!conflicted) {
         conflicted = true;
@@ -415,7 +417,7 @@ test('signing out tells the account and does not delete the snapshot', async () 
     assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer token-1');
     return Response.json({ ok: true });
   });
-  assert.deepEqual(methods, ['POST /api/account/logout']);
+  assert.deepEqual(methods, ['POST /api/writing-accounts/logout']);
   await signOutWritingAccount('token-1', async () => {
     throw new Error('offline');
   });

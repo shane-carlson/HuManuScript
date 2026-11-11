@@ -1,4 +1,5 @@
 import { accountPage } from './pages.mjs';
+import { WRITING_ACCOUNT_API, WRITING_ACCOUNT_PAGES } from './paths.mjs';
 import { createAccountStore } from './store.mjs';
 import { writingTool } from './tools.mjs';
 
@@ -10,6 +11,9 @@ export function createAccountApp({ file = null } = {}) {
   async function handle(request) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
+    if (request.method === 'GET' && url.pathname === '/') {
+      return cors(Response.redirect(new URL(`${WRITING_ACCOUNT_PAGES.home}${url.search}`, url), 302));
+    }
     if (request.method === 'GET') {
       const page = accountPage(url.pathname, url.searchParams);
       if (page) return cors(html(page));
@@ -25,18 +29,18 @@ export function createAccountApp({ file = null } = {}) {
 }
 
 async function route(store, method, pathname, body, token, ifMatch) {
-  if (method === 'POST' && pathname === '/api/account/signup') return signup(store, body);
-  if (method === 'POST' && pathname === '/api/account/login') return login(store, body);
-  if (method === 'POST' && pathname === '/api/account/logout') {
+  if (method === 'POST' && pathname === WRITING_ACCOUNT_API.signup) return signup(store, body);
+  if (method === 'POST' && pathname === WRITING_ACCOUNT_API.login) return login(store, body);
+  if (method === 'POST' && pathname === WRITING_ACCOUNT_API.logout) {
     if (token) store.logout(token);
     return json({ ok: true });
   }
-  if (method === 'GET' && pathname === '/api/account/me') return me(store, token);
-  if (method === 'PATCH' && pathname === '/api/account/profile') return profile(store, token, body);
-  if (method === 'POST' && pathname === '/api/account/password') return password(store, token, body);
-  if (method === 'GET' && pathname === '/api/account/tools') return tools(store, token);
-  if (method === 'POST' && pathname === '/api/account/tools') return connect(store, token, body);
-  const sync = pathname.match(/^\/api\/sync\/([a-z0-9-]+)$/);
+  if (method === 'GET' && pathname === WRITING_ACCOUNT_API.me) return me(store, token);
+  if (method === 'PATCH' && pathname === WRITING_ACCOUNT_API.profile) return profile(store, token, body);
+  if (method === 'POST' && pathname === WRITING_ACCOUNT_API.password) return password(store, token, body);
+  if (method === 'GET' && pathname === WRITING_ACCOUNT_API.tools) return tools(store, token);
+  if (method === 'POST' && pathname === WRITING_ACCOUNT_API.tools) return connect(store, token, body);
+  const sync = pathname.match(/^\/api\/writing-accounts\/sync\/([a-z0-9-]+)$/);
   if (sync && method === 'GET') return readSync(store, token, sync[1]);
   if (sync && method === 'PUT') return writeSync(store, token, sync[1], body, ifMatch);
   return json({ message: 'That page is not on this account service.' }, 404);

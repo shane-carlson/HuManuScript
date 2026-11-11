@@ -1,3 +1,4 @@
+import { WRITING_ACCOUNT_API, WRITING_ACCOUNT_PAGES } from './paths.mjs';
 import { APP_RETURN_URL, WRITING_TOOLS } from './tools.mjs';
 
 const DOWNLOADS = [
@@ -8,10 +9,10 @@ const DOWNLOADS = [
 
 export function accountPage(pathname, searchParams) {
   const fromApp = searchParams.get('from') === 'app';
-  if (pathname === '/') return html(landing(fromApp));
-  if (pathname === '/sign-in') return html(authPage('sign-in', fromApp));
-  if (pathname === '/sign-up') return html(authPage('sign-up', fromApp));
-  if (pathname === '/account') return html(managePage(fromApp));
+  if (pathname === WRITING_ACCOUNT_PAGES.home) return html(landing(fromApp));
+  if (pathname === WRITING_ACCOUNT_PAGES.signIn) return html(authPage('sign-in', fromApp));
+  if (pathname === WRITING_ACCOUNT_PAGES.signUp) return html(authPage('sign-up', fromApp));
+  if (pathname === WRITING_ACCOUNT_PAGES.manage) return html(managePage(fromApp));
   return null;
 }
 
@@ -30,8 +31,8 @@ function landing(fromApp) {
       <h1>A manuscript editor with a seal on every passage you type.</h1>
       <p>HuManuScript keeps your books on this computer. An account is only for sync, and it belongs to HuManuScript. ${escapeHtml(later)} can use the same sign-in later.</p>
       <div class="actions">
-        <a class="button primary" href="/sign-up${fromApp ? '?from=app' : ''}">Create account</a>
-        <a class="button" href="/sign-in${fromApp ? '?from=app' : ''}">Sign in</a>
+        <a class="button primary" href="${WRITING_ACCOUNT_PAGES.signUp}${fromApp ? '?from=app' : ''}">Create account</a>
+        <a class="button" href="${WRITING_ACCOUNT_PAGES.signIn}${fromApp ? '?from=app' : ''}">Sign in</a>
       </div>
       <h2>Download HuManuScript 0.1.52</h2>
       <div class="actions">${downloads}</div>
@@ -57,7 +58,7 @@ function authPage(kind, fromApp) {
         <p class="error" role="alert" hidden></p>
         <div class="actions">
           <button class="primary" type="submit">${kind === 'sign-up' ? 'Create account' : 'Sign in'}</button>
-          <a class="button" href="${fromApp ? APP_RETURN_URL : '/'}">${fromApp ? 'Back to HuManuScript' : 'HuManuScript home'}</a>
+          <a class="button" href="${fromApp ? APP_RETURN_URL : WRITING_ACCOUNT_PAGES.home}">${fromApp ? 'Back to HuManuScript' : 'HuManuScript home'}</a>
         </div>
       </form>
     </main>
@@ -86,7 +87,7 @@ function managePage(fromApp) {
         <ul id="tools"></ul>
         <div class="actions">
           <button type="button" id="sign-out">Sign out</button>
-          <a class="button" href="${fromApp ? APP_RETURN_URL : '/'}">${fromApp ? 'Back to HuManuScript' : 'HuManuScript home'}</a>
+          <a class="button" href="${fromApp ? APP_RETURN_URL : WRITING_ACCOUNT_PAGES.home}">${fromApp ? 'Back to HuManuScript' : 'HuManuScript home'}</a>
         </div>
         <p class="error" role="alert" hidden></p>
       </div>
@@ -145,7 +146,7 @@ form.addEventListener('submit', async (event) => {
   error.hidden = true;
   const data = Object.fromEntries(new FormData(form));
   const kind = form.dataset.kind;
-  const path = kind === 'sign-up' ? '/api/account/signup' : '/api/account/login';
+  const path = kind === 'sign-up' ? '${WRITING_ACCOUNT_API.signup}' : '${WRITING_ACCOUNT_API.login}';
   const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -159,7 +160,7 @@ form.addEventListener('submit', async (event) => {
   }
   localStorage.setItem('humanuscript.account.token', body.token);
   const fromApp = form.dataset.fromApp === '1';
-  location.href = fromApp ? 'humanuscript://open' : '/account';
+  location.href = fromApp ? 'humanuscript://open' : '${WRITING_ACCOUNT_PAGES.manage}';
 });
 `;
 
@@ -179,22 +180,22 @@ async function api(path, options = {}) {
   const body = await response.json().catch(() => ({}));
   if (response.status === 401) {
     localStorage.removeItem('humanuscript.account.token');
-    location.href = '/sign-in' + location.search;
+    location.href = '${WRITING_ACCOUNT_PAGES.signIn}' + location.search;
     throw new Error('Sign in again.');
   }
   if (!response.ok) throw new Error(body.message || body.error || 'That did not work.');
   return body;
 }
 if (!token) {
-  signedOut.innerHTML = '<a href="/sign-in' + location.search + '">Sign in</a> to manage this account.';
+  signedOut.innerHTML = '<a href="${WRITING_ACCOUNT_PAGES.signIn}' + location.search + '">Sign in</a> to manage this account.';
 } else {
   signedOut.hidden = true;
   signedIn.hidden = false;
-  api('/api/account/me').then((body) => {
+  api('${WRITING_ACCOUNT_API.me}').then((body) => {
     document.querySelector('#who').textContent = body.user.email;
     document.querySelector('[name=displayName]').value = body.user.displayName || '';
   }).catch((err) => showError(err.message));
-  api('/api/account/tools').then((body) => {
+  api('${WRITING_ACCOUNT_API.tools}').then((body) => {
     document.querySelector('#tools').innerHTML = body.tools.map((tool) =>
       '<li>' + tool.name + (tool.connected ? ' · connected' : ' · available later') + '</li>'
     ).join('');
@@ -203,21 +204,21 @@ if (!token) {
     event.preventDefault();
     const displayName = new FormData(event.currentTarget).get('displayName');
     try {
-      await api('/api/account/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName }) });
+      await api('${WRITING_ACCOUNT_API.profile}', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName }) });
     } catch (err) { showError(err.message); }
   });
   document.querySelector('#password-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     try {
-      await api('/api/account/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      await api('${WRITING_ACCOUNT_API.password}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       event.currentTarget.reset();
     } catch (err) { showError(err.message); }
   });
   document.querySelector('#sign-out').addEventListener('click', async () => {
-    await fetch('/api/account/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    await fetch('${WRITING_ACCOUNT_API.logout}', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
     localStorage.removeItem('humanuscript.account.token');
-    location.href = '/';
+    location.href = '${WRITING_ACCOUNT_PAGES.home}';
   });
 }
 `;

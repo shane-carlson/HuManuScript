@@ -8,16 +8,19 @@
  *
  * Override the host with VITE_ACCOUNT_BASE_URL. The local service is `npm run account`.
  *
- * - POST   /api/account/signup   { email, password, displayName, tool }
- * - POST   /api/account/login    { email, password, tool } → { token, tokenType, user }
- * - POST   /api/account/logout
- * - GET    /api/account/me
- * - PATCH  /api/account/profile  { displayName }
- * - POST   /api/account/password { currentPassword, password }
- * - GET    /api/account/tools
- * - POST   /api/account/tools    { tool }
- * - GET    /api/sync/humanuscript
- * - PUT    /api/sync/humanuscript   replace. Later pushes send If-Match.
+ * These paths are separate from Ready Writer One's /api/account routes and from
+ * /api/humanuscript/sync. The unlisted site pages live under /humanuscript/account.
+ *
+ * - POST   /api/writing-accounts/signup   { email, password, displayName, tool }
+ * - POST   /api/writing-accounts/login    { email, password, tool } → { token, tokenType, user }
+ * - POST   /api/writing-accounts/logout
+ * - GET    /api/writing-accounts/me
+ * - PATCH  /api/writing-accounts/profile  { displayName }
+ * - POST   /api/writing-accounts/password { currentPassword, password }
+ * - GET    /api/writing-accounts/tools
+ * - POST   /api/writing-accounts/tools    { tool }
+ * - GET    /api/writing-accounts/sync/humanuscript
+ * - PUT    /api/writing-accounts/sync/humanuscript   replace. Later pushes send If-Match.
  */
 
 import { THIS_WRITING_TOOL, WRITING_TOOLS, type WritingToolId } from './accountTools.ts';
@@ -34,18 +37,25 @@ function configuredAccountBaseUrl(): string {
 export const ACCOUNT_BASE_URL = configuredAccountBaseUrl();
 
 export const ACCOUNT_PATHS = {
-  signup: '/api/account/signup',
-  login: '/api/account/login',
-  logout: '/api/account/logout',
-  me: '/api/account/me',
-  profile: '/api/account/profile',
-  password: '/api/account/password',
-  tools: '/api/account/tools',
-  snapshot: `/api/sync/${THIS_WRITING_TOOL}`,
+  signup: '/api/writing-accounts/signup',
+  login: '/api/writing-accounts/login',
+  logout: '/api/writing-accounts/logout',
+  me: '/api/writing-accounts/me',
+  profile: '/api/writing-accounts/profile',
+  password: '/api/writing-accounts/password',
+  tools: '/api/writing-accounts/tools',
+  snapshot: `/api/writing-accounts/sync/${THIS_WRITING_TOOL}`,
+} as const;
+
+export const ACCOUNT_PAGE_PATHS = {
+  home: '/humanuscript/account',
+  signIn: '/humanuscript/account/sign-in',
+  signUp: '/humanuscript/account/sign-up',
+  manage: '/humanuscript/account/manage',
 } as const;
 
 export function accountSnapshotPath(tool: WritingToolId = THIS_WRITING_TOOL): string {
-  return `/api/sync/${tool}`;
+  return `/api/writing-accounts/sync/${tool}`;
 }
 
 export function accountUrl(path: string): string {

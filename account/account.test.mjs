@@ -11,13 +11,15 @@ async function json(response) {
 
 test('the landing page is branded HuManuScript and a from-app visit can return', async () => {
   const app = createAccountApp();
-  const home = await app.handle(new Request('http://127.0.0.1:8787/'));
+  const home = await app.handle(new Request('http://127.0.0.1:8787/humanuscript/account'));
   const html = await home.text();
   assert.match(html, /HuManuScript/);
   assert.match(html, /Proof of humanity in Prose/);
   assert.equal(html.toLowerCase().includes('ready writer'), false);
   assert.equal(html.includes('sidequests'), false);
-  const returned = await app.handle(new Request('http://127.0.0.1:8787/sign-in?from=app'));
+  const returned = await app.handle(new Request('http://127.0.0.1:8787/humanuscript/account/sign-in?from=app'));
+  const oldAccount = await app.handle(new Request('http://127.0.0.1:8787/api/account/signup', { method: 'POST' }));
+  assert.equal(oldAccount.status, 404);
   const signIn = await returned.text();
   assert.match(signIn, /Back to HuManuScript/);
   assert.match(signIn, new RegExp(APP_RETURN_URL.replace(':', '\\:')));
@@ -25,7 +27,7 @@ test('the landing page is branded HuManuScript and a from-app visit can return',
 
 test('an account signs in, keeps a HuManuScript snapshot, and can name SpeakFiction later', async () => {
   const app = createAccountApp();
-  const created = await json(await app.handle(new Request('http://127.0.0.1:8787/api/account/signup', {
+  const created = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'Ada@Example.com', password: PASSWORD, displayName: 'Ada', tool: 'humanuscript' }),
@@ -35,11 +37,11 @@ test('an account signs in, keeps a HuManuScript snapshot, and can name SpeakFict
   const token = created.body.token;
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  const empty = await json(await app.handle(new Request('http://127.0.0.1:8787/api/sync/humanuscript', { headers: auth })));
+  const empty = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/sync/humanuscript', { headers: auth })));
   assert.equal(empty.body.snapshot, null);
 
   const wire = { version: 1, manuscripts: { 'book-1': { blocks: [] } }, notes: {}, certification: {} };
-  const put = await json(await app.handle(new Request('http://127.0.0.1:8787/api/sync/humanuscript', {
+  const put = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/sync/humanuscript', {
     method: 'PUT',
     headers: auth,
     body: JSON.stringify(wire),
@@ -47,7 +49,7 @@ test('an account signs in, keeps a HuManuScript snapshot, and can name SpeakFict
   assert.equal(put.status, 200);
   assert.ok(put.body.revision);
 
-  const conflict = await json(await app.handle(new Request('http://127.0.0.1:8787/api/sync/humanuscript', {
+  const conflict = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/sync/humanuscript', {
     method: 'PUT',
     headers: { ...auth, 'If-Match': '"stale"' },
     body: JSON.stringify(wire),
@@ -55,31 +57,31 @@ test('an account signs in, keeps a HuManuScript snapshot, and can name SpeakFict
   assert.equal(conflict.status, 409);
   assert.equal(conflict.body.revision, put.body.revision);
 
-  const saved = await json(await app.handle(new Request('http://127.0.0.1:8787/api/sync/humanuscript', { headers: auth })));
+  const saved = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/sync/humanuscript', { headers: auth })));
   assert.equal(saved.body.snapshot.manuscripts['book-1'].blocks.length, 0);
   assert.equal(saved.etag, `"${put.body.revision}"`);
 
-  const speak = await json(await app.handle(new Request('http://127.0.0.1:8787/api/account/tools', {
+  const speak = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/tools', {
     method: 'POST',
     headers: auth,
     body: JSON.stringify({ tool: 'speakfiction' }),
   })));
   assert.equal(speak.body.tools.find((tool) => tool.id === 'speakfiction').connected, true);
-  const blocked = await json(await app.handle(new Request('http://127.0.0.1:8787/api/sync/speakfiction', {
+  const blocked = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/sync/speakfiction', {
     method: 'PUT',
     headers: auth,
     body: JSON.stringify(wire),
   })));
   assert.equal(blocked.status, 404);
 
-  const renamed = await json(await app.handle(new Request('http://127.0.0.1:8787/api/account/profile', {
+  const renamed = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/profile', {
     method: 'PATCH',
     headers: auth,
     body: JSON.stringify({ displayName: 'Ada Harbor' }),
   })));
   assert.equal(renamed.body.user.displayName, 'Ada Harbor');
 
-  const wrong = await json(await app.handle(new Request('http://127.0.0.1:8787/api/account/login', {
+  const wrong = await json(await app.handle(new Request('http://127.0.0.1:8787/api/writing-accounts/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'ada@example.com', password: 'nope' }),
