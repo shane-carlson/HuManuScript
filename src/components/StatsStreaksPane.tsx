@@ -11,6 +11,8 @@ import {
   type WritingHabit,
 } from '../core/writingHabit.ts';
 import { spendRestDay } from '../core/writingHabitStore.ts';
+import { BadgeMedal } from './BadgeMedal.tsx';
+import { StreakRail } from './StreakRail.tsx';
 import { useWritingHabit } from './useWritingHabit.ts';
 
 function restLine(habit: WritingHabit): string {
@@ -45,7 +47,7 @@ export function StatsStreaksPane() {
     <div className="stats-streaks">
       <div className="stats-streaks__head">
         <div>
-          <h2>Stats and streaks</h2>
+          <h2>Stats &amp; Streaks</h2>
           <p>
             A writing day is a day you add words, or end a sitting of at least one minute.
             Yesterday still counts until midnight. The day follows this computer’s clock.
@@ -61,19 +63,9 @@ export function StatsStreaksPane() {
         A rest day keeps the streak and adds no points.
       </p>
 
-      <section className="stats-streaks__rest" aria-label="Rest days">
-        <h3>Rest days</h3>
-        <p>{restLine(habit)}</p>
-        <div className="stats-streaks__actions">
-          <button type="button" disabled={!choices.today} onClick={() => spend('today')}>
-            Mark today as a rest day
-          </button>
-          <button type="button" disabled={!choices.yesterday} onClick={() => spend('yesterday')}>
-            Use a rest day for yesterday
-          </button>
-        </div>
-        {message ? <p className="stats-streaks__message" role="status">{message}</p> : null}
-      </section>
+      <div className="stats-streaks__rail">
+        <StreakRail />
+      </div>
 
       <dl className="stats-streaks__bests">
         <div>
@@ -98,19 +90,39 @@ export function StatsStreaksPane() {
         </div>
       </dl>
 
-      <section aria-label="Badges">
-        <h3>Badges</h3>
+      <section className="stats-streaks__badges-section" aria-label="Badges">
+        <div className="stats-streaks__section-head">
+          <h3>Badges</h3>
+          <p>{earned.size} of {BADGES.length}</p>
+        </div>
         <ul className="stats-streaks__badges">
           {BADGES.map((badge) => {
             const on = earned.get(badge.id);
             return (
               <li key={badge.id} className={on ? 'is-earned' : 'is-ahead'} data-badge={badge.id}>
-                <strong>{badge.name}</strong>
-                <span>{on ? `Earned ${on}` : badge.requirement}</span>
+                <BadgeMedal id={badge.id} earned={Boolean(on)} />
+                <div className="badge-copy">
+                  <strong>{badge.name}</strong>
+                  <span>{on ? `Earned ${on}` : badge.requirement}</span>
+                </div>
               </li>
             );
           })}
         </ul>
+      </section>
+
+      <section className="stats-streaks__rest" aria-label="Rest days">
+        <h3>Rest days</h3>
+        <p>{restLine(habit)}</p>
+        <div className="stats-streaks__actions">
+          <button type="button" disabled={!choices.today} onClick={() => spend('today')}>
+            Mark today as a rest day
+          </button>
+          <button type="button" disabled={!choices.yesterday} onClick={() => spend('yesterday')}>
+            Use a rest day for yesterday
+          </button>
+        </div>
+        {message ? <p className="stats-streaks__message" role="status">{message}</p> : null}
       </section>
     </div>
   );

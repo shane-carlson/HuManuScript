@@ -7,6 +7,7 @@ import { Editor } from './components/Editor.tsx';
 import { PaneGrab } from './components/PaneGrab.tsx';
 import { SessionCaptureProvider } from './components/SessionCapture.tsx';
 import { ExportPane } from './components/ExportPane.tsx';
+import { StatsStreaksPane } from './components/StatsStreaksPane.tsx';
 import { VersionHistoryPane } from './components/VersionHistoryPane.tsx';
 import { LicenseGate } from './components/LicenseGate.tsx';
 import { WorkspaceSidebar } from './components/WorkspaceSidebar.tsx';
@@ -444,7 +445,7 @@ export default function App() {
     if (token) void signOutReadywriterAccount(token);
   }, [rememberSession]);
 
-  const focusActive = manuscriptFocus && (tab === 'manuscript' || tab === 'streaks');
+  const focusActive = manuscriptFocus && tab === 'manuscript';
 
   return (
     <div className={`app${focusActive ? ' is-manuscript-focus' : ''}`}>
@@ -641,6 +642,10 @@ export default function App() {
                   ledger={versions}
                   onImportBackup={(lib, v) => void handleImportBackup(lib, v)}
                 />
+              </div>
+            ) : tab === 'streaks' ? (
+              <div className="workspace-panel">
+                <StatsStreaksPane />
               </div>
             ) : (
               <>
