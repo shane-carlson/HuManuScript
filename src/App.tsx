@@ -645,7 +645,7 @@ export default function App() {
               </div>
             ) : tab === 'streaks' ? (
               <div className="workspace-panel">
-                <StatsStreaksPane />
+                <StatsStreaksPane library={library} />
               </div>
             ) : (
               <>

@@ -833,6 +833,73 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .stats-streaks__rest p { margin: 6px 0 0; color: var(--text-dim); }
 .stats-streaks__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .stats-streaks__message { margin-top: 8px; color: var(--text); }
+.library-stats {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 22px;
+}
+.library-stats__group {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+}
+.library-stats__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 18px;
+  padding: 12px 14px;
+}
+.library-stats__head h3 { margin: 0; font-size: 1.15rem; }
+.library-stats__head p { margin: 2px 0 0; color: var(--text-dim); font-size: 0.82rem; }
+.library-stats__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+}
+.library-stats__counts div { min-width: 4.5rem; }
+.library-stats__counts dt {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.library-stats__counts dd {
+  margin: 1px 0 0;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.library-stats__books {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.library-stats__books li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  background: var(--bg-elev);
+}
+.library-stats__books li + li { border-top: 1px solid var(--border); }
+.library-stats__books li.is-active { box-shadow: inset 3px 0 0 var(--accent); }
+.library-stats__book {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 8rem;
+}
+.library-stats__book strong { font-family: var(--serif); font-size: 1.02rem; font-weight: 600; }
+.library-stats__book span { color: var(--text-dim); font-size: 0.75rem; }
+.library-stats__books .library-stats__counts dd { font-size: 1.05rem; }
 .stats-streaks__bests {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

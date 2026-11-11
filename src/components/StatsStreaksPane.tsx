@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { Library } from '../core/library.ts';
+import { libraryWritingStats, type BookStatLine, type WritingCount } from '../core/libraryStats.ts';
 import { formatClock } from '../core/writingTimer.ts';
 import {
   BADGES,
@@ -28,7 +30,47 @@ function restLine(habit: WritingHabit): string {
   return `${saved}. ${more} ${left === 1 ? 'earns' : 'earn'} another.`;
 }
 
-export function StatsStreaksPane() {
+function CountLine({ counts }: { counts: WritingCount }) {
+  return (
+    <dl className="library-stats__counts">
+      <div>
+        <dt>Words</dt>
+        <dd>{counts.words.toLocaleString()}</dd>
+      </div>
+      <div>
+        <dt>Chapters</dt>
+        <dd>{counts.chapters.toLocaleString()}</dd>
+      </div>
+      <div>
+        <dt>Certified</dt>
+        <dd>{counts.certified.toLocaleString()}</dd>
+      </div>
+      <div>
+        <dt>Uncertified</dt>
+        <dd>{counts.uncertified.toLocaleString()}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function BookRows({ books, activeBookId }: { books: BookStatLine[]; activeBookId: string }) {
+  return (
+    <ul className="library-stats__books">
+      {books.map((book) => (
+        <li key={book.id} className={book.id === activeBookId ? 'is-active' : undefined}>
+          <div className="library-stats__book">
+            <strong>{book.title}</strong>
+            {book.seriesLabel ? <span>{book.seriesLabel}</span> : null}
+          </div>
+          <CountLine counts={book.counts} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function StatsStreaksPane({ library }: { library: Library }) {
+  const shelf = libraryWritingStats(library);
   const habit = useWritingHabit();
   const now = new Date();
   const streak = currentStreak(habit, now);
@@ -89,6 +131,43 @@ export function StatsStreaksPane() {
           <dd>{bests.bestDayWords.toLocaleString()}</dd>
         </div>
       </dl>
+
+      <section className="library-stats" aria-label="Library totals">
+        <div className="stats-streaks__section-head">
+          <h3>Library</h3>
+          <p>{shelf.totals.books === 1 ? '1 book' : `${shelf.totals.books} books`}</p>
+        </div>
+        <article className="library-stats__group">
+          <header className="library-stats__head">
+            <h3>All books</h3>
+            <CountLine counts={shelf.totals} />
+          </header>
+        </article>
+        {shelf.series.map((series) => (
+          <article key={series.id} className="library-stats__group">
+            <header className="library-stats__head">
+              <div>
+                <h3>{series.name}</h3>
+                <p>{series.counts.books === 1 ? '1 book' : `${series.counts.books} books`}</p>
+              </div>
+              <CountLine counts={series.counts} />
+            </header>
+            <BookRows books={series.books} activeBookId={library.activeBookId} />
+          </article>
+        ))}
+        {shelf.standalone.length > 0 ? (
+          <article className="library-stats__group">
+            <header className="library-stats__head">
+              <div>
+                <h3>Standalone</h3>
+                <p>{shelf.standalone.length === 1 ? '1 book' : `${shelf.standalone.length} books`}</p>
+              </div>
+              <CountLine counts={shelf.standaloneCounts} />
+            </header>
+            <BookRows books={shelf.standalone} activeBookId={library.activeBookId} />
+          </article>
+        ) : null}
+      </section>
 
       <section className="stats-streaks__badges-section" aria-label="Badges">
         <div className="stats-streaks__section-head">
