@@ -423,6 +423,7 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
 .workspace-sidebar.is-collapsed .workspace-nav__item {
   justify-content: center;
   padding: 10px 6px;
+  gap: 0;
 }
 .sidebar-collapse-toggle {
   align-self: flex-end;
@@ -1538,12 +1539,26 @@ html[data-mode='dark'] .stats-streaks__badges li.is-earned .badge-copy span {
   border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
-  padding: 10px 12px;
+  padding: 10px 8px 10px 6px;
+  cursor: grab;
 }
+.workspace-nav__item:active { cursor: grabbing; }
 .workspace-nav__item.is-active {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
   border-color: var(--border-strong);
 }
+.workspace-nav__item.is-dragging { opacity: 0.45; }
+.workspace-nav__item.is-drop-target { box-shadow: inset 0 2px 0 var(--accent); }
+.workspace-nav__grip {
+  width: 10px;
+  height: 14px;
+  flex: none;
+  color: var(--text-faint);
+  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.2px);
+  background-size: 5px 5px;
+  background-position: center;
+}
+.workspace-sidebar.is-collapsed .workspace-nav__grip { display: none; }
 .workspace-nav__item .ico { font-size: 1.1rem; }
 .workspace-books__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .workspace-books__head h3 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }

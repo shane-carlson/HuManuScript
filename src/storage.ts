@@ -13,6 +13,9 @@ import {
 } from './core/layoutSession.ts';
 import { readRegistryReceipts } from './core/registry.ts';
 import { isManuscriptFontId, isManuscriptFontSize } from './core/typography.ts';
+import { workspaceTabOrderFromStored, type WorkspaceTab } from './core/workspaceTabs.ts';
+
+export type { WorkspaceTab };
 
 export const LIBRARY_KEY = 'humanuscript.library.v2';
 export const STORAGE_KEY = 'humanuscript.manuscript.v1';
@@ -24,7 +27,8 @@ export const NOTES_COLLAPSED_KEY = 'humanuscript.notesCollapsed';
 export const MANUSCRIPT_FOCUS_KEY = 'humanuscript.manuscriptFocus';
 
 export type EditorViewMode = 'manuscript' | 'raw' | 'highlights' | 'preview' | 'publication';
-export type WorkspaceTab = 'manuscript' | 'export' | 'history' | 'streaks';
+
+const WORKSPACE_TAB_ORDER_KEY = 'humanuscript.workspaceTabOrder';
 
 /** Names shown on the view pill and in the label beside it. */
 const EDITOR_VIEW_LABELS: Record<EditorViewMode, string> = {
@@ -74,6 +78,23 @@ export function loadWorkspaceTab(): WorkspaceTab {
 export function saveWorkspaceTab(tab: WorkspaceTab): void {
   try {
     sessionStorage.setItem('humanuscript.workspaceTab', tab);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadWorkspaceTabOrder(): WorkspaceTab[] {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_TAB_ORDER_KEY);
+    return workspaceTabOrderFromStored(raw ? JSON.parse(raw) : null);
+  } catch {
+    return workspaceTabOrderFromStored(null);
+  }
+}
+
+export function saveWorkspaceTabOrder(order: readonly WorkspaceTab[]): void {
+  try {
+    localStorage.setItem(WORKSPACE_TAB_ORDER_KEY, JSON.stringify(workspaceTabOrderFromStored(order)));
   } catch {
     /* ignore */
   }
