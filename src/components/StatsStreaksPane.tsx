@@ -18,6 +18,17 @@ import { BadgeMedal, badgeTone } from './BadgeMedal.tsx';
 import { StreakRail } from './StreakRail.tsx';
 import { useWritingHabit } from './useWritingHabit.ts';
 
+function AchievedMark() {
+  return (
+    <span className="badge-achieved" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9.25" />
+        <path d="M7.4 12.3 10.5 15.4 16.7 8.7" />
+      </svg>
+    </span>
+  );
+}
+
 function restLine(habit: WritingHabit): string {
   const saved = `${habit.restBank} of ${REST_BANK_MAX} rest days saved`;
   if (habit.restBank >= REST_BANK_MAX && habit.writingDaysTowardRest >= REST_EVERY_WRITING_DAYS) {
@@ -202,6 +213,7 @@ export function StatsStreaksPane({ library }: { library: Library }) {
                       <strong>{badge.name}</strong>
                       <span>{on ? `Earned ${on}` : badge.requirement}</span>
                     </div>
+                    {on ? <AchievedMark /> : null}
                   </li>
                 );
               })}
