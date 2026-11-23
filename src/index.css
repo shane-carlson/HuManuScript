@@ -948,22 +948,46 @@ h3 { font-size: 0.95rem; margin: 18px 0 8px; }
   gap: 12px;
 }
 .stats-streaks__badges li {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 108px;
   padding: 10px 14px 10px 8px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--shield-b) 35%, var(--border));
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--shield-a) 28%, var(--bg)) 0%, var(--bg) 58%);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text-faint) 12%, var(--bg));
+}
+.stats-streaks__badges li:not(.is-earned) .badge-copy strong {
+  color: var(--text-faint);
 }
 .stats-streaks__badges li.is-earned {
+  padding-right: 40px;
   background:
     radial-gradient(160px 100px at 8% 0%, color-mix(in srgb, var(--shield-a) 78%, transparent), transparent 72%),
     var(--bg-elev);
   border-color: color-mix(in srgb, var(--shield-b) 72%, var(--border));
   box-shadow: 0 10px 22px color-mix(in srgb, var(--shield-b) 22%, transparent);
+}
+.badge-achieved {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+}
+.badge-achieved svg { display: block; width: 100%; height: 100%; }
+.badge-achieved circle {
+  fill: #fff;
+  stroke: var(--shield-rim);
+  stroke-width: 1.75;
+}
+.badge-achieved path {
+  fill: none;
+  stroke: var(--shield-rim);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .badge-copy {
   display: flex;
@@ -995,13 +1019,16 @@ html[data-mode='dark'] .stats-streaks__badges li.is-earned .badge-copy span {
   flex: none;
   color: var(--shield-ink);
 }
+.badge-medal:not(.is-earned) {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
 .badge-medal.is-earned {
   filter: drop-shadow(0 8px 8px color-mix(in srgb, var(--shield-b) 48%, transparent));
 }
 .badge-medal__svg { display: block; width: 100%; height: 100%; }
 .badge-medal__enamel-a { stop-color: var(--shield-a); }
 .badge-medal__enamel-b { stop-color: var(--shield-b); }
-.badge-medal:not(.is-earned) .badge-medal__plate { opacity: 0.72; }
 .badge-medal__edge {
   fill: none;
   stroke: var(--shield-rim);
